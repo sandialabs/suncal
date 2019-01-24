@@ -1,0 +1,31 @@
+# PSL Uncertainty Calculator Config File
+# Magnitude and Phase from Real and Imaginary. Example from GUM supplement 2
+
+functions:
+- desc: Magnitude
+  expr: sqrt(im**2 + re**2)
+  name: mag
+- desc: Phase
+  expr: atan2(im, re)
+  name: ph
+inputs:
+- desc: Real Component
+  mean: 0.001
+  name: re
+  uncerts:
+  - degf: .inf
+    desc: ''
+    dist: normal
+    name: u(re)
+    std: '0.01'
+- desc: Imaginary Component
+  mean: 0.0
+  name: im
+  uncerts:
+  - degf: .inf
+    desc: ''
+    dist: normal
+    name: u(im)
+    std: '0.01'
+samples: 1000000
+seed: 1

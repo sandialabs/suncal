@@ -1,0 +1,59 @@
+# PSL Uncertainty Calculator Config File
+#
+correlations:
+- cor: '-0.6451'
+  var1: J
+  var2: theta
+- cor: '-0.3553'
+  var1: J
+  var2: V
+- cor: '0.8576'
+  var1: theta
+  var2: V
+description: 'Simultaneous resistance and reactance measurement
+
+  Example from GUM appendix H.2
+
+
+  This example demonstrates calculation multiple measurement functions. The uncertainty
+  components and correlations were loaded using the data importer tool from the file
+  IVdata.csv.'
+functions:
+- desc: Resistance
+  expr: V*cos(theta)/J
+  name: R
+- desc: Reactance
+  expr: V*sin(theta)/J
+  name: X
+- desc: Impedance
+  expr: V/J
+  name: Z
+inputs:
+- desc: ''
+  mean: 0.019661
+  name: J
+  uncerts:
+  - degf: 4
+    desc: Type A uncertainty from IVdata.csv
+    dist: normal
+    name: typeA
+    unc: 9.471008394041335e-06
+- desc: ''
+  mean: 1.0444600000000002
+  name: theta
+  uncerts:
+  - degf: 4
+    desc: Type A uncertainty from IVdata.csv
+    dist: normal
+    name: typeA
+    unc: 0.0007520638270785368
+- desc: ''
+  mean: 4.9990000000000006
+  name: V
+  uncerts:
+  - degf: 4
+    desc: Type A uncertainty from IVdata.csv
+    dist: normal
+    name: typeA
+    unc: 0.0032093613071761794
+samples: 1000000

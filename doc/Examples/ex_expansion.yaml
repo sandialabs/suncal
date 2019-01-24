@@ -1,0 +1,48 @@
+# PSL Uncertainty Calculator Config File
+#
+description: 'Thermal Expansion Coefficient
+
+  Example E13 in NIST Technical Note 1900 (using t distribution inputs).'
+functions:
+- desc: Thermal Expansion Coefficient
+  expr: (-L0 + L1)/(L0*(-T0 + T1))
+  name: alpha
+inputs:
+- desc: Length at temperature T1
+  mean: 1.5021
+  name: L1
+  uncerts:
+  - degf: 3.0
+    desc: ''
+    dist: t
+    name: u(L1)
+    unc: '.0002'
+- desc: Second Measurement Temperature
+  mean: 373.1
+  name: T1
+  uncerts:
+  - degf: 3.0
+    desc: ''
+    dist: t
+    name: u(T1)
+    unc: '.05'
+- desc: Length at temperature T0
+  mean: 1.4999
+  name: L0
+  uncerts:
+  - degf: 3.0
+    desc: ''
+    dist: t
+    name: u(L0)
+    unc: '.0001'
+- desc: First Measurement Temperature
+  mean: 288.15
+  name: T0
+  uncerts:
+  - degf: 3.0
+    desc: ''
+    dist: t
+    name: u(T0)
+    unc: '.02'
+samples: 1000000
+seed: 44251

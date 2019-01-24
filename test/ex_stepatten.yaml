@@ -1,0 +1,103 @@
+# PSL Uncertainty Calculator Config File
+# Example E11 - Microwave Step Attenuator
+# From NIST Technical Note 1900
+#
+# Notes: TN1900 defines all inputs using estimate and standard uncertainty. For the
+# arcsine and student-t distributions, these must be shifted/scaled to the parameters
+# "location" and "scale" needed by the scipy.stats.t and scipy.stats.arcsine distributions.
+#
+# For the student-t distribution, the loc is the same as the mean, but the scale parameter is
+# stddev / sqrt(df) / (df-2).
+#
+# For arcsine distributions, scale = stddev * 2 * sqrt(2) and loc = -scale/2 to center the
+# distribution around 0.
+#
+functions:
+- desc: ''
+  expr: Ls - dL0a + dL0b + dLd - dLia + dLib + dLk + dLm + dLs
+  name: Lx
+inputs:
+- desc: ''
+  mean: 30.0402
+  name: Ls
+  uncerts:
+  - degf: 3.0
+    desc: ''
+    df: '3'
+    dist: t
+    name: u(Ls)
+    unc: '.0091'
+- desc: ''
+  mean: 0.003
+  name: dLs
+  uncerts:
+  - a: '0.00433'
+    degf: .inf
+    desc: ''
+    dist: uniform
+    name: u(dLs)
+- desc: ''
+  mean: 0.0
+  name: dLib
+  uncerts:
+  - a: '0.0005196'
+    degf: .inf
+    desc: ''
+    dist: uniform
+    name: u(dLib)
+- desc: ''
+  mean: 0.0
+  name: dL0a
+  uncerts:
+  - degf: .inf
+    desc: ''
+    dist: normal
+    name: u(dL0a)
+    std: '0.002'
+- desc: ''
+  mean: 0.0
+  name: dL0b
+  uncerts:
+  - degf: .inf
+    desc: ''
+    dist: normal
+    name: u(dL0b)
+    std: '0.002'
+- desc: ''
+  mean: 0.0
+  name: dLm
+  uncerts:
+  - a: '0.02828'
+    degf: .inf
+    desc: ''
+    dist: arcsine
+    name: u(dLm)
+- desc: ''
+  mean: 0.0
+  name: dLd
+  uncerts:
+  - a: '0.001980'
+    degf: .inf
+    desc: ''
+    dist: arcsine
+    name: u(dLd)
+- desc: ''
+  mean: 0.0
+  name: dLia
+  uncerts:
+  - a: '0.0005196'
+    degf: .inf
+    desc: ''
+    dist: uniform
+    name: u(dLia)
+- desc: ''
+  mean: 0.0
+  name: dLk
+  uncerts:
+  - a: '0.0029698'
+    degf: .inf
+    desc: ''
+    dist: arcsine
+    name: u(dLk)
+samples: 1000000
+seed: 1

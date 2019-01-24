@@ -1,0 +1,50 @@
+- desc: This is the Analysis of Variance example described in appendix H.5 of the
+    GUM. Data is from Table H.9. Only the mean, standard deviation, and number of
+    measurements for each group are provided.
+  groupnames:
+  - 1.0
+  - 2.0
+  - 3.0
+  - 4.0
+  - 5.0
+  - 6.0
+  - 7.0
+  - 8.0
+  - 9.0
+  - 10.0
+  groupvals:
+  - 10.000172
+  - 10.000116
+  - 10.000013
+  - 10.000144
+  - 10.000106
+  - 10.000031
+  - 10.00006
+  - 10.000125
+  - 10.000163
+  - 10.000041
+  mode: anova
+  name: anova
+  nmeas:
+  - 5
+  - 5
+  - 5
+  - 5
+  - 5
+  - 5
+  - 5
+  - 5
+  - 5
+  - 5
+  xdate: false
+  ystds:
+  - 6.0e-05
+  - 7.7e-05
+  - 0.000111
+  - 0.000101
+  - 6.7e-05
+  - 9.3e-05
+  - 8.0e-05
+  - 7.3e-05
+  - 8.8e-05
+  - 8.6e-05

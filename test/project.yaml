@@ -1,0 +1,336 @@
+- correlations:
+  - cor: '0.0000'
+    var1: C3
+    var2: R1
+  - cor: '0.7000'
+    var1: C3
+    var2: C2
+  - cor: '0.0000'
+    var1: R1
+    var2: C2
+  description: Test project including all calculation types
+  functions:
+  - desc: Time Constant
+    expr: R1*(C2 + C3)
+    name: tau
+  - desc: ''
+    expr: 1/tau
+    name: omega
+  inputs:
+  - desc: Capacitor 3
+    mean: 0.22
+    name: C3
+    uncerts:
+    - a: '.01'
+      degf: .inf
+      desc: ''
+      dist: uniform
+      name: u(C3)
+  - desc: ''
+    mean: 32.2014
+    name: R1
+    uncerts:
+    - degf: 9
+      desc: Type A uncertainty from resistance.txt
+      dist: normal
+      name: typeA
+      unc: 0.0038096952342382188
+    - conf: '.95'
+      degf: .inf
+      desc: ''
+      dist: normal
+      name: meter
+      unc: .01% + .00001*100
+  - desc: Capacitor 2
+    mean: 0.1
+    name: C2
+    uncerts:
+    - a: '.005'
+      degf: .inf
+      desc: ''
+      dist: uniform
+      name: u(C2)
+  mode: uncertainty
+  name: RC Circuit
+  samples: 1000000
+- functions:
+  - desc: Time Constant
+    expr: R1*(C2 + C3)
+    name: tau
+  inputs:
+  - desc: Capacitor 3
+    mean: 0.22
+    name: C3
+    uncerts:
+    - a: '.01'
+      degf: .inf
+      desc: ''
+      dist: uniform
+      name: u(C3)
+  - desc: ''
+    mean: 32.2014
+    name: R1
+    uncerts:
+    - degf: 9
+      desc: Type A uncertainty from resistance.txt
+      dist: normal
+      name: typeA
+      unc: 0.0038096952342382188
+    - conf: '.95'
+      degf: .inf
+      desc: ''
+      dist: normal
+      name: meter
+      unc: .01% + .00001*100
+  - desc: Capacitor 2
+    mean: 0.1
+    name: C2
+    uncerts:
+    - a: '.005'
+      degf: .inf
+      desc: ''
+      dist: uniform
+      name: u(C2)
+  mode: sweep
+  name: uncertainty
+  samples: 1000000
+  sweeps:
+  - comp: typeA
+    param: unc
+    values:
+    - 0.001
+    - 0.002
+    - 0.003
+    - 0.004
+    - 0.005
+    - 0.006
+    - 0.007
+    - 0.008
+    - 0.009000000000000001
+    - 0.01
+    var: R1
+- correlations:
+  - cor: '0.0000'
+    var1: C3
+    var2: R1
+  - cor: '0.7000'
+    var1: C3
+    var2: C2
+  - cor: '0.0000'
+    var1: R1
+    var2: C2
+  functions:
+  - desc: Time Constant
+    expr: R1*(C2 + C3)
+    name: tau
+  inputs:
+  - desc: Capacitor 3
+    mean: 0.22
+    name: C3
+    uncerts:
+    - a: '.01'
+      degf: .inf
+      desc: ''
+      dist: uniform
+      name: u(C3)
+  - desc: ''
+    mean: 32.2014
+    name: R1
+    uncerts:
+    - degf: 9
+      desc: Type A uncertainty from resistance.txt
+      dist: normal
+      name: typeA
+      unc: 0.0038096952342382188
+    - conf: '.95'
+      degf: .inf
+      desc: ''
+      dist: normal
+      name: meter
+      unc: .01% + .00001*100
+  - desc: Capacitor 2
+    mean: 0.1
+    name: C2
+    uncerts:
+    - a: '.005'
+      degf: .inf
+      desc: ''
+      dist: uniform
+      name: u(C2)
+  mode: reverse
+  name: RC circuit R1
+  reverse:
+    func: 0
+    solvefor: R1
+    targetnom: 10.5
+    targetunc: 0.3
+  samples: 1000000
+- correlations:
+  - cor: '0.0000'
+    var1: C3
+    var2: R1
+  - cor: '0.7000'
+    var1: C3
+    var2: C2
+  - cor: '0.0000'
+    var1: R1
+    var2: C2
+  functions:
+  - desc: Time Constant
+    expr: R1*(C2 + C3)
+    name: tau
+  inputs:
+  - desc: Capacitor 3
+    mean: 0.22
+    name: C3
+    uncerts:
+    - a: '.01'
+      degf: .inf
+      desc: ''
+      dist: uniform
+      name: u(C3)
+  - desc: ''
+    mean: 32.2014
+    name: R1
+    uncerts:
+    - degf: 9
+      desc: Type A uncertainty from resistance.txt
+      dist: normal
+      name: typeA
+      unc: 0.0038096952342382188
+    - conf: '.95'
+      degf: .inf
+      desc: ''
+      dist: normal
+      name: meter
+      unc: .01% + .00001*100
+  - desc: Capacitor 2
+    mean: 0.1
+    name: C2
+    uncerts:
+    - a: '.005'
+      degf: .inf
+      desc: ''
+      dist: uniform
+      name: u(C2)
+  mode: reversesweep
+  name: reverse
+  reverse:
+    func: 0
+    solvefor: R1
+    targetnom: 10.5
+    targetunc: 0.3
+  samples: 1000000
+  sweeps:
+  - comp: nom
+    param: null
+    values:
+    - 0.15
+    - 0.2
+    - 0.25
+    - 0.3
+    var: C3
+- groupnames:
+  - '1'
+  - '2'
+  - '3'
+  - '4'
+  groupvals:
+  - - 0.999156418
+    - 0.999474238
+    - 0.999339856
+    - 1.000160754
+    - 1.000744245
+    - 1.000737791
+    - 1.000495481
+    - 0.9995736
+    - 1.000723728
+    - 1.00060071
+  - - 1.000349612
+    - 0.999883249
+    - 0.999050897
+    - 1.00017474
+    - 0.999602596
+    - 1.000824172
+    - 0.999356241
+    - 0.999806955
+    - 1.000643518
+    - 1.000444615
+  - - 0.999757491
+    - 0.999817772
+    - 1.000194482
+    - 0.999679647
+    - 1.000937242
+    - 1.000470251
+    - 0.999027869
+    - 0.999911651
+    - 0.999590441
+    - 1.000451023
+  - - 0.999719098
+    - 0.99964781
+    - 1.000822782
+    - 0.999409639
+    - 0.999109266
+    - 1.000785761
+    - 0.999307039
+    - 1.000469276
+    - 1.000654864
+    - 1.000987112
+  mode: anova
+  name: Anova Calculation
+- arrx:
+  - 0.25
+  - 0.5
+  - 1.0
+  - 1.25
+  - 2.0
+  - 2.75
+  - 5.25
+  arry:
+  - 54.6
+  - 65.1
+  - 88.1
+  - 106.2
+  - 104.9
+  - 162.3
+  - 230.3
+  curve: line
+  desc: ''
+  mode: curvefit
+  name: Contact Resistance
+  odr: null
+  xdates: false
+  xname: x
+  yname: y
+- GBL: 1.0
+  GBU: 1.0
+  LL: 145.0
+  UL: 155.0
+  desc: ''
+  distproc:
+    dist: normal
+    median: 150.0
+    std: 3.0
+  disttest:
+    dist: normal
+    median: 156.16
+    std: 1.0
+  mode: risk
+  name: PFA for 150
+- desc: ''
+  distnames:
+  - a
+  - b
+  - a*b**2
+  distributions:
+  - a: 1.0
+    dist: triangular
+    median: 10.0
+  - a: 1.0
+    dist: uniform
+    median: 5.0
+  - dist: normal
+    median: 0.0
+    std: 1.0
+  mode: distributions
+  name: a b^2

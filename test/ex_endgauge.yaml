@@ -1,0 +1,81 @@
+# PSL Uncertainty Calculator Config File
+#
+functions:
+- desc: End Gauge Length
+  expr: d - l_s*(alpha_s*d_theta + d_alpha*theta) + l_s
+  name: l
+inputs:
+- desc: Length of standard at 20C from certificate
+  mean: 50000623.6
+  name: l_s
+  uncerts:
+  - degf: 18.0
+    desc: Uncertainty of the standard
+    dist: normal
+    k: '3'
+    name: u_{ls}
+    unc: '75'
+- desc: Measured difference between end gauges
+  mean: 215.0
+  name: d
+  uncerts:
+  - conf: '0.95'
+    degf: 5.0
+    desc: Random effects of comparator
+    dist: t
+    name: u_{d1}
+    unc: '10'
+  - degf: 8.0
+    desc: Systematic effects of comparator
+    dist: normal
+    k: '3'
+    name: u_{d2}
+    unc: '20'
+  - degf: 24.0
+    desc: Repeated observations
+    dist: normal
+    name: u_d
+    std: '5.8'
+- desc: Deviation in temperature of test bed from 20C ambient
+  mean: -0.1
+  name: theta
+  uncerts:
+  - a: '0.5'
+    degf: .inf
+    desc: Cyclic variation of temperature in room
+    dist: arcsine
+    name: u_Delta
+  - degf: .inf
+    desc: '''Mean temperature of bed'
+    dist: normal
+    name: u_theta
+    std: '0.2'
+- desc: Coefficient of thermal expansion
+  mean: 1.15e-05
+  name: alpha_s
+  uncerts:
+  - a: 2E-6
+    degf: .inf
+    desc: Thermal expansion coefficient of standard
+    dist: uniform
+    name: u_{alpha_s}
+- desc: Difference in expansion coefficients
+  mean: 0.0
+  name: d_alpha
+  uncerts:
+  - a: 1E-6
+    degf: 50.0
+    desc: Difference in expansion coefficients
+    dist: uniform
+    name: u_{da}
+- desc: Difference in temperatures
+  mean: 0.0
+  name: d_theta
+  uncerts:
+  - a: '0.05'
+    degf: 2.0
+    desc: Difference in temperatures
+    dist: uniform
+    name: u_{dt}
+samples: 1000000
+seed: 1

@@ -1,0 +1,52 @@
+# PSL Uncertainty Calculator Config File
+#
+correlations:
+- cor: '-0.3600'
+  var1: a
+  var2: b
+- cor: '-0.4000'
+  var1: a
+  var2: c
+- cor: '0.8600'
+  var1: b
+  var2: c
+functions:
+- desc: ''
+  expr: (a + b) / c
+  name: f
+- desc: ''
+  expr: a - b
+  name: g
+- desc: ''
+  expr: b * c
+  name: h
+inputs:
+- desc: ''
+  mean: 10.0
+  name: a
+  uncerts:
+  - degf: 10.0
+    desc: ''
+    dist: normal
+    name: u(a)
+    std: '0.2'
+- desc: ''
+  mean: 25.0
+  name: b
+  uncerts:
+  - a: '5.0'
+    degf: .inf
+    desc: ''
+    dist: gamma
+    name: u(b)
+    scale: '2.0'
+- desc: ''
+  mean: 2.0
+  name: c
+  uncerts:
+  - degf: 88.0
+    desc: ''
+    dist: normal
+    name: u(c)
+    std: '0.1'
+samples: 1000000

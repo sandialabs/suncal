@@ -1,0 +1,36 @@
+# PSL Uncertainty Calculator Config File
+#
+description: X-Ray Fluorescence Example from SNL ENGR224 Course.
+functions:
+- desc: Corrected measurement of standard
+  expr: X_1*Y_u/X_2
+  name: Y_c
+inputs:
+- desc: VLSI measurement of SHS
+  mean: 0.182
+  name: X_1
+  uncerts:
+  - degf: 9.0
+    desc: ''
+    dist: normal
+    name: u(X_1)
+    std: '.00093'
+- desc: Uncorrected Dektak measurement of check standard
+  mean: 0.6978
+  name: Y_u
+  uncerts:
+  - degf: 19.0
+    desc: ''
+    dist: normal
+    name: u(Y_u)
+    std: '.0026'
+- desc: Dektak measurement of SHS
+  mean: 0.1823
+  name: X_2
+  uncerts:
+  - degf: 19.0
+    desc: ''
+    dist: normal
+    name: u(X_2)
+    std: '.00058'
+samples: 1000000

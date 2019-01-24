@@ -1,0 +1,78 @@
+- desc: Five calibrations, each consisting of five measurements, were taken between
+    2011 and 2018. This calculation reduces the sets of five measurements into a mean
+    and standard deviation for each year's calibration.
+  groupnames:
+  - 2011-11-06 00:00:00
+  - 2013-10-07 00:00:00
+  - 2015-08-01 00:00:00
+  - 2016-07-23 00:00:00
+  - 2018-05-11 00:00:00
+  groupvals:
+  - - 180.02945641
+    - 180.26180522
+    - 179.75678302
+    - 180.15129924
+    - 179.73220268
+  - - 181.30996233
+    - 181.20475997
+    - 181.81435542
+    - 181.51056448
+    - 181.40100349
+  - - 182.14519271
+    - 182.317946
+    - 182.12156617
+    - 182.19061199
+    - 182.44320556
+  - - 183.04668247
+    - 183.40622699
+    - 183.08574395
+    - 182.8406013
+    - 183.07926423
+  - - 184.37580285
+    - 183.90570234
+    - 184.28613981
+    - 184.0489668
+    - 184.09539855
+  mode: anova
+  name: data
+  xdate: true
+- arruy:
+  - 0.23570842309815002
+  - 0.23375163476623237
+  - 0.13486440626205345
+  - 0.20260459361944091
+  - 0.1884825620311871
+  arrx:
+  - 734447.0
+  - 735148.0
+  - 735811.0
+  - 736168.0
+  - 736825.0
+  arry:
+  - 179.986309314
+  - 181.44812913799998
+  - 182.243704486
+  - 183.09170378800002
+  - 184.14240207000003
+  curve: line
+  desc: The second step is fitting a line to the historical data in order to predict
+    the value at the 2019 calibration due date.
+  mode: curvefit
+  name: drift fit
+  odr: null
+  xdates: true
+  xname: x
+  yname: y
+- GBL: 0
+  GBU: 0
+  LL: 175.0
+  UL: 185.0
+  desc: Finally, the predicted value and uncertainty at the 2019 due date are used
+    to determine the risk of drifting above the 185 psi tolerance.
+  distproc:
+    df: 3.0
+    dist: t
+    median: 184.82853966833636
+    std: 0.25851939483480924
+  mode: risk
+  name: risk

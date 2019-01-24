@@ -1,0 +1,54 @@
+- description: 'Customer requires density uncertainty of 0.04 g/cm^3 (k=2) for a gage
+    ball of mass 86.03 g and diameter 22.225 mm.
+
+
+    Find a calibration provider which can meet the density uncertainty requirement.
+    Use a reverse-sweep. Anything provider that falls under the curve is acceptable.
+
+
+    All dimensions entered in cm.'
+  functions:
+  - desc: Gage Ball Density, diameter in um, mass in mg, density in g/cm^3
+    expr: 6000000000.0*m/(pi*d**3)
+    name: rho
+  inputs:
+  - desc: Diameter measurement in micron
+    mean: 22225.0
+    name: d
+    uncerts:
+    - degf: .inf
+      desc: ''
+      dist: normal
+      name: u(d)
+      std: '5'
+  - desc: Mass measurement in mg
+    mean: 86030.0
+    name: m
+    uncerts:
+    - degf: .inf
+      desc: ''
+      dist: normal
+      name: u(m)
+      std: '10'
+  mode: reversesweep
+  name: reverse
+  reverse:
+    func: 0
+    solvefor: m
+    targetnom: 14.967
+    targetunc: 0.02
+  samples: 1000000
+  sweeps:
+  - comp: u(d)
+    param: std
+    values:
+    - 1.0
+    - 2.0
+    - 3.0
+    - 4.0
+    - 5.0
+    - 6.0
+    - 7.0
+    - 8.0
+    - 9.0
+    var: d

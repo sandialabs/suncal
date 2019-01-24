@@ -1,0 +1,26 @@
+- arrx:
+  - 0.25
+  - 0.5
+  - 1.0
+  - 1.25
+  - 2.0
+  - 2.75
+  - 5.25
+  arry:
+  - 54.6
+  - 65.1
+  - 88.1
+  - 106.2
+  - 104.9
+  - 162.3
+  - 230.3
+  curve: line
+  desc: Contact resistance is found by measuring resistance at various lengths and
+    extrapolating back to zero. The y-intercept of this line is twice the contact
+    resistance.
+  mode: curvefit
+  name: curvefit
+  odr: false
+  xdates: false
+  xname: Length
+  yname: Resistance

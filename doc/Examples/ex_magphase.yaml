@@ -1,0 +1,39 @@
+# PSL Uncertainty Calculator Config File
+#
+description: 'Example of converting real and imagniary into magnitude and phase from
+  GUM Supplement 2, section 9.3.
+
+
+  The GUM supplement considers six cases, re = 0.001, 0.01, and 0.1, with and without
+  correlation coefficient of 0.9 between re and im.
+
+
+  Try calculating with various values of re and adding correlation. Switch the output
+  view to "Joint PDF" to view probability plots similar to those in the GUM.'
+functions:
+- desc: Magnitude
+  expr: sqrt(im**2 + re**2)
+  name: mag
+- desc: Phase
+  expr: atan2(im, re)
+  name: ph
+inputs:
+- desc: Real Component
+  mean: 0.001
+  name: re
+  uncerts:
+  - degf: .inf
+    desc: ''
+    dist: normal
+    name: u(re)
+    std: '0.01'
+- desc: Imaginary Component
+  mean: 0.0
+  name: im
+  uncerts:
+  - degf: .inf
+    desc: ''
+    dist: normal
+    name: u(im)
+    std: '0.01'
+samples: 1000000

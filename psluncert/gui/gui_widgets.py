@@ -1,0 +1,1024 @@
+''' Common widgets for user interface '''
+
+import inspect
+import numpy as np
+from scipy import stats
+from dateutil.parser import parse
+import matplotlib.dates as mdates
+
+from PyQt5 import QtWidgets, QtCore, QtGui
+
+from . import gui_common
+from .. import output
+from .. import customdists
+
+
+# Custom data roles for tree/table widgets
+ROLE_OBJ = QtCore.Qt.UserRole    # Object (InputVar or InputUncert) associated with the table/tree item
+ROLE_VALID = ROLE_OBJ + 1        # Boolean, is this cell valid?
+ROLE_ORIGDATA = ROLE_VALID + 1   # Original, user-entered data
+ROLE_SYMPY = ROLE_ORIGDATA + 1   # Sympified text, display as png if present
+ROLE_HISTDATA = ROLE_SYMPY + 1   # Data for histogram distribution (tuple of (hist, edges))
+
+
+class histdistclass(object):
+    ''' Empty class for faking rv_histogram distribution to look like stats distributions '''
+    name = 'hist'
+
+
+class ReadOnlyTableItem(QtWidgets.QTableWidgetItem):
+    ''' Table Widget Item with read-only properties '''
+    def __init__(self, *args, **kwargs):
+        super(ReadOnlyTableItem, self).__init__(*args, **kwargs)
+        self.setFlags(QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsSelectable)
+
+
+class EditableTableItem(QtWidgets.QTableWidgetItem):
+    ''' Table Widget Item with editable flags '''
+    def __init__(self, *args, **kwargs):
+        super(EditableTableItem, self).__init__(*args, **kwargs)
+        font = self.font()
+        font.setBold(True)
+        self.setFont(font)
+
+
+# TableWidget and TreeWidget item.data() roles
+class SympyDelegate(QtWidgets.QItemDelegate):
+    ''' Delegate class assigned to editable table/tree items. This overrides the editor so that the original
+        user-entered (not calculated) expression is displayed for editing. Math expressions are rendered
+        as graphics instead of text when not in edit mode.
+    '''
+    def __init__(self):
+        super(SympyDelegate, self).__init__()
+
+    def setEditorData(self, editor, index):
+        ''' Restore user-entered text when editing starts '''
+        text = index.model().data(index, ROLE_ORIGDATA)
+        if text is None:
+            text = index.model().data(index, QtCore.Qt.DisplayRole)
+        editor.setText(text)
+
+    def setModelData(self, editor, model, index):
+        ''' Save user-entered text to restore in edit mode later '''
+        model.blockSignals(True)  # Only signal on one setData
+        model.setData(index, editor.text(), ROLE_ORIGDATA)    # Save for later
+        model.blockSignals(False)
+        model.setData(index, editor.text(), QtCore.Qt.DisplayRole) # Show on display
+
+    def paint(self, painter, option, index):
+        ''' Render png equation if sympy function is present. '''
+        fn = index.data(ROLE_SYMPY)
+        if fn is not None:
+            px = QtGui.QPixmap()
+            top = QtCore.QRect(option.rect)
+
+            if (option.state & QtWidgets.QStyle.State_Selected) and (option.state & QtWidgets.QStyle.State_Active):
+                painter.fillRect(top, option.palette.highlight().color())
+                txtcolor = option.palette.highlightedText().color()
+            elif (option.state & QtWidgets.QStyle.State_Selected):
+                painter.fillRect(top, option.palette.color(option.palette.Inactive, QtGui.QPalette.Highlight))
+                txtcolor = option.palette.color(option.palette.Inactive, QtGui.QPalette.WindowText)
+            else:
+                txtcolor = option.palette.color(option.palette.Active, QtGui.QPalette.WindowText)
+
+            txtcolor = (txtcolor.redF(), txtcolor.greenF(), txtcolor.blueF())
+            px.loadFromData(output.sympy_to_buf(fn, color=txtcolor).read())
+            top.translate(0, (top.height() - px.rect().height())/2)  # Center it vertically
+            painter.drawPixmap(top.topLeft(), px, px.rect())
+        else:
+            super(SympyDelegate, self).paint(painter, option, index)
+
+
+class EditableHeaderView(QtWidgets.QHeaderView):
+    ''' Table Header that is user-editable by double-clicking.
+
+        Credit: http://www.qtcentre.org/threads/12835-How-to-edit-Horizontal-Header-Item-in-QTableWidget
+        Adapted for QT5.
+    '''
+    headeredited = QtCore.pyqtSignal()
+
+    def __init__(self, orientation, floatonly=False, parent=None):
+        super(EditableHeaderView, self).__init__(orientation, parent)
+        self.floatonly = floatonly
+        self.line = QtWidgets.QLineEdit(parent=self.viewport())
+        self.line.setAlignment(QtCore.Qt.AlignTop)
+        self.line.setHidden(True)
+        self.line.blockSignals(True)
+        self.sectionedit = 0
+        self.sectionDoubleClicked.connect(self.editHeader)
+        self.line.editingFinished.connect(self.doneEditing)
+
+    def doneEditing(self):
+        self.line.blockSignals(True)
+        self.line.setHidden(True)
+        if self.floatonly:
+            try:
+                value = float(self.line.text())
+            except ValueError:
+                value = '---'
+        else:
+            value = self.line.text()
+        self.model().setHeaderData(self.sectionedit, QtCore.Qt.Horizontal, str(value), QtCore.Qt.EditRole)
+        self.line.setText('')
+        self.setCurrentIndex(QtCore.QModelIndex())
+        self.headeredited.emit()
+
+    def editHeader(self, section):
+        edit_geometry = self.line.geometry()
+        edit_geometry.setWidth(self.sectionSize(section))
+        edit_geometry.moveLeft(self.sectionViewportPosition(section))
+        self.line.setGeometry(edit_geometry)
+        self.line.setText(str(self.model().headerData(section, QtCore.Qt.Horizontal)))
+        self.line.setHidden(False)
+        self.line.blockSignals(False)
+        self.line.setFocus()
+        self.line.selectAll()
+        self.sectionedit = section
+
+
+class FloatTableWidget(QtWidgets.QTableWidget):
+    ''' Widget for entering a table of floats
+
+        Parameters
+        ----------
+        movebyrows: bool
+            When done editing, move the selected cell to the next row (True)
+            or the next column (False).
+        headeredit: string or None
+            Editable header. If None, no editing. string options are 'str' or 'float'
+            to restrict header values to strings or floats.
+        xdates: bool
+            Allow datetime values in first column. Will be converted to ordinal on get.
+        xstrings: bool
+            Allow string values in first column. Will be omitted from get_table.
+        paste_multicol: bool
+            Allow pasting multiple columns (and inserting columns as necessary)
+    '''
+    valueChanged = QtCore.pyqtSignal()
+
+    def __init__(self, movebyrows=False, headeredit=None, xdates=False, xstrings=False, paste_multicol=True, parent=None):
+        super(FloatTableWidget, self).__init__(parent=parent)
+        self.movebyrows = movebyrows
+        self.paste_multicol = paste_multicol
+        self.xdates = xdates
+        self.xstrings = xstrings
+        self.setRowCount(1)
+        self.setColumnCount(0)
+        if headeredit is not None:
+            assert headeredit in ['str', 'float']
+            self.setHorizontalHeader(EditableHeaderView(orientation=QtCore.Qt.Horizontal, floatonly=(headeredit == 'float')))
+            self.horizontalHeader().headeredited.connect(self.valueChanged)
+        QtWidgets.QShortcut(QtGui.QKeySequence('Ctrl+v'), self).activated.connect(self._paste)
+        QtWidgets.QShortcut(QtGui.QKeySequence('Ctrl+c'), self).activated.connect(self._copy)
+        self.cellChanged.connect(self._itemchanged)
+
+    def _paste(self):
+        ''' Handle pasting data into table '''
+        clipboard = QtWidgets.QApplication.instance().clipboard().text()
+        rowlist = clipboard.split('\n')
+        startrow = self.currentRow()
+        startcol = self.currentColumn()
+        j = 0
+        for i, row in enumerate(rowlist):
+            collist = row.split()
+            if self.paste_multicol:
+                for j, st in enumerate(collist):
+                    if j == 0 and self.xdates:
+                        try:
+                            parse(st)
+                            val = st
+                        except ValueError:
+                            val = '-'
+                    elif j == 0 and self.xstrings:
+                        val = st
+                    else:
+                        try:
+                            val = float(st)
+                        except ValueError:
+                            val = '-'
+                    if self.rowCount() <= startrow+i:
+                        self.setRowCount(startrow+i+1)
+                    if self.columnCount() <= startcol+j:
+                        self.setColumnCount(startcol+j+1)
+                    self.setItem(startrow+i, startcol+j, QtWidgets.QTableWidgetItem(str(val)))
+            else:
+                if startcol == 0 and self.xdates:
+                    try:
+                        parse(st)
+                        val = st
+                    except ValueError:
+                        val = '-'
+                elif startcol == 0 and self.xstrings:
+                    val = st
+                else:
+                    try:
+                        val = float(collist[0])
+                    except ValueError:
+                        val = '-'
+                j = 0
+                self.setItem(startrow+i, startcol, QtWidgets.QTableWidgetItem(str(val)))
+        self.clearSelection()
+        self.setCurrentCell(startrow+i, startcol+j)
+        self.valueChanged.emit()
+
+    def _copy(self):
+        ''' Copy selected cells to clipboard '''
+        clipboard = QtWidgets.QApplication.clipboard()
+        clipboard.clear(mode=clipboard.Clipboard)
+        ranges = self.selectedRanges()
+        if len(ranges) < 1:
+            return
+        text = ''
+        for rng in ranges:
+            top = rng.topRow()
+            bot = rng.bottomRow()
+            lft = rng.leftColumn()
+            rgt = rng.rightColumn()
+            rows = []
+            for row in range(top, bot+1):
+                cols = []
+                for col in range(lft, rgt+1):
+                    item = self.item(row, col)
+                    cols.append(item.text() if item else '')
+                rows.append('\t'.join(cols))
+        text = '\n'.join(rows)
+        clipboard.setText(text, mode=clipboard.Clipboard)
+
+    def _insertrow(self):
+        ''' Insert a blank row in the table '''
+        self.insertRow(max(0, self.currentRow()))
+        self.valueChanged.emit()
+
+    def _removerow(self):
+        ''' Remove row from table '''
+        self.removeRow(self.currentRow())
+        self.valueChanged.emit()
+
+    def keyPressEvent(self, event):
+        ''' Key was pressed. Capture delete key to clear selected items '''
+        items = self.selectedItems()
+        if event.key() == QtCore.Qt.Key_Delete and len(items) > 0:
+            self.blockSignals(True)
+            for item in items:
+                item.setText('')
+            self.blockSignals(False)
+            self.valueChanged.emit()
+        else:
+            super(FloatTableWidget, self).keyPressEvent(event)
+
+    def contextMenuEvent(self, event):
+        menu = QtWidgets.QMenu(self)
+        actCopy = QtWidgets.QAction('Copy', self)
+        actPaste = QtWidgets.QAction('Paste', self)
+        actPaste.setEnabled(QtWidgets.QApplication.instance().clipboard().text() != '')
+        actInsert = QtWidgets.QAction('Insert Row', self)
+        actRemove = QtWidgets.QAction('Remove Row', self)
+        menu.addAction(actCopy)
+        menu.addAction(actPaste)
+        menu.addSeparator()
+        menu.addAction(actInsert)
+        menu.addAction(actRemove)
+        actPaste.triggered.connect(self._paste)
+        actCopy.triggered.connect(self._copy)
+        actInsert.triggered.connect(self._insertrow)
+        actRemove.triggered.connect(self._removerow)
+        menu.popup(QtGui.QCursor.pos())
+
+    def set_xdates(self, xdates):
+        ''' Change first column to for dates/floats. Converts any existing values. '''
+        if self.xdates == xdates:
+            return   # Nothing is changing
+
+        self.blockSignals(True)
+        self.xdates = xdates
+        if self.xdates:
+            for row in range(self.rowCount()):
+                if self.item(row, 0) is None:
+                    continue
+                try:
+                    val = float(self.item(row, 0).text())
+                    if val <= 1:
+                        val = '-'
+                    else:
+                        val = mdates.num2date(val).strftime('%d-%b-%Y')
+                except (AttributeError, ValueError):
+                    val = '-'
+                self.item(row, 0).setText(val)
+        else:
+            for row in range(self.rowCount()):
+                if self.item(row, 0) is None:
+                    continue
+                try:
+                    val = str(mdates.date2num(parse(self.item(row, 0).text())))
+                except (AttributeError, ValueError):
+                    val = '-'
+                self.item(row, 0).setText(val)
+        self.blockSignals(False)
+
+    def _itemchanged(self, row, col):
+        ''' Item was changed. Add new row and move selected cell as appropriate. '''
+        item = self.item(row, col)
+        if item.text() != '':
+            if col == 0 and self.xdates:
+                try:
+                    parse(item.text()).toordinal()
+                except ValueError:
+                    item.setText('-')
+            elif col == 0 and self.xstrings:
+                pass   # OK as string
+            else:
+                try:
+                    float(item.text())
+                except ValueError:
+                    item.setText('-')
+
+        if row == self.rowCount() - 1 and item is not None and item.text() != '':
+            # Edited last row. Add a blank one
+            self.insertRow(row+1)
+            self.setRowHeight(row+1, self.rowHeight(row))
+
+        # Move cursor to next row or column
+        if self.movebyrows:
+            self.setCurrentCell(row+1, col)
+        elif col == self.columnCount() - 1:
+            self.setCurrentCell(row+1, 0)
+        else:
+            self.setCurrentCell(row, col+1)
+        self.valueChanged.emit()
+
+    def get_column(self, column):
+        ''' Get array of values for one column '''
+        vals = []
+        for i in range(self.rowCount()):
+            if column == 0 and self.xdates:
+                try:
+                    vals.append(parse(self.item(i, column).text()).toordinal())
+                except (AttributeError, ValueError):
+                    vals.append(np.nan)
+            elif column == 0 and self.xstrings:
+                try:
+                    vals.append(self.item(i, column).text())
+                except AttributeError:
+                    vals.append('')
+            else:
+                try:
+                    vals.append(float(self.item(i, column).text()))
+                except (AttributeError, ValueError):
+                    vals.append(np.nan)
+        return np.asarray(vals)
+
+    def get_columntext(self, column):
+        ''' Get array of string values in column '''
+        vals = []
+        for i in range(self.rowCount()):
+            try:
+                vals.append(self.item(i, column).text())
+            except AttributeError:
+                vals.append('')
+        return vals
+
+    def get_table(self):
+        ''' Get 2D array of values for entire table '''
+        vals = []
+        for col in range(self.columnCount()):
+            vals.append(self.get_column(col))
+        return np.vstack(vals)
+
+
+class MarkdownTextEdit(QtWidgets.QTextEdit):
+    ''' Text Edit widget with a Save option in context menu. '''
+    def __init__(self):
+        super(MarkdownTextEdit, self).__init__()
+        self.setReadOnly(True)
+        self.zoomIn(1)
+        self.rawhtml = ''
+        self.md = None
+        self.showmd = False
+
+    def contextMenuEvent(self, event):
+        ''' Create custom context menu '''
+        menu = self.createStandardContextMenu()
+        actmd = menu.addAction('Show markdown')
+        actmd.setCheckable(True)
+        actmd.setChecked(self.showmd)
+        actsave = menu.addAction('Save page...')
+        actsave.triggered.connect(self.savepage)
+        actmd.triggered.connect(self.toggledisplay)
+        menu.exec(event.globalPos())
+
+    def setMarkdown(self, md):
+        ''' Set text to display in markdown format.
+
+            Parameters
+            ----------
+            md: MDstring
+                Markdown string to format and display as HTML.
+        '''
+        self.md = md
+        html = self.md.get_html()
+
+        self.setHtml(html)
+
+    def setHtml(self, html):
+        ''' Override setHtml to save off raw html as QTextEdit reformats it, strips css, etc. '''
+        self.rawhtml = html
+        super(MarkdownTextEdit, self).setHtml(html)
+
+    def toggledisplay(self):
+        self.showmd = not self.showmd
+        if self.showmd:
+            self.setPlainText(self.md.raw_md())
+        else:
+            self.setMarkdown(self.md)
+
+    def savepage(self):
+        ''' Save text edit contents to file '''
+        savemarkdown(self.md)
+
+
+def savemarkdown(md):
+    ''' Save markdown object contents to file, prompting user for options and file name '''
+    dlg = SaveReportOptions()
+    ok = dlg.exec_()
+    if ok:
+        setup = dlg.get_setup()
+        fmt = setup.get('fmt', 'html')
+        filter = {'html': 'HTML (*.html)', 'md': 'Markdown (*.md *.txt)', 'docx': 'Word DOCX (*.docx)',
+                  'pdf': 'PDF (*.pdf)', 'odt': 'Open Document Text (*.odt)'}[fmt]
+
+        fname, _ = QtWidgets.QFileDialog.getSaveFileName(caption='File to Save', filter=filter)
+        if fname:
+            if fmt == 'md':
+                with output.report_format(math=setup.get('math'), fig=setup.get('image')):
+                    data = md.get_md()
+                with open(fname, 'w') as f:
+                    f.write(data)
+                err = None
+
+            elif fmt == 'html':
+                with output.report_format(math=setup.get('math'), fig=setup.get('image')):
+                    err = md.save_html(fname)
+
+            elif fmt == 'docx':
+                err = md.save_docx(fname)
+
+            elif fmt == 'pdf':
+                err = md.save_pdf(fname)
+
+            elif fmt == 'odt':
+                err = md.save_odt(fname)
+
+            else:
+                assert False
+
+            if err:
+                msgbox = QtWidgets.QMessageBox.warning(None, 'Error saving report', 'Error saving report:\n\n{}'.format(err))
+
+
+class SaveReportOptions(QtWidgets.QDialog):
+    ''' Dialog for selecting save report options '''
+    def __init__(self, parent=None):
+        super(SaveReportOptions, self).__init__(parent)
+        self.setWindowTitle('Save report options')
+        self.setMinimumWidth(500)
+        self.btnbox = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel)
+        self.btnbox.rejected.connect(self.reject)
+        self.btnbox.accepted.connect(self.accept)
+        self.cmbFormat = QtWidgets.QComboBox()
+        self.cmbFormat.addItems(['HTML', 'Markdown', 'PDF', 'Open Office ODT', 'Word DOCX'])
+
+        self.cmbMath = QtWidgets.QComboBox()
+        self.cmbMath.addItems(['Mathjax', 'Matplotlib'])
+        self.cmbImage = QtWidgets.QComboBox()
+        self.cmbImage.addItems(['SVG', 'PNG'])  # EPS?
+        self.mjurl = QtWidgets.QLineEdit(output._mathjaxurl)
+
+        if not output.pandoc_path:
+            self.cmbFormat.setItemText(2, 'PDF (requires Pandoc and LaTeX)')
+            self.cmbFormat.setItemText(3, 'Open Office ODT (requires Pandoc)')
+            self.cmbFormat.setItemText(4, 'Word DOCX (requires Pandoc)')
+            self.cmbFormat.model().item(2).setEnabled(False)
+            self.cmbFormat.model().item(3).setEnabled(False)
+            self.cmbFormat.model().item(4).setEnabled(False)
+
+        if not output.latex_path:
+            self.cmbFormat.setItemText(2, 'PDF (requires Pandoc and LaTeX)')
+            self.cmbFormat.model().item(2).setEnabled(False)
+
+        self.cmbFormat.setCurrentIndex(['html', 'md', 'pdf', 'odt', 'docx'].index(gui_common.settings.getRptFormat()))
+        self.cmbImage.setCurrentIndex(['svg', 'png'].index(gui_common.settings.getRptImgFormat()))
+        self.cmbMath.setCurrentIndex(['mathjax', 'mpl'].index(gui_common.settings.getRptMath()))
+        self.mjurl.setText(gui_common.settings.getRptMJURL())
+
+        self.lblMath = QtWidgets.QLabel('Math Renderer')
+        self.lblImage = QtWidgets.QLabel('Image Format')
+        self.lblMJ = QtWidgets.QLabel('MathJax URL')
+
+        glayout = QtWidgets.QGridLayout()
+        glayout.addWidget(QtWidgets.QLabel('File Format'), 0, 0)
+        glayout.addWidget(self.cmbFormat, 0, 1)
+        glayout.addWidget(self.lblImage, 1, 0)
+        glayout.addWidget(self.cmbImage, 1, 1)
+        glayout.addWidget(self.lblMath, 2, 0)
+        glayout.addWidget(self.cmbMath, 2, 1)
+        glayout.addWidget(self.lblMJ, 3, 0)
+        glayout.addWidget(self.mjurl, 3, 1)
+        glayout.setColumnMinimumWidth(1, 350)
+        glayout.setColumnStretch(1, 10)
+        layout = QtWidgets.QVBoxLayout()
+        layout.addLayout(glayout)
+        layout.addWidget(self.btnbox)
+        self.setLayout(layout)
+        self.cmbMath.currentIndexChanged.connect(self.refresh)
+        self.cmbFormat.currentIndexChanged.connect(self.refresh)
+        self.refresh()
+
+    def refresh(self):
+        ''' Refresh controls, show/hide based on options '''
+        htmlmd = self.cmbFormat.currentText() in ['HTML', 'Markdown']
+        self.cmbMath.setVisible(htmlmd)
+        self.cmbImage.setVisible(htmlmd)
+        self.lblMath.setVisible(htmlmd)
+        self.lblImage.setVisible(htmlmd)
+        self.mjurl.setVisible(htmlmd and self.cmbMath.currentText() == 'Mathjax')
+        self.lblMJ.setVisible(htmlmd and self.cmbMath.currentText() == 'Mathjax')
+
+    def get_setup(self):
+        ''' Get dictionary of report format options '''
+        fmt = ['html', 'md', 'pdf', 'odt', 'docx'][self.cmbFormat.currentIndex()]
+        math = ['mathjax', 'mpl'][self.cmbMath.currentIndex()]
+        img = self.cmbImage.currentText().lower()
+        return {'math': math, 'fmt': fmt, 'image': img}
+
+
+class ListSelectWidget(QtWidgets.QListWidget):
+    ''' List Widget with multi-selection on click '''
+    checkChange = QtCore.pyqtSignal(int)
+
+    def __init__(self):
+        super(ListSelectWidget, self).__init__()
+        self.itemChanged.connect(self.itemcheck)
+
+    def addItems(self, itemlist):
+        self.clear()
+        for i in itemlist:
+            item = QtWidgets.QListWidgetItem(i)
+            item.setFlags(item.flags() | QtCore.Qt.ItemIsUserCheckable)
+            item.setCheckState(QtCore.Qt.Unchecked)
+            self.addItem(item)
+
+    def itemcheck(self, item):
+        self.checkChange.emit(self.row(item))
+
+    def getSelectedIndexes(self):
+        sel = []
+        for row in range(self.count()):
+            if self.item(row).checkState() == QtCore.Qt.Checked:
+                sel.append(row)
+        return sel
+
+    def selectAll(self):
+        ''' Select all items '''
+        self.blockSignals(True)
+        for i in range(self.count()):
+            self.item(i).setCheckState(QtCore.Qt.Checked)
+        self.blockSignals(False)
+
+    def selectIndex(self, idxs):
+        ''' Select items with index in idxs '''
+        self.blockSignals(True)
+        for i in range(self.count()):
+            self.item(i).setCheckState(QtCore.Qt.Checked if i in idxs else QtCore.Qt.Unchecked)
+        self.blockSignals(False)
+
+    def selectNone(self):
+        self.blockSignals(True)
+        for i in range(self.count()):
+            self.item(i).setCheckState(QtCore.Qt.Unchecked)
+        self.blockSignals(False)
+
+
+class SpinWidget(QtWidgets.QWidget):
+    ''' Widget with label and spinbox '''
+    valueChanged = QtCore.pyqtSignal()
+
+    def __init__(self, label=''):
+        super(SpinWidget, self).__init__()
+        self.label = QtWidgets.QLabel(label)
+        self.spin = QtWidgets.QSpinBox()
+        self.spin.setRange(0, 1E8)
+        self.spin.valueChanged.connect(self.valueChanged)
+        layout = QtWidgets.QHBoxLayout()
+        layout.addWidget(self.label)
+        layout.addWidget(self.spin)
+        layout.addStretch()
+        self.setLayout(layout)
+
+    def value(self):
+        return int(self.spin.text())
+
+    def setValue(self, value):
+        self.spin.setValue(int(value))
+
+
+class CoverageButtons(QtWidgets.QWidget):
+    ''' Widget for showing pushbuttons for selecting coverage interval percentages.
+
+        Parameters
+        ----------
+        levels: list of strings
+            Names for each button. Defaults to 99%, 95%, etc.
+        dflt: list of int
+            List of buttons to set checked by default
+        multiselect: bool
+            Allow selection of multiple coverage levels
+    '''
+    changed = QtCore.pyqtSignal()
+
+    def __init__(self, levels=None, dflt=None, multiselect=False):
+        super(CoverageButtons, self).__init__()
+        self.btngroup = QtWidgets.QButtonGroup()
+        self.btngroup.setExclusive(not multiselect)
+
+        if levels is None:
+            levels = ['99%', '95%', '90%', '85%', '68%']
+
+        if dflt is None:
+            dflt = [1]
+
+        layout = QtWidgets.QHBoxLayout()
+        layout.setSpacing(0)
+        layout.addStretch()
+        for idx, p in enumerate(levels):
+            b1 = QtWidgets.QToolButton()
+            b1.setCheckable(True)
+            b1.setText(p)
+            b1.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
+            if idx in dflt:
+                b1.setChecked(True)
+            self.btngroup.addButton(b1)
+            layout.addWidget(b1)
+        layout.addStretch()
+        self.setLayout(layout)
+        self.btngroup.buttonClicked.connect(self.changed)
+
+    def get_covlist(self):
+        cov = []
+        for b in self.btngroup.buttons():
+            if b.isChecked():
+                cov.append(b.text())
+        return cov
+
+
+class GUMExpandedWidget(QtWidgets.QWidget):
+    ''' Widget with controls for changing coverage interval for GUM.
+
+        Parameters
+        ----------
+        label: string
+            Label for the widget
+        multiselect: bool
+            Allow selection of multiple coverage levels
+        dflt: list of int
+            Index(es) of buttons to check by default
+    '''
+    changed = QtCore.pyqtSignal()
+
+    def __init__(self, label='GUM:', multiselect=True, dflt=None):
+        super(GUMExpandedWidget, self).__init__()
+        self.usek = False
+        self.GUMtype = QtWidgets.QComboBox()
+        self.GUMtype.addItems(['Student-t', 'Normal/k'])
+        self.covbuttons = CoverageButtons(dflt=dflt, multiselect=multiselect)
+        self.kbuttons = CoverageButtons(['k = 1', 'k = 2', 'k = 3'], dflt=dflt, multiselect=multiselect)
+        self.kbuttons.setVisible(False)
+        layout = QtWidgets.QVBoxLayout()
+        hlayout = QtWidgets.QFormLayout()
+        hlayout.addRow(label, self.GUMtype)
+        layout.addLayout(hlayout)
+        layout.addWidget(self.covbuttons)
+        layout.addWidget(self.kbuttons)
+        self.setLayout(layout)
+        self.GUMtype.currentIndexChanged.connect(self.typechange)
+        self.kbuttons.changed.connect(self.changed)
+        self.covbuttons.changed.connect(self.changed)
+
+    def typechange(self):
+        self.usek = (self.GUMtype.currentIndex() == 1)
+        self.covbuttons.setVisible(not self.usek)
+        self.kbuttons.setVisible(self.usek)
+        self.changed.emit()
+
+    def get_covlist(self):
+        return self.kbuttons.get_covlist() if self.usek else self.covbuttons.get_covlist()
+
+    def set_buttons(self, values):
+        ''' Check buttons with label in values '''
+        if values is None:
+            values = []
+        for b in self.covbuttons.btngroup.buttons():
+            b.setChecked(b.text() in values)
+        for b in self.kbuttons.btngroup.buttons():
+            b.setChecked(b.text() in values)
+
+
+class MCExpandedWidget(QtWidgets.QWidget):
+    ''' Widget with controls for changing coverage interval for Monte-Carlo.
+
+        Parameters
+        ----------
+        label: string
+            Label for the widget
+        multiselect: bool
+            Allow selection of multiple coverage levels
+        dflt: list of int
+            Index(es) of buttons to check by default
+    '''
+    changed = QtCore.pyqtSignal()
+
+    def __init__(self, label='Monte-Carlo:', multiselect=True, dflt=None):
+        super(MCExpandedWidget, self).__init__()
+        self.MCtype = QtWidgets.QComboBox()
+        self.MCtype.addItems(['Symmetric', 'Shortest'])
+        self.MCtype.currentIndexChanged.connect(self.changed)
+        self.covbuttons = CoverageButtons(dflt=dflt, multiselect=multiselect)
+        layout = QtWidgets.QVBoxLayout()
+        hlayout = QtWidgets.QFormLayout()
+        hlayout.addRow(label, self.MCtype)
+        layout.addLayout(hlayout)
+        layout.addWidget(self.covbuttons)
+        layout.addStretch()
+        self.setLayout(layout)
+        self.covbuttons.changed.connect(self.changed)
+
+    def get_covlist(self):
+        return self.covbuttons.get_covlist()
+
+    def set_buttons(self, values):
+        ''' Check buttons with label in values '''
+        if values is None:
+            values = []
+        for b in self.covbuttons.btngroup.buttons():
+            b.setChecked(b.text() in values)
+
+
+class DistributionEditTable(QtWidgets.QTableWidget):
+    ''' Table for editing parameters of an uncertainty distribution '''
+    changed = QtCore.pyqtSignal()
+
+    def __init__(self, initargs=None, locslider=False):
+        super(DistributionEditTable, self).__init__()
+        self.showlocslider = locslider
+        self.range = (-2.0, 2.0)
+        self.setMinimumWidth(200)
+        self.setMaximumHeight(200)
+        self.set_disttype(initargs)
+        self.set_locrange(-4, 4)
+        self.valuechanged()
+        self.cellChanged.connect(self.valuechanged)
+
+    def clear(self):
+        ''' Clear and reset the table '''
+        super(DistributionEditTable, self).clear()
+        self.setColumnCount(2)
+        self.setHorizontalHeaderLabels(['Parameter', 'Value', ''])
+        self.resizeColumnsToContents()
+        self.setColumnWidth(0, 150)
+        self.setColumnWidth(1, 100)
+
+    def sliderchange(self):
+        ''' Slider has changed, update loc in table '''
+        rng = self.range[1] - self.range[0]
+        val = self.locslide.value() / self.locslide.maximum() * rng + self.range[0]
+        self.item(1, 1).setText('{}'.format(val))
+
+    def set_locrange(self, low, high):
+        ''' Set range for loc slider '''
+        self.range = (low, high)
+
+    def set_disttype(self, initargs=None):
+        ''' Change distribution type, fill in required params '''
+        if initargs is None:
+            initargs = {}
+        distname = initargs.pop('dist', 'normal')
+
+        # Want control to enter median value, not loc. Shift appropriately.
+        if hasattr(customdists, distname):
+            stats_dist = getattr(customdists, distname)
+            args = ['median'] + sorted(list(inspect.signature(stats_dist).parameters.keys()))
+        elif distname == 'histogram':
+            stats_dist = customdists.hist
+            args = ['data']
+        else:
+            stats_dist = getattr(stats, distname)
+            try:
+                median = stats_dist(**initargs).median()
+            except TypeError:
+                median = 0
+            initargs['median'] = median
+            args = ['median', 'scale']
+
+            try:
+                args.extend(sorted([s.strip() for s in stats_dist.shapes.split(',')]))
+            except AttributeError:  # shapes is None
+                pass
+        self.blockSignals(True)
+        self.clear()
+
+        dists = gui_common.settings.getDistributions()
+        self.cmbdist = QtWidgets.QComboBox()
+        self.cmbdist.addItems(dists)
+        if distname not in dists:
+            self.cmbdist.addItem(distname)
+        self.cmbdist.setCurrentIndex(self.cmbdist.findText(distname))
+        self.setRowCount(1)
+        self.setItem(0, 0, ReadOnlyTableItem('Distribution'))
+        self.setCellWidget(0, 1, self.cmbdist)
+        self.setRowCount(len(args) + 1)  # header + args
+
+        if distname == 'histogram':
+            self.setItem(1, 0, ReadOnlyTableItem('data'))
+            self.setItem(1, 1, ReadOnlyTableItem('-loaded-'))
+            self.item(1, 1).setData(ROLE_HISTDATA, (initargs.get('hist'), initargs.get('edges')))
+        else:
+            for row, arg in enumerate(args):
+                self.setItem(row+1, 0, ReadOnlyTableItem(arg))
+                self.setItem(row+1, 1, QtWidgets.QTableWidgetItem(str(initargs.get(arg, '1' if row > 0 else '0'))))
+
+        if self.showlocslider:
+            self.locslidewidget = QtWidgets.QWidget()
+            self.locslide = QtWidgets.QSlider(orientation=1)
+            self.locslide.setRange(0, 200)  # Sliders always use ints.
+            self.locslide.setValue(100)
+            layout = QtWidgets.QHBoxLayout()
+            layout.addWidget(QtWidgets.QLabel('median'))
+            layout.addWidget(self.locslide)
+            self.locslidewidget.setLayout(layout)
+            self.setCellWidget(1, 0, self.locslidewidget)
+            self.locslide.valueChanged.connect(self.sliderchange)
+            self.setItem(1, 0, ReadOnlyTableItem(''))
+
+        for row in range(self.rowCount()):
+            self.setRowHeight(row, 40)
+
+        self.cmbdist.currentIndexChanged.connect(self.distchanged)
+        self.blockSignals(False)
+
+    def distchanged(self):
+        ''' Distribution combobox change '''
+        self.set_disttype({'dist': self.cmbdist.currentText()})
+        self.valuechanged()
+
+    def valuechanged(self):
+        ''' Table value has changed, update stats distribution. '''
+        argvals = []
+        distname = self.cmbdist.currentText()
+
+        if distname != 'histogram':
+            for r in range(self.rowCount()-1):
+                try:
+                    argvals.append(float(self.item(r+1, 1).text()))
+                except ValueError:
+                    argvals.append(None)
+                    self.item(r+1, 1).setBackground(gui_common.COLOR_INVALID)
+                    self.clearSelection()
+                else:
+                    self.item(r+1, 1).setBackground(gui_common.COLOR_OK)
+
+        argnames = [self.item(r+1, 0).text() for r in range(self.rowCount()-1)]
+        args = dict(zip(argnames, argvals))
+
+        if distname == 'histogram':
+            hist, edges = self.item(1, 1).data(ROLE_HISTDATA)
+            self.statsdist = stats.rv_histogram((hist, edges))
+            self.statsdist.dist = histdistclass()  # Make it look like other stats dists
+            self.changed.emit()
+
+        elif None not in argvals:
+            if hasattr(customdists, distname):
+                stats_dist = getattr(customdists, distname)
+            else:
+                stats_dist = getattr(stats, distname)
+
+            median = args.pop('median', args.pop('', 0))  # Blank label under slider is median
+            try:
+                self.statsdist = stats_dist(**args)   # customdists distributions are centered about 0. Shift it here.
+                self.statsdist.kwds['loc'] = median - (self.statsdist.median() - self.statsdist.kwds.get('loc', 0))
+            except ZeroDivisionError:
+                self.statsdist = None
+                return   # Invalid scale parameter probably. Don't change anything
+            self.changed.emit()
+
+
+class RptOpt(QtWidgets.QWidget):
+    ''' Report options widget '''
+    def __init__(self, parent=None):
+        super(RptOpt, self).__init__(parent)
+
+        self.cmbFmt = QtWidgets.QComboBox()
+        self.cmbFmt.addItems(['HTML', 'LaTeX', 'Plain Text'])
+        self.cmbFmt.currentIndexChanged.connect(self.fmtchange)
+        self.cmbMathfmt = QtWidgets.QComboBox()
+        self.cmbMathfmt.addItems(['SVG', 'PNG', 'Mathjax'])
+        self.cmbMathfmt.currentIndexChanged.connect(self.mathchange)
+        self.chkEmbed = QtWidgets.QCheckBox('Embed Images into HTML (single file output)')
+        self.chkEmbed.setChecked(True)
+        self.lblMathjax = QtWidgets.QLabel('Mathjax location:')
+        self.txtMathjax = QtWidgets.QLineEdit('https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.4/MathJax.js')
+        self.txtMathjax.setVisible(False)
+        self.lblMathjax.setVisible(False)
+        self.lblMathFmt = QtWidgets.QLabel('HTML Math Format')
+
+        layout = QtWidgets.QGridLayout()
+        layout.addWidget(QtWidgets.QLabel('Report Format'), 0, 0)
+        layout.addWidget(self.cmbFmt, 0, 1)
+        layout.addWidget(self.lblMathFmt, 1, 0)
+        layout.addWidget(self.cmbMathfmt, 1, 1)
+        layout.addWidget(self.lblMathjax, 2, 0)
+        layout.addWidget(self.txtMathjax, 2, 1)
+        layout.addWidget(self.chkEmbed, 3, 0, 1, 2)
+        layout.setColumnStretch(1, 10)
+        layout.setRowStretch(0, 10)
+        self.setLayout(layout)
+
+    def mathchange(self):
+        ''' Show/hide mathjax location '''
+        assert self.cmbMathfmt.findText('Mathjax') != -1  # Update here if names change
+        if self.cmbMathfmt.currentText() == 'Mathjax':
+            self.lblMathjax.setVisible(True)
+            self.txtMathjax.setVisible(True)
+            self.chkEmbed.setVisible(False)
+        else:
+            self.lblMathjax.setVisible(False)
+            self.txtMathjax.setVisible(False)
+            self.chkEmbed.setVisible(True)
+
+    def fmtchange(self):
+        ''' Show/hide HTML options '''
+        assert self.cmbFmt.findText('HTML') != -1  # Update here if names change
+        if self.cmbFmt.currentText() == 'HTML':
+            self.cmbMathfmt.setVisible(True)
+            self.lblMathFmt.setVisible(True)
+            self.lblMathjax.setVisible(True)
+            self.txtMathjax.setVisible(True)
+            self.chkEmbed.setVisible(True)
+            self.mathchange()
+        else:
+            self.cmbMathfmt.setVisible(False)
+            self.lblMathFmt.setVisible(False)
+            self.lblMathjax.setVisible(False)
+            self.txtMathjax.setVisible(False)
+            self.chkEmbed.setVisible(False)
+
+
+class QHLine(QtWidgets.QFrame):
+    ''' Horizontal divider line '''
+    def __init__(self):
+        super(QHLine, self).__init__()
+        self.setFrameShape(QtWidgets.QFrame.HLine)
+        self.setFrameShadow(QtWidgets.QFrame.Sunken)
+
+
+class LineEditLabelWidget(QtWidgets.QWidget):
+    ''' Class for a line edit and label '''
+    def __init__(self, label='', text=''):
+        super(LineEditLabelWidget, self).__init__()
+        self._label = QtWidgets.QLabel(label)
+        self._text = QtWidgets.QLineEdit(text)
+        layout = QtWidgets.QHBoxLayout()
+        layout.addWidget(self._label)
+        layout.addWidget(self._text)
+        layout.addStretch()
+        layout.setContentsMargins(0, 0, 0, 0)
+        self.setLayout(layout)
+
+    def __getattr__(self, name):
+        ''' Get all other attributes from the lineedit widget '''
+        return getattr(self._text, name)
+
+
+class DateDialog(QtWidgets.QDialog):
+    ''' Dialog for getting a date value '''
+    def __init__(self, parent=None):
+        super(DateDialog, self).__init__(parent)
+        self.dateedit = QtWidgets.QDateEdit()
+        self.dateedit.setCalendarPopup(True)
+        self.dateedit.setDate(QtCore.QDate.currentDate())
+        btnbox = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel)
+        btnbox.accepted.connect(self.accept)
+        btnbox.rejected.connect(self.reject)
+        layout = QtWidgets.QVBoxLayout()
+        layout.addWidget(self.dateedit)
+        layout.addWidget(btnbox)
+        self.setLayout(layout)
+
+    def date(self):
+        ''' Get the date (QDate) '''
+        return self.dateedit.date()
+
+    @staticmethod
+    def getDate(parent=None):
+        ''' Static method for getting a date value in one line. Returns (QDate date, bool valid) '''
+        dialog = DateDialog(parent)
+        result = dialog.exec_()
+        return dialog.date(), result == QtWidgets.QDialog.Accepted
