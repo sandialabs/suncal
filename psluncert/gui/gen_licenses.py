@@ -6,8 +6,10 @@
 import os
 import re
 import sys
+import glob
 import subprocess
 import pkg_resources
+from PyQt5.QtCore import QT_VERSION_STR
 
 
 # Check that conda is installed
@@ -22,14 +24,20 @@ else:
 
 def get_license_text(modulename):
     ''' Pull the license text from license.txt in the conda package location for the installed version '''
+    pkgpath = None
     try:
         pkgpath = subprocess.check_output(['conda', 'list', modulename, '-c', '-f']).decode('utf-8').split('::')[1].strip()
     except IndexError:
-        # May be pip-installed. Without -c parameter, get name  ver  <pip>
-        ver = subprocess.check_output(['conda', 'list', modulename, '-f']).decode('utf-8').splitlines()[-1].split()[1]
-        licfile = None
-    else:
-        ver = pkgpath.split('-')[1]  # name-ver-build
+        try:
+            condaname = modulename + '-base'
+            pkgpath = subprocess.check_output(['conda', 'list', condaname, '-c', '-f']).decode('utf-8').split('::')[1].strip()
+        except IndexError:
+            # May be pip-installed. Without -c parameter, get name  ver  <pip>
+            ver = subprocess.check_output(['conda', 'list', modulename, '-f']).decode('utf-8').splitlines()[-1].split()[1]
+            licfile = None
+
+    if pkgpath:
+        ver = pkgpath.split('-')[-2]  # name-ver-build
         pkgpath = os.path.join(basepath, 'pkgs', pkgpath)
         licfile = os.path.join(pkgpath, 'info', 'license.txt')
         if os.path.exists(licfile):
@@ -37,13 +45,26 @@ def get_license_text(modulename):
                 licfile = f.read()
         else:
             licfile = None
+
+    if licfile is None:
+        pkg = pkg_resources.require(modulename)[0]
+        testlic = glob.glob(os.path.join(pkg.location, pkg.project_name, 'license*'))
+        for testfile in testlic:
+            if os.path.exists(testfile):
+                with open(testfile, 'r') as f:
+                    licfile = f.read()
+
     return ver, licfile
 
 
 def get_license_name(modulename):
     ''' Get name of license from pip info (e.g. 'BSD', 'MIT', etc.) '''
     pkg = pkg_resources.require(modulename)[0]
-    for line in pkg.get_metadata_lines('PKG-INFO'):
+    try:
+        lines = pkg.get_metadata_lines('PKG-INFO')
+    except FileNotFoundError:
+        lines = pkg.get_metadata_lines('METADATA')
+    for line in lines:
         (k, v) = line.split(': ', 1)
         if k == "License":
             return v
@@ -58,9 +79,7 @@ def build_license_html():
             ver, lic = get_license_text(m)
 
         if m == 'Qt':    # Not python package, it doesn't have standard license.text. Use standard LGPL.
-            qtver = subprocess.check_output(['qmake', '--version']).decode('utf-8')
-            qtver = qtver.split('\n')[1]  # Second line
-            ver = re.findall('([0-9.+].[0-9.+].[0-9.+])', qtver)[0]
+            ver = QT_VERSION_STR
             lic = LGPL
             licname = 'LGPL'
         elif m == 'PyQt5':

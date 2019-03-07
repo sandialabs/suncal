@@ -857,8 +857,8 @@ class UncertsFromCSV(QtWidgets.QDialog):
                     'degf': n-1})
 
         if len(usedcols) > 1:
-            for col in usedcols:
-                for col2 in usedcols[col+1:]:
+            for i, col in enumerate(usedcols):
+                for col2 in usedcols[i+1:]:
                     stats.append({'corr': (self.table.horizontalHeaderItem(col).text(), self.table.horizontalHeaderItem(col2).text()),
                                   'coef': np.corrcoef(data[:, col], data[:, col2])[0, 1]})
         return stats

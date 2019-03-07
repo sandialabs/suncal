@@ -641,12 +641,12 @@ def test_absolutesigma():
     # with and without absolute_sigma.
     coeff1, cov1 = scipy.optimize.curve_fit(expfunc, x, y, sigma=sig, p0=p0, absolute_sigma=True)
     coeff2, cov2 = curvefit.odrfit(expfunc, x, y, ux=None, uy=sig, p0=p0, absolute_sigma=True)
-    assert np.allclose(coeff1, coeff2)
+    assert np.allclose(coeff1, coeff2, rtol=.0001)
     assert np.allclose(cov1, cov2)
 
     coeff1, cov1 = scipy.optimize.curve_fit(expfunc, x, y, sigma=sig, p0=p0, absolute_sigma=False)
     coeff2, cov2 = curvefit.odrfit(expfunc, x, y, ux=None, uy=sig, p0=p0, absolute_sigma=False)
-    assert np.allclose(coeff1, coeff2)
+    assert np.allclose(coeff1, coeff2, rtol=0.0001)
     assert np.allclose(cov1, cov2)
     assert np.allclose(np.sqrt(np.diag(cov1)), [4.69E-6, 5.46E-10])   # Compare to Tablecurve's output values for this problem which assume absolute_sigma=False.
 
