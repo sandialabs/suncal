@@ -1,58 +1,55 @@
-# PSL Uncertainty Calculator Config File
-#
-description: 'Electrical Circuit Practice Problem from SNL ENGR224 course
-
-
-  Resistor R1 in series with two parallel capacitors C2 and C3.
-
-
-  Resistance type A was loaded from 10 measurements in resistance.txt file using data
-  importer.
-
-
-  Capacitors are given as C2 = 0.1uf +/- .005uf and C3 = .22uf +/- .01uF. Multimeter
-  given with uncertainty +/- (.01% of reading + .001% of range) at 95% confidence,
-  with range of 100 kohm.
-
-
-  Be careful of units. With capacitance in microfarads and resistance in kilohms as
-  entered, output will be in milliseconds.'
-functions:
-- desc: Time Constant
-  expr: R1*(C2 + C3)
-  name: tau
-inputs:
-- desc: Capacitor 3
-  mean: 0.22
-  name: C3
-  uncerts:
-  - a: '.01'
-    degf: .inf
-    desc: ''
-    dist: uniform
-    name: u(C3)
-- desc: ''
-  mean: 32.2014
-  name: R1
-  uncerts:
-  - degf: 9
-    desc: Type A uncertainty from resistance.txt
-    dist: normal
-    name: typeA
-    unc: 0.0038096952342382188
-  - conf: '.95'
-    degf: .inf
-    desc: ''
-    dist: normal
-    name: meter
-    unc: .01% + .00001*100
-- desc: Capacitor 2
-  mean: 0.1
-  name: C2
-  uncerts:
-  - a: '.005'
-    degf: .inf
-    desc: ''
-    dist: uniform
-    name: u(C2)
-samples: 1000000
+- description: "Electrical Circuit Practice Problem from SNL ENGR224 course\n\nResistor\
+    \ R1 in series with two parallel capacitors C2 and C3.\n\nResistance type A was\
+    \ loaded from 10 measurements in resistance.txt file using data importer.\n\n\
+    Capacitors are given as C2 = 0.1\xB5F +/- .005uf and C3 = .22\xB5F +/- .01\xB5\
+    F. Multimeter given with uncertainty +/- (.01% of reading + .001% of range) at\
+    \ 95% confidence, with range of 100 k\u03A9."
+  functions:
+  - desc: Time Constant
+    expr: R1*(C2 + C3)
+    name: tau
+    units: millisecond
+  inputs:
+  - desc: Capacitor 3
+    mean: 0.22
+    name: C3
+    uncerts:
+    - a: '.01'
+      degf: .inf
+      desc: Manufacturer spec of capacitor 3
+      dist: uniform
+      name: u(C3)
+      units: microfarad
+    units: microfarad
+  - desc: Resistor
+    mean: 32.2014
+    name: R1
+    uncerts:
+    - degf: 9
+      desc: Type A uncertainty from resistance.txt
+      dist: normal
+      name: typeA
+      unc: 0.0038096952342382188
+      units: kiloohm
+    - conf: '.95'
+      degf: .inf
+      desc: Type B uncertainty of meter
+      dist: normal
+      name: meter
+      unc: .01% + .00001*100
+      units: kiloohm
+    units: kiloohm
+  - desc: Capacitor 2
+    mean: 0.1
+    name: C2
+    uncerts:
+    - a: '.005'
+      degf: .inf
+      desc: Manufacturer spec of capacitor 2
+      dist: uniform
+      name: u(C2)
+      units: microfarad
+    units: microfarad
+  mode: uncertainty
+  name: uncertainty
+  samples: 1000000

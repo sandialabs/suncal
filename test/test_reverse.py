@@ -5,9 +5,9 @@ import os
 import numpy as np
 import sympy
 
-import psluncert as uc
-from psluncert import reverse
-from psluncert import sweeper
+import suncal as uc
+from suncal import reverse
+from suncal import sweeper
 
 
 def test_reverse():
@@ -36,18 +36,18 @@ def test_reverse():
     out = u.calculate()
 
     # MC and GUM should match for this problem
-    assert np.isclose(out.gumdata['i'], out.mcdata['i'], atol=.0001)
-    assert np.isclose(out.gumdata['u_i'], out.mcdata['u_i'], atol=.0001)
+    assert np.isclose(out.gumdata['i'].magnitude, out.mcdata['i'].magnitude, atol=.0001)
+    assert np.isclose(out.gumdata['u_i'].magnitude, out.mcdata['u_i'].magnitude, atol=.0001)
 
     # Plugging in w to forward calculation should result in the uncertainty value we want
     u2 = uc.UncertaintyCalc(expr)
     u2.set_input('h', nom=h, std=uh)
     u2.set_input('d', nom=d, std=ud)
     u2.set_input('k', nom=k)
-    u2.set_input('w', nom=out.gumdata['i'], std=out.gumdata['u_i'])  # Using results from reverse calc
+    u2.set_input('w', nom=out.gumdata['i'].magnitude, std=out.gumdata['u_i'].magnitude)  # Using results from reverse calc
     u2.calculate()
-    assert np.isclose(u2.out.rho.gum.mean[0], rho, atol=.01)     # rho uncertainty matches the requirement
-    assert np.isclose(u2.out.rho.gum.uncert[0], urho, atol=.001)
+    assert np.isclose(u2.out.rho.gum.mean.magnitude, rho, atol=.01)     # rho uncertainty matches the requirement
+    assert np.isclose(u2.out.rho.gum.uncert.magnitude, urho, atol=.001)
 
 
 def test_reversechain():
@@ -73,9 +73,9 @@ def test_sweep():
     s.calculate()
     assert s.out.get_single_desc(0) == 'a = 9.0'   # Description of each sweep index
     assert s.out.get_single_desc(1) == 'a = 10'
-    assert s.out.get_rptsingle(0).f.gum.mean[0] == 14   # Verify mean values of GUM calculation
-    assert s.out.get_rptsingle(1).f.gum.mean[0] == 15
-    assert s.out.get_rptsingle(2).f.gum.mean[0] == 16
+    assert s.out.get_rptsingle(0).f.gum.mean.magnitude == 14   # Verify mean values of GUM calculation
+    assert s.out.get_rptsingle(1).f.gum.mean.magnitude == 15
+    assert s.out.get_rptsingle(2).f.gum.mean.magnitude == 16
     assert 'f (GUM)' in s.out.get_array()
     assert np.allclose(s.out.get_array('f (GUM)').y, np.array([14, 15, 16]))
 
@@ -85,9 +85,9 @@ def test_sweep():
     s.calculate()
     assert s.out.get_single_desc(0) == 'u(a) = 0.50'   # Description of each sweep index
     assert s.out.get_single_desc(1) == 'u(a) = 1.0'
-    assert np.isclose(s.out.get_rptsingle(0).f.gum.uncert[0], np.sqrt(0.5**2 + 0.5**2))  # Uncertainties should sweep
-    assert np.isclose(s.out.get_rptsingle(1).f.gum.uncert[0], np.sqrt(1**2 +.5**2))
-    assert np.isclose(s.out.get_rptsingle(2).f.gum.uncert[0], np.sqrt(1.5**2 + .5**2))
+    assert np.isclose(s.out.get_rptsingle(0).f.gum.uncert.magnitude, np.sqrt(0.5**2 + 0.5**2))  # Uncertainties should sweep
+    assert np.isclose(s.out.get_rptsingle(1).f.gum.uncert.magnitude, np.sqrt(1**2 +.5**2))
+    assert np.isclose(s.out.get_rptsingle(2).f.gum.uncert.magnitude, np.sqrt(1.5**2 + .5**2))
     assert 'f (GUM)' in s.out.get_array()
     assert np.allclose(s.out.get_array('f (GUM)').y, np.array([15, 15, 15]))  # Mean value shouldnt change
 
@@ -107,9 +107,9 @@ def test_sweep():
     s.calculate()
     assert s.out.get_single_desc(0) == 'corr = -1.0'   # Description of each sweep index
     assert s.out.get_single_desc(1) == 'corr = 0.0'
-    assert np.isclose(s.out.get_rptsingle(0).f.gum.uncert[0], 0.5)  # Uncertainties should sweep
-    assert np.isclose(s.out.get_rptsingle(1).f.gum.uncert[0], 1.118, atol=.005)
-    assert np.isclose(s.out.get_rptsingle(2).f.gum.uncert[0], 1.5)
+    assert np.isclose(s.out.get_rptsingle(0).f.gum.uncert.magnitude, 0.5)  # Uncertainties should sweep
+    assert np.isclose(s.out.get_rptsingle(1).f.gum.uncert.magnitude, 1.118, atol=.005)
+    assert np.isclose(s.out.get_rptsingle(2).f.gum.uncert.magnitude, 1.5)
 
 
 def test_sweepreverse():
@@ -144,7 +144,7 @@ def test_sweepreverse():
     assert 'f (GUM)' in s.out.get_array()
     assert np.allclose(s.out.get_array('f (GUM)').x, np.array([5, 10, 15]))
     assert 'df' in str(s.out.report())[:10]
-    assert 'u(b)' in str(s.out.report())[:5]
+    assert 'u(b)' in str(s.out.report())[:7]
 
     u = reverse.UncertReverse('f = a+b', solvefor='a', targetnom=15, targetunc=1.5)
     u.set_input('a', nom=10, std=1)

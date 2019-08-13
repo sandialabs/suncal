@@ -3,10 +3,10 @@
 block_cipher = None
 
 
-a = Analysis(['psluncert\\startui.py'],
+a = Analysis(['suncal\\startui.py'],
              pathex=[],
              binaries=[],
-             datas=[('psluncert/gui/PSLUCmanual.pdf', '.')],
+             datas=[('suncal/gui/SUNCALmanual.pdf', '.')],
              hiddenimports=[],
              hookspath=[],
              runtime_hooks=[],
@@ -20,10 +20,10 @@ pyz = PYZ(a.pure, a.zipped_data,
 exe = EXE(pyz,
           a.scripts,
           exclude_binaries=True,
-          name='PSLUncertCalc',
+          name='Sandia Uncertainty Calculator',
           debug=False,
           strip=False,
-          icon='psluncert/gui/PSLcal_logo.ico',
+          icon='suncal/gui/PSLcal_logo.ico',
           upx=True,
           console=False)
 coll = COLLECT(exe,
@@ -32,4 +32,4 @@ coll = COLLECT(exe,
                a.datas,
                strip=False,
                upx=True,
-               name='PSLUncertCalc')
+               name='Suncal')

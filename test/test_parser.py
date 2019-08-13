@@ -5,7 +5,7 @@ import pytest
 import os
 import numpy
 
-import psluncert.uparser as uparser
+import suncal.uparser as uparser
 
 def test_check_expr_ok():
     ''' Test check_expr. These should evaluate ok, no exception raised. '''

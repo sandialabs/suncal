@@ -4,10 +4,10 @@ import sysconfig
 
 block_cipher = None
 
-a = Analysis(['psluncert/startui.py'],
-             pathex=['psluncert'],
+a = Analysis(['suncal/startui.py'],
+             pathex=['suncal'],
              binaries=None,
-             datas=[('psluncert/gui/PSLUCmanual.pdf', '.')],
+             datas=[('suncal/gui/SUNCALmanual.pdf', '.')],
              hiddenimports=[sysconfig._get_sysconfigdata_name(True), '_sysconfigdata_m_darwin_darwin'],  # Needed to patch yet another pyinstaller bug (https://github.com/pyinstaller/pyinstaller/issues/3105)
              hookspath=[],
              runtime_hooks=[],
@@ -28,13 +28,13 @@ exe = EXE(pyz,
           a.binaries,
           a.zipfiles,
           a.datas,
-          name='PSL Uncertainty Calculator',
+          name='Sandia PSL Uncertainty Calculator',
           debug=False,
           strip=False,
           upx=True,
           console=False )
 app = BUNDLE(exe,
-             name='PSL Uncertainty Calculator.app',
-             icon='psluncert/gui/PSLcal_logo.icns',
+             name='Sandia PSL Uncertainty Calculator.app',
+             icon='suncal/gui/PSLcal_logo.icns',
              info_plist={'NSHighResolutionCapable': 'True'},
              bundle_identifier=None)

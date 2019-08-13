@@ -5,9 +5,9 @@ import os
 import numpy as np
 import sympy
 
-import psluncert as uc
-from psluncert import uncertainty
-from psluncert import curvefit
+import suncal as uc
+from suncal import uncertainty
+from suncal import curvefit
 
 
 def test_chain():
@@ -20,33 +20,33 @@ def test_chain():
     u.set_function('2*f', name='g')
     u.set_function('2*g', name='h')
     u.calculate()
-    assert np.isclose(u.out.f.gum.mean, u.out.g.gum.mean/2)
-    assert np.isclose(u.out.g.gum.mean, u.out.h.gum.mean/2)
-    assert np.isclose(u.out.f.gum.uncert, u.out.g.gum.uncert/2)
-    assert np.isclose(u.out.g.gum.uncert, u.out.h.gum.uncert/2)
+    assert np.isclose(u.out.f.gum.mean.magnitude, u.out.g.gum.mean.magnitude/2)
+    assert np.isclose(u.out.g.gum.mean.magnitude, u.out.h.gum.mean.magnitude/2)
+    assert np.isclose(u.out.f.gum.uncert.magnitude, u.out.g.gum.uncert.magnitude/2)
+    assert np.isclose(u.out.g.gum.uncert.magnitude, u.out.h.gum.uncert.magnitude/2)
 
-    assert np.isclose(u.out.f.mc.mean, u.out.g.mc.mean/2, rtol=.02)
-    assert np.isclose(u.out.g.mc.mean, u.out.h.mc.mean/2, rtol=.02)
-    assert np.isclose(u.out.f.mc.uncert, u.out.g.mc.uncert/2, rtol=.05)
-    assert np.isclose(u.out.g.mc.uncert, u.out.h.mc.uncert/2, rtol=.05)
+    assert np.isclose(u.out.f.mc.mean.magnitude, u.out.g.mc.mean.magnitude/2, rtol=.02)
+    assert np.isclose(u.out.g.mc.mean.magnitude, u.out.h.mc.mean.magnitude/2, rtol=.02)
+    assert np.isclose(u.out.f.mc.uncert.magnitude, u.out.g.mc.uncert.magnitude/2, rtol=.05)
+    assert np.isclose(u.out.g.mc.uncert.magnitude, u.out.h.mc.uncert.magnitude/2, rtol=.05)
 
     # Now change the base equation and verify everything trickles down
-    oldh_mean = u.out.h.gum.mean
-    oldh_unc = u.out.h.gum.uncert
+    oldh_mean = u.out.h.gum.mean.magnitude
+    oldh_unc = u.out.h.gum.uncert.magnitude
     u.set_function('(x+y)/2', name='f')
     u.calculate()
-    assert oldh_mean/2 == u.out.h.gum.mean
-    assert oldh_unc/2 == u.out.h.gum.uncert
+    assert oldh_mean/2 == u.out.h.gum.mean.magnitude
+    assert oldh_unc/2 == u.out.h.gum.uncert.magnitude
 
-    assert np.isclose(u.out.f.gum.mean, u.out.g.gum.mean/2)
-    assert np.isclose(u.out.g.gum.mean, u.out.h.gum.mean/2)
-    assert np.isclose(u.out.f.gum.uncert, u.out.g.gum.uncert/2)
-    assert np.isclose(u.out.g.gum.uncert, u.out.h.gum.uncert/2)
+    assert np.isclose(u.out.f.gum.mean.magnitude, u.out.g.gum.mean.magnitude/2)
+    assert np.isclose(u.out.g.gum.mean.magnitude, u.out.h.gum.mean.magnitude/2)
+    assert np.isclose(u.out.f.gum.uncert.magnitude, u.out.g.gum.uncert.magnitude/2)
+    assert np.isclose(u.out.g.gum.uncert.magnitude, u.out.h.gum.uncert.magnitude/2)
 
-    assert np.isclose(u.out.f.mc.mean, u.out.g.mc.mean/2, rtol=.02)
-    assert np.isclose(u.out.g.mc.mean, u.out.h.mc.mean/2, rtol=.02)
-    assert np.isclose(u.out.f.mc.uncert, u.out.g.mc.uncert/2, rtol=.02)
-    assert np.isclose(u.out.g.mc.uncert, u.out.h.mc.uncert/2, rtol=.02)
+    assert np.isclose(u.out.f.mc.mean.magnitude, u.out.g.mc.mean.magnitude/2, rtol=.02)
+    assert np.isclose(u.out.g.mc.mean.magnitude, u.out.h.mc.mean.magnitude/2, rtol=.02)
+    assert np.isclose(u.out.f.mc.uncert.magnitude, u.out.g.mc.uncert.magnitude/2, rtol=.02)
+    assert np.isclose(u.out.g.mc.uncert.magnitude, u.out.h.mc.uncert.magnitude/2, rtol=.02)
     assert id(u.variables) == varid
 
     # Double-chaining, order shouldn't matter
@@ -90,7 +90,7 @@ def test_callable():
     assert u.functions[0].get_basemeans()['a'] == 5
 
     u.calculate()
-    assert np.isclose(u.out.get_output(method='gum').mean, 9)
+    assert np.isclose(u.out.get_output(method='gum').mean.magnitude, 9)
 
 
 def test_callablekwargs():
@@ -115,7 +115,7 @@ def test_callablekwargs():
     u.set_uncert('x', std=.1)
     u.set_uncert('y', std=.2)
     u.calculate()
-    assert np.isclose(u.out.get_output(method='gum').mean, 8)
+    assert np.isclose(u.out.get_output(method='gum').mean.magnitude, 8)
 
 
 def test_chaincallable():
@@ -144,15 +144,16 @@ def test_chaincallable():
     u.set_uncert('x', std=.1)
     u.set_uncert('y', std=.5)
     u.calcGUM()
-    assert np.isclose(u.out.get_output(fidx=0, method='gum').mean, 20)
-    assert np.isclose(u.out.get_output(fidx=1, method='gum').mean, 120)
+    assert np.isclose(u.out.get_output(fidx=0, method='gum').mean.magnitude, 20)
+    assert np.isclose(u.out.get_output(fidx=1, method='gum').mean.magnitude, 120)
 
     cont = u.get_contour(0,1)  # Test contour generation - when functions have different length arguments
     assert cont[0].shape == (50,50)  # X grid
     assert cont[1].shape == (50,50)  # Y grid
     assert cont[2].shape == (50,50)  # PDF grid
 
-
+    
+@pytest.mark.filterwarnings('ignore')  # Will generate unitstripped warning due to use of np.vectorize with unit values
 def test_vectorize():
     ''' Make sure non-vectorized functions can run. Also tests function with kwargs arguments '''
     # This function is not vectorizable as-is. Calculator will try it, fail, and then
@@ -178,7 +179,7 @@ def test_vectorize():
         u.set_uncert(Tname, std=.05)
     u.calculate(GUM=False)
     MC = u.out.get_output(method='mc')
-    assert np.isclose(MC.mean, 0.0005, atol=.0001)
+    assert np.isclose(MC.mean.magnitude, 0.0005, atol=.0001)
 
 
 @pytest.mark.filterwarnings('ignore')  # Will generate a np warning about degrees of freedom <= 0
@@ -192,8 +193,8 @@ def test_constant():
     u.calculate()
     GUM1 = u.out.a.gum
     GUM2 = u.out.get_output(fidx=1, method='gum')
-    assert np.isclose(GUM1.mean, 10)
-    assert np.isclose(GUM2.mean, 15)
+    assert np.isclose(GUM1.mean.magnitude, 10)
+    assert np.isclose(GUM2.mean.magnitude, 15)
 
 
 def test_readconfig():
@@ -309,19 +310,19 @@ def test_reserved():
     # "pi" is 3.14, not a symbol
     u = uc.UncertaintyCalc('pi', seed=0)
     u.calculate(MC=False)
-    assert np.isclose(u.out.get_output(method='gum').mean, np.pi)
+    assert np.isclose(u.out.get_output(method='gum').mean.magnitude, np.pi)
 
     # "gamma" is a symbol, not gamma function
     u = uc.UncertaintyCalc('gamma/2')
     u.set_input('gamma', nom=10)
     u.calculate(MC=False)
-    assert np.isclose(u.out.get_output(method='gum').mean, 5)
+    assert np.isclose(u.out.get_output(method='gum').mean.magnitude, 5)
 
     # But '"cos" is the sympy cosine, not a variable
     u = uc.UncertaintyCalc('cos(x)')
     u.set_input('x', nom=np.pi)
     u.calculate(MC=False)
-    assert np.isclose(u.out.get_output(method='gum').mean, np.cos(np.pi))
+    assert np.isclose(u.out.get_output(method='gum').mean.magnitude, np.cos(np.pi))
 
 def test_reorder():
     ''' Test UncertCalc.reorder() '''
@@ -395,9 +396,25 @@ def test_expanded():
     fit.calculate(mc=True)
     mins, maxs, ks = fit.out.mc.expanded()
     mins2, maxs2, ks2 = fit.out.mc.expanded(shortest=True)
-    assert np.allclose(mins, mins2, atol=.1)
-    assert np.allclose(maxs, maxs2, atol=.1)
+    assert np.allclose([m.magnitude for m in mins], [m.magnitude for m in mins2], atol=.1)
+    assert np.allclose([m.magnitude for m in maxs], [m.magnitude for m in maxs2], atol=.1)
     assert np.allclose(ks, ks2, atol=.1)
 
 
-
+def test_savesamples(tmpdir):
+    ''' Test savesamples function, in txt and npz formats. '''
+    np.random.seed(1111)
+    u = uc.UncertCalc('f=a+b', units='meter', samples=20)
+    u.set_input('a', nom=10, std=.1, units='cm')
+    u.set_input('b', nom=20, std=.2, units='mm')
+    u.calculate()
+    sfile = os.path.join(tmpdir, 'samples.txt')
+    nfile = os.path.join(tmpdir, 'samples.npz')
+    u.save_samples(sfile, fmt='csv')
+    u.save_samples(nfile, fmt='npz')
+    
+    # Load in and compare (only comparing output column here)
+    loadedsamples = np.genfromtxt(sfile, skip_header=1)
+    assert np.allclose(loadedsamples[:,2], u.out.get_output('f', method='mc').properties['samples'].magnitude)
+    loadednpz = np.load(nfile)
+    assert np.allclose(loadednpz['samples'][:,2], u.out.get_output('f', method='mc').properties['samples'].magnitude)

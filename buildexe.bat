@@ -1,10 +1,10 @@
 REM Make standalone exe and installer for Windows
 
-for /f %%i in ('python -c "import psluncert; print(psluncert.version.__version__)"') do set VER=%%i
-echo Building PSL Uncert Calc Executable %VER%
+for /f %%i in ('python -c "import suncal; print(suncal.version.__version__)"') do set VER=%%i
+echo Building Sandia PSL Uncert Calc Executable %VER%
 
 echo Generating License Information...
-python psluncert/gui/gen_licenses.py
+python suncal/gui/gen_licenses.py
 
 echo Building Standalone Exe
 pyinstaller --windowed --onefile uncertwinonefile.spec

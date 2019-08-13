@@ -3,10 +3,10 @@
 block_cipher = None
 
 
-a = Analysis(['psluncert\\startui.py'],
+a = Analysis(['suncal\\startui.py'],
              pathex=[],
              binaries=[],
-             datas=[('psluncert/gui/PSLUCmanual.pdf', '.')],
+             datas=[('suncal/gui/SUNCALmanual.pdf', '.')],
              hiddenimports=[],
              hookspath=[],
              runtime_hooks=[],
@@ -23,10 +23,10 @@ exe = EXE(pyz,
           a.binaries,
           a.zipfiles,
           a.datas,
-          name='PSLUncertCalc',
+          name='SandiaUncertCalc',
           debug=False,
           strip=False,
-          icon='psluncert/gui/PSLcal_logo.ico',
+          icon='suncal/gui/PSLcal_logo.ico',
           upx=True,
           console=False)
 

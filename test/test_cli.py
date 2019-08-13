@@ -1,32 +1,31 @@
 ''' Test command-line interface '''
 
 import os
-import subprocess
 import numpy as np
 from scipy import stats
 
-import psluncert as uc
-from psluncert import project
-from psluncert import reverse
-from psluncert import risk
-from psluncert import curvefit
-from psluncert import output
-from psluncert import customdists
+import suncal as uc
+from suncal import project
+from suncal import reverse
+from suncal import risk
+from suncal import curvefit
+from suncal import output
+from suncal import customdists
+from suncal import __main__ as cli
 
-
-def test_file():
+def test_file(capsys):
     ''' Test running a yaml file '''
     fname = 'test/ex_expansion.yaml'
     u = project.Project.from_configfile(fname)
     u.calculate()
     with output.report_format('text', 'text'):
         report = str(u.report_short())
-    s = subprocess.run(['psluncertf', fname], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-    report2 = s.stdout.decode('utf-8').replace('\r', '')   # Windows adds \r to every \n, whether there's already an \r or not...?
+    cli.main_setup([fname])
+    report2, err = capsys.readouterr()
     assert report == report2
 
 
-def test_uc():
+def test_uc(capsys):
     ''' Test uncertainty calc '''
     u = uc.UncertCalc('f = a * b + c', seed=4848484)
     u.set_input('a', nom=10, std=1)
@@ -38,29 +37,26 @@ def test_uc():
     with output.report_format('text', 'text'):
         report = str(out.report())
 
-    s = subprocess.run(['psluncert', 'f=a*b+c', '--variables', 'a=10', 'b=5', 'c=3', '--uncerts', 'a; std=1', 'b; dist=uniform; a=.5', 'c; unc=3; k=2', '--correlate', 'a; b; .6', 'c; b; -.3'],
-                       stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-    report2 = s.stdout.decode('utf-8').replace('\r', '')
+    cli.main_unc(['f=a*b+c', '--variables', 'a=10', 'b=5', 'c=3', '--uncerts', 'a; std=1', 'b; dist=uniform; a=.5', 'c; unc=3; k=2', '--correlate', 'a; b; .6', 'c; b; -.3'])
+    report2, err = capsys.readouterr()
     assert report == report2
 
     # HTML format
     with output.report_format('mpl', 'svg'):
         reporthtml = out.report().get_html()
-    s = subprocess.run(['psluncert', 'f=a*b+c', '--variables', 'a=10', 'b=5', 'c=3', '--uncerts', 'a; std=1', 'b; dist=uniform; a=.5', 'c; unc=3; k=2', '--correlate', 'a; b; .6', 'c; b; -.3', '-f', 'html'],
-                       stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-    report2html = s.stdout.decode('utf-8').replace('\r', '')
+    cli.main_unc(['f=a*b+c', '--variables', 'a=10', 'b=5', 'c=3', '--uncerts', 'a; std=1', 'b; dist=uniform; a=.5', 'c; unc=3; k=2', '--correlate', 'a; b; .6', 'c; b; -.3', '-f', 'html'])
+    report2html, err = capsys.readouterr()
     assert reporthtml == report2html
 
     # MD format
     with output.report_format('mpl', 'svg'):
         reportmd = out.report().get_md()
-    s = subprocess.run(['psluncert', 'f=a*b+c', '--variables', 'a=10', 'b=5', 'c=3', '--uncerts', 'a; std=1', 'b; dist=uniform; a=.5', 'c; unc=3; k=2', '--correlate', 'a; b; .6', 'c; b; -.3', '-f', 'md'],
-                       stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-    report2md = s.stdout.decode('utf-8').replace('\r', '')
+    cli.main_unc(['f=a*b+c', '--variables', 'a=10', 'b=5', 'c=3', '--uncerts', 'a; std=1', 'b; dist=uniform; a=.5', 'c; unc=3; k=2', '--correlate', 'a; b; .6', 'c; b; -.3', '-f', 'md'])
+    report2md, err = capsys.readouterr()
     assert reportmd == report2md
 
 
-def test_rev():
+def test_rev(capsys):
     ''' Test reverse calc '''
     expr = 'rho = w / (k*d**2*h)'
     k = 12.870369  # pi/4*2.54**3, no uncertainty
@@ -83,67 +79,67 @@ def test_rev():
     with output.report_format('text', 'text'):
         report = str(out.report())
 
-    s = subprocess.run(['psluncertrev', 'rho=w/(k*d**2*h)', '--target={}'.format(rho), '--targetunc={}'.format(urho), '--solvefor=w', '--variables', 'h=.5', 'd=.25', 'k=12.870369',
-                        '--uncerts', 'h; std=.0005', 'd; std=.0005'],
-                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-    report2 = s.stdout.decode('utf-8').replace('\r', '')
+    cli.main_reverse(['rho=w/(k*d**2*h)', '--target={}'.format(rho), '--targetunc={}'.format(urho), '--solvefor=w', '--variables', 'h=.5', 'd=.25', 'k=12.870369', '--uncerts', 'h; std=.0005', 'd; std=.0005'])
+    report2, err = capsys.readouterr()
     assert report == report2
 
     # HTML format
     with output.report_format('mpl', 'svg'):
         reporthtml = out.report().get_html()
-    s = subprocess.run(['psluncertrev', 'rho=w/(k*d**2*h)', '--target={}'.format(rho), '--targetunc={}'.format(urho), '--solvefor=w', '--variables', 'h=.5', 'd=.25', 'k=12.870369',
-                        '--uncerts', 'h; std=.0005', 'd; std=.0005', '-f', 'html'],
-                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-    report2html = s.stdout.decode('utf-8').replace('\r', '')
+    cli.main_reverse(['rho=w/(k*d**2*h)', '--target={}'.format(rho), '--targetunc={}'.format(urho), '--solvefor=w', '--variables', 'h=.5', 'd=.25', 'k=12.870369', '--uncerts', 'h; std=.0005', 'd; std=.0005', '-f', 'html'])
+    report2html, err = capsys.readouterr()
     assert reporthtml == report2html
 
 
-def test_risk():
+def test_risk(capsys):
     ''' Test risk analysis command line '''
     # Normal risk report with test distribution and guardband
-    u = risk.UncertRisk(dproc=stats.norm(loc=0, scale=4), dtest=stats.norm(loc=0, scale=1))
+    u = risk.Risk()
+    u.set_procdist(stats.norm(loc=0, scale=4))
+    u.set_testdist(stats.norm(loc=0, scale=1))
     u.set_guardband(.2, .2)
     u.calculate()
     with output.report_format('text', 'text'):
         report = str(u.out.report())
-    s = subprocess.run(['psluncertrisk', '--procdist', 'loc=0; scale=4', '--testdist', 'loc=0; scale=1', '-LL', '-2', '-UL', '2', '-GBL', '.2', '-GBU', '.2'],
-                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-    report2 = s.stdout.decode('utf-8').replace('\r', '')
+    cli.main_risk(['--procdist', 'loc=0; scale=4', '--testdist', 'loc=0; scale=1', '-LL', '-1', '-UL', '1', '-GBL', '.2', '-GBU', '.2'])
+    report2, err = capsys.readouterr()
     assert report == report2
 
     # Without test distribution
-    u = risk.UncertRisk(dproc=stats.norm(loc=0, scale=4), dtest=None)
+    u = risk.Risk()
+    u.set_procdist(stats.norm(loc=0, scale=4))
+    u.set_testdist(None)
     u.calculate()
     with output.report_format('text', 'text'):
         report = str(u.out.report())
-    s = subprocess.run(['psluncertrisk', '--procdist', 'loc=0; scale=4', '-LL', '-2', '-UL', '2'],
-                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-    report2 = s.stdout.decode('utf-8').replace('\r', '')
+    cli.main_risk(['--procdist', 'loc=0; scale=4', '-LL', '-1', '-UL', '1'])
+    report2, err = capsys.readouterr()
     assert report == report2
 
     # With non-normal distribution
-    u = risk.UncertRisk(dproc=customdists.uniform(a=2), dtest=stats.norm(loc=0, scale=.5))
+    u = risk.Risk()
+    u.set_procdist(customdists.uniform(a=2))
+    u.set_testdist(stats.norm(loc=0, scale=.5))
     u.calculate()
     with output.report_format('text', 'text'):
         report = str(u.out.report())
-    s = subprocess.run(['psluncertrisk', '--procdist', 'dist=uniform; a=2; median=0', '--testdist', 'loc=0; scale=.5', '-LL', '-2', '-UL', '2'],
-                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-    report2 = s.stdout.decode('utf-8').replace('\r', '')
+    cli.main_risk([ '--procdist', 'dist=uniform; a=2; median=0', '--testdist', 'loc=0; scale=.5', '-LL', '-1', '-UL', '1'])
+    report2, err = capsys.readouterr()
     assert report == report2
 
     # With plots/verbose
-    u = risk.UncertRisk(dproc=stats.norm(loc=0, scale=4), dtest=stats.norm(loc=0, scale=1))
+    u = risk.Risk()
+    u.set_procdist(stats.norm(loc=0, scale=4))
+    u.set_testdist(stats.norm(loc=0, scale=1))
     u.calculate()
     with output.report_format('text', 'text'):
         report = str(u.out.report_all())
-    s = subprocess.run(['psluncertrisk', '--procdist', 'loc=0; scale=4', '--testdist', 'loc=0; scale=1', '-LL', '-2', '-UL', '2', '-v'],
-                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-    report2 = s.stdout.decode('utf-8').replace('\r', '')
+    cli.main_risk(['--procdist', 'loc=0; scale=4', '--testdist', 'loc=0; scale=1', '-LL', '-1', '-UL', '1', '-v'])
+    report2, err = capsys.readouterr()
     assert report == report2
 
 
-def test_curve():
+def test_curve(capsys):
     ''' Test Curve fit command line '''
     x = np.array([30,100,200,300,400,500,600,700,800,900,1000,1100,1200,1300,1400,1500])
     y = np.array([4642,4612,4565,4513,4476,4433,4389,4347,4303,4251,4201,4140,4100,4073,4024,3999])
@@ -155,8 +151,7 @@ def test_curve():
 
     x = ['{}'.format(k) for k in x]
     y = ['{}'.format(k) for k in y]
-    s = subprocess.run(['psluncertfit', '-x', *x, '-y', *y, '--methods', 'lsq', 'gum'],
-                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-    report2 = s.stdout.decode('utf-8').replace('\r', '')
+    cli.main_curvefit(['-x', *x, '-y', *y, '--methods', 'lsq', 'gum'])
+    report2, err = capsys.readouterr()
     assert report == report2
 

@@ -1,29 +1,30 @@
 from setuptools import setup, find_packages
 
 version = {}
-with open('psluncert/version.py', 'r') as f:
+with open('suncal/version.py', 'r') as f:
     exec(f.read(), version)
 
 setup(
-    name='psluncert',
+    name='suncal',
     version=version['__version__'],
-    packages=find_packages(),
-    description='PSL Uncertainty Calculator',
+    description='Sandia PSL Uncertainty Calculator',
     author='Collin J. Delker',
-    author_email='cjdelke@sandia.gov',
+    author_email='uncertainty@sandia.gov',
     install_requires=[
         'sympy>=1.3',
         'scipy>=1.1',
         'numpy>=1.15',
         ],
+    packages=['suncal', 'suncal.gui', 'psluncert'],
+    package_dir={'suncal': 'suncal', 'suncal.gui': 'suncal/gui', 'psluncert': 'suncal'},
     entry_points={
-        'console_scripts': ['psluncert = psluncert.__main__:main_unc',
-                            'psluncertf = psluncert.__main__:main_setup',
-                            'psluncertrev = psluncert.__main__:main_reverse',
-                            'psluncertrisk = psluncert.__main__:main_risk',
-                            'psluncertfit = psluncert.__main__:main_curvefit',
+        'console_scripts': ['suncal = suncal.__main__:main_unc',
+                            'suncalf = suncal.__main__:main_setup',
+                            'suncalrev = suncal.__main__:main_reverse',
+                            'suncalrisk = suncal.__main__:main_risk',
+                            'suncalfit = suncal.__main__:main_curvefit',
                             ],
-        'gui_scripts': ['psluncertui = psluncert.gui.gui_main:main'],
+        'gui_scripts': ['suncalui = suncal.gui.gui_main:main'],
         },
     classifiers=[
         'Programming Language :: Python',

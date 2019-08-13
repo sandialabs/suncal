@@ -6,10 +6,10 @@ import scipy
 import sympy
 from dateutil.parser import parse
 
-import psluncert
-from psluncert import uarray
-from psluncert import curvefit
-from psluncert import anova
+import suncal 
+from suncal import uarray
+from suncal import curvefit
+from suncal import anova
 
 
 # Made up data, hard-coded here for consistent testing
@@ -42,10 +42,10 @@ def test_linefit1():
 
     # Check fit results, and uncertainties of slope, intercept, Syx
     # Values from Natrella Worksheet 5-4.1
-    assert np.isclose(fit.out.lsq.mean[0], -0.44985482)
-    assert np.isclose(fit.out.lsq.mean[1], 4654.9846)
-    assert np.isclose(fit.out.lsq.uncert[0], np.sqrt(0.000025649045))
-    assert np.isclose(fit.out.lsq.uncert[1], np.sqrt(19.879452))
+    assert np.isclose(fit.out.lsq.coeffs[0], -0.44985482)
+    assert np.isclose(fit.out.lsq.coeffs[1], 4654.9846)
+    assert np.isclose(fit.out.lsq.sigmas[0], np.sqrt(0.000025649045))
+    assert np.isclose(fit.out.lsq.sigmas[1], np.sqrt(19.879452))
     assert np.isclose(fit.out.lsq.properties['Syx'], 9.277617)
 
     # Check conf and pred bands. Relax tolerance due to round-off error
@@ -53,8 +53,8 @@ def test_linefit1():
     assert np.isclose(fit.out.lsq.u_pred(750), np.sqrt(91.45), rtol=.01)   # From page 5-15, var Y'c
 
     # After version 1.1, GUM and MC should estimate uy same as LSQ and get the same answer.
-    assert np.allclose(fit.out.lsq.uncert, fit.out.gum.uncert, rtol=.01)
-    assert np.allclose(fit.out.lsq.uncert, fit.out.mc.uncert, rtol=.01)
+    assert np.allclose(fit.out.lsq.sigmas, fit.out.gum.sigmas, rtol=.01)
+    assert np.allclose(fit.out.lsq.sigmas, fit.out.mc.sigmas, rtol=.01)
 
 def test_linefit2():
     ''' Straight line fit, uncertainty in y but not x. Verify GUM/MC/lsq methods match.
@@ -67,10 +67,10 @@ def test_linefit2():
     f = curvefit.CurveFit(arr, func='line')
     f.calculate(gum=True, mc=True, lsq=True)
 
-    assert np.allclose(f.out.lsq.mean, f.out.gum.mean)
-    assert np.allclose(f.out.lsq.mean, f.out.mc.mean, rtol=1E-2)  # MC - relax tolerance
-    assert np.allclose(f.out.lsq.uncert, f.out.gum.uncert)
-    assert np.allclose(f.out.lsq.uncert, f.out.mc.uncert, rtol=1E-2)
+    assert np.allclose(f.out.lsq.coeffs, f.out.gum.coeffs)
+    assert np.allclose(f.out.lsq.coeffs, f.out.mc.coeffs, rtol=1E-2)  # MC - relax tolerance
+    assert np.allclose(f.out.lsq.sigmas, f.out.gum.sigmas)
+    assert np.allclose(f.out.lsq.sigmas, f.out.mc.sigmas, rtol=1E-2)
     assert np.isclose(f.out.lsq.properties['Syx'], f.out.gum.properties['Syx'])
     assert np.isclose(f.out.lsq.properties['Syx'], f.out.mc.properties['Syx'], rtol=.01)
 
@@ -90,10 +90,10 @@ def test_linefit2():
     f = curvefit.CurveFit(arr, func='line')
     f.calculate(samples=5000, gum=True, mc=True, lsq=True)
 
-    assert np.allclose(f.out.lsq.mean, f.out.gum.mean, rtol=1E-2)
-    assert np.allclose(f.out.lsq.mean, f.out.mc.mean, rtol=1E-1)
-    assert np.allclose(f.out.lsq.uncert, f.out.gum.uncert, rtol=1E-1)
-    assert np.allclose(f.out.lsq.uncert, f.out.mc.uncert, rtol=1E-1)
+    assert np.allclose(f.out.lsq.coeffs, f.out.gum.coeffs, rtol=1E-2)
+    assert np.allclose(f.out.lsq.coeffs, f.out.mc.coeffs, rtol=1E-1)
+    assert np.allclose(f.out.lsq.sigmas, f.out.gum.sigmas, rtol=1E-1)
+    assert np.allclose(f.out.lsq.sigmas, f.out.mc.sigmas, rtol=1E-1)
     assert np.isclose(f.out.lsq.properties['Syx'], f.out.gum.properties['Syx'], rtol=.01)
     assert np.isclose(f.out.lsq.properties['Syx'], f.out.mc.properties['Syx'], rtol=.01)
 
@@ -112,10 +112,10 @@ def test_linefitgum():
     fit = curvefit.CurveFit(arr)
     out = fit.calc_LSQ()
     # Results in H.3.3 - within reported digits
-    assert np.isclose(out.mean[0], .00218, atol=.00001)
-    assert np.isclose(out.mean[1], -.1712, atol=.0001)
-    assert np.isclose(out.uncert[0], .00067, atol=.00001)
-    assert np.isclose(out.uncert[1], .0029, atol=.0001)
+    assert np.isclose(out.coeffs[0], .00218, atol=.00001)
+    assert np.isclose(out.coeffs[1], -.1712, atol=.0001)
+    assert np.isclose(out.sigmas[0], .00067, atol=.00001)
+    assert np.isclose(out.sigmas[1], .0029, atol=.0001)
     assert np.isclose(out.properties['cor'][0,1], -.930, atol=.001)
     assert np.isclose(out.properties['Syx'], .0035, atol=.0001)
 
@@ -148,16 +148,16 @@ def test_curvefit():
     f.calculate(gum=True, mc=True, lsq=True)
 
     # Gauss-Newton method. See figure 11-7. Tolerances to match sigfigs in book.
-    assert np.isclose(f.out.lsq.mean[0], 17.6, atol=.1)
-    assert np.isclose(f.out.lsq.mean[1], 17.4, atol=.1)
-    assert np.isclose(f.out.gum.mean[0], 17.6, atol=.1)
-    assert np.isclose(f.out.gum.mean[1], 17.4, atol=.1)
-    assert np.isclose(f.out.mc.mean[0], 17.6, atol=.1)
-    assert np.isclose(f.out.mc.mean[1], 17.4, atol=.1)
+    assert np.isclose(f.out.lsq.coeffs[0], 17.6, atol=.1)
+    assert np.isclose(f.out.lsq.coeffs[1], 17.4, atol=.1)
+    assert np.isclose(f.out.gum.coeffs[0], 17.6, atol=.1)
+    assert np.isclose(f.out.gum.coeffs[1], 17.4, atol=.1)
+    assert np.isclose(f.out.mc.coeffs[0], 17.6, atol=.1)
+    assert np.isclose(f.out.mc.coeffs[1], 17.4, atol=.1)
     assert np.isclose(sum(f.out.lsq.properties['resids']**2), 356, atol=1)
 
-    assert np.isclose(f.out.lsq.uncert[0], .101838)  # Sigmas shown in fig 11-7 as "asymptotic std error"
-    assert np.isclose(f.out.lsq.uncert[1], .65815)
+    assert np.isclose(f.out.lsq.sigmas[0], .101838)  # Sigmas shown in fig 11-7 as "asymptotic std error"
+    assert np.isclose(f.out.lsq.sigmas[1], .65815)
     assert np.allclose(f.out.lsq.properties['cor'], np.array([[1, .0772],[.0772, 1]]), atol=.0001)
     # GUM and MC will not have these sigmas as there's 0 ux, uy, so the GUM has 0 gradient and MC repeats the same point
 
@@ -167,18 +167,18 @@ def test_curvefit():
     arr = curvefit.Array(x, y, uy=.5)
     f = curvefit.CurveFit(arr, cosmodel, p0=(17., 18.))
     f.calculate(gum=True, mc=True, lsq=True)
-    assert np.allclose(f.out.lsq.mean, f.out.gum.mean, atol=.01)  # Reported sigfigs
-    assert np.allclose(f.out.lsq.mean, f.out.mc.mean, atol=.01)
-    assert np.allclose(f.out.lsq.uncert, f.out.gum.uncert, atol=.01)
-    assert np.allclose(f.out.lsq.uncert, f.out.mc.uncert, atol=.01)
+    assert np.allclose(f.out.lsq.coeffs, f.out.gum.coeffs, atol=.01)  # Reported sigfigs
+    assert np.allclose(f.out.lsq.coeffs, f.out.mc.coeffs, atol=.01)
+    assert np.allclose(f.out.lsq.sigmas, f.out.gum.sigmas, atol=.01)
+    assert np.allclose(f.out.lsq.sigmas, f.out.mc.sigmas, atol=.01)
 
     # And with uncertainty in x. GUM will quit working here, but it exercises ODR.
     np.random.seed(100)
     arr = curvefit.Array(x, y, uy=.5, ux=.1)
     f = curvefit.CurveFit(arr, cosmodel, p0=(17., 18.))
     f.calculate(gum=True, mc=True, lsq=True)
-    assert np.allclose(f.out.lsq.mean, f.out.mc.mean, atol=.5)
-    assert np.allclose(f.out.lsq.uncert, f.out.mc.uncert, atol=.005)
+    assert np.allclose(f.out.lsq.coeffs, f.out.mc.coeffs, atol=.5)
+    assert np.allclose(f.out.lsq.sigmas, f.out.mc.sigmas, atol=.005)
 
 
 def test_curvefitcustom():
@@ -189,8 +189,8 @@ def test_curvefitcustom():
     arr = curvefit.Array(x, y)
     fit = curvefit.CurveFit(arr, 'a*exp(-b*x)', p0=(6.5E-8, 4.5E-5))
     out = fit.calc_LSQ()
-    assert np.isclose(out.mean[0], 6.621E-8, atol=.001E-8)
-    assert np.isclose(out.mean[1], 4.404E-5, atol=.001E-5)
+    assert np.isclose(out.coeffs[0], 6.621E-8, atol=.001E-8)
+    assert np.isclose(out.coeffs[1], 4.404E-5, atol=.001E-5)
 
 
 def test_curvefitdate():
@@ -217,8 +217,8 @@ def test_ttest(capsys):
     lsqout = fit.calc_LSQ()
 
     # Verify slope/intercept and uncertainties (some tolerance due to rounding)
-    assert np.allclose(lsqout.mean, np.array([.44, -6.0]), rtol=.01)    # pg 19
-    assert np.allclose(lsqout.uncert, np.array([.064, 2.4]), rtol=.01)  # Eq 2.9, pg 24
+    assert np.allclose(lsqout.coeffs, np.array([.44, -6.0]), rtol=.01)    # pg 19
+    assert np.allclose(lsqout.sigmas, np.array([.064, 2.4]), rtol=.01)  # Eq 2.9, pg 24
 
     # Verify t-test values (pg 26)
     assert lsqout.test_t(verbose=True, conf=.999)   # test should pass
@@ -241,12 +241,12 @@ def test_arraythresh():
     f.calculate(gum=True, mc=True, lsq=True)
 
     expected = -5*np.log(2/5)  # Solve analytically
-    assert np.isclose(f.out.lsq.mean, expected, atol=.01)  # lsq uses discrete interpolation
-    assert np.isclose(f.out.gum.mean, expected, atol=.01)
-    assert np.isclose(f.out.mc.mean, expected, atol=.2)
+    assert np.isclose(f.out.lsq.mean.magnitude, expected, atol=.01)  # lsq uses discrete interpolation
+    assert np.isclose(f.out.gum.mean.magnitude, expected, atol=.01)
+    assert np.isclose(f.out.mc.mean.magnitude, expected, atol=.2)
 
-    assert np.isclose(f.out.lsq.uncert, f.out.gum.uncert, atol=.3)  # Different methods will vary a bit
-    assert np.isclose(f.out.lsq.uncert, f.out.mc.uncert, atol=.3)
+    assert np.isclose(f.out.lsq.uncert.magnitude, f.out.gum.uncert.magnitude, atol=.3)  # Different methods will vary a bit
+    assert np.isclose(f.out.lsq.uncert.magnitude, f.out.mc.uncert.magnitude, atol=.3)
 
 
 def test_linefitcalc():
@@ -255,14 +255,14 @@ def test_linefitcalc():
     fit = curvefit.CurveFit(arr)
     slope = curvefit.CurveFitParam(fit, pidx=0, name='slope')
 
-    u = psluncert.UncertaintyCalc(samples=500)
+    u = suncal.UncertaintyCalc(samples=500)
     u.set_function(slope)
     u.set_function('slope + 10', name='s10')
     u.calculate(gum=True, mc=True, lsq=True)
 
-    assert np.isclose(u.out.get_output(fidx=1, method='gum').mean, u.out.get_output(fidx=0, method='gum').mean + 10)
+    assert np.isclose(u.out.get_output(fidx=1, method='gum').mean.magnitude, u.out.get_output(fidx=0, method='gum').mean.magnitude + 10)
     # Only uncertainty is from slope, so u(slope) == u(slope+10)
-    assert np.isclose(u.out.get_output(fidx=0, method='gum').uncert, u.out.get_output(fidx=1, method='gum').uncert)
+    assert np.isclose(u.out.get_output(fidx=0, method='gum').uncert.magnitude, u.out.get_output(fidx=1, method='gum').uncert.magnitude)
 
 
 def test_arraygroup():
@@ -374,14 +374,12 @@ def test_mcmc1():
     arr = curvefit.Array(fig1[:,0], fig1[:,1], uy=0.2)
     fit = curvefit.CurveFit(arr, sqfunc, p0=(1,1))
     out = fit.calculate(mcmc=True, gum=True, mc=True, lsq=True)
-    assert np.isclose(out.mcmc.mean[1], 1.21, rtol=.01, atol=.01)
-    assert np.isclose(out.mcmc.uncert[1], 0.18, rtol=.01, atol=.01)
+    assert np.isclose(out.mcmc.coeffs[1], 1.21, rtol=.01, atol=.01)
+    assert np.isclose(out.mcmc.sigmas[1], 0.18, rtol=.01, atol=.01)
 
     # In this problem, the other methods are comparable.
-    assert np.isclose(out.mc.mean[1], 1.21, rtol=.01, atol=.01)
-    assert np.isclose(out.mc.mean[1], 1.21, rtol=.01, atol=.01)
-    assert np.isclose(out.lsq.mean[1], 1.21, rtol=.01, atol=.01)
-    assert np.isclose(out.lsq.mean[1], 1.21, rtol=.01, atol=.01)
+    assert np.isclose(out.mc.coeffs[1], 1.21, rtol=.01, atol=.01)
+    assert np.isclose(out.lsq.coeffs[1], 1.21, rtol=.01, atol=.01)
 
 
 def test_mcmc2():
@@ -403,8 +401,8 @@ def test_mcmc2():
     arr = curvefit.Array(fig2[:,0], fig2[:,1])
     fit = curvefit.CurveFit(arr, sqfunc, p0=(1,1))
     out = fit.calc_MCMC()
-    unc = out.uncert[1] * stats.t.ppf(1-(1-.68)/2, df=out.degf)  # Account for t-distribution
-    assert np.isclose(out.mean[1], 0.94, rtol=.01, atol=.01)
+    unc = out.sigmas[1] * stats.t.ppf(1-(1-.68)/2, df=out.degf)  # Account for t-distribution
+    assert np.isclose(out.coeffs[1], 0.94, rtol=.01, atol=.01)
     assert np.isclose(unc, 0.19, rtol=.01, atol=.02)
 
     # Compare against monte-carlo using pooled variance
@@ -412,8 +410,8 @@ def test_mcmc2():
     arr = curvefit.Array(fig2[:,0], fig2[:,1], uy=pool)
     fit = curvefit.CurveFit(arr, sqfunc, p0=(1,1))
     out = fit.calc_MC(samples=5000)
-    assert np.isclose(out.mean[1], 0.94, rtol=.01, atol=.01)
-    assert np.isclose(out.uncert[1], 0.37, rtol=.01, atol=.01)
+    assert np.isclose(out.coeffs[1], 0.94, rtol=.01, atol=.01)
+    assert np.isclose(out.sigmas[1], 0.37, rtol=.01, atol=.01)
 
 
 def test_mcmc3():
@@ -462,7 +460,7 @@ def test_mcmc3():
 
     # Verify uncertainty within 1%
     xrdpct = xrddat[:,:-2].std(ddof=1, axis=0) / xrddat[:,:-2].mean(axis=0)
-    pslpct = out.uncert/out.mean
+    pslpct = out.sigmas/out.coeffs
     assert np.allclose(pslpct, xrdpct, rtol=.01, atol=.01)
 
 
@@ -582,7 +580,7 @@ def test_namedfits():
     arr = curvefit.Array(x, y)
     fit = curvefit.CurveFit(arr, func='log', p0=(-50, 20, 80))
     fit.calculate()
-    assert np.allclose(fit.out.lsq.mean, [-50, 20, 80], rtol=.1)
+    assert np.allclose(fit.out.lsq.coeffs, [-50, 20, 80], rtol=.1)
 
     # Exponential
     np.random.seed(994942)
@@ -593,7 +591,7 @@ def test_namedfits():
     fit = curvefit.CurveFit(arr, func='exp', p0=(.05, 20, 50))
     fit.calculate()
     fit.out.lsq.plot_summary()
-    assert np.allclose(fit.out.lsq.mean, [.05, 20, 50], rtol=.2)
+    assert np.allclose(fit.out.lsq.coeffs, [.05, 20, 50], rtol=.2)
 
     # Exponential Decay
     np.random.seed(994943)
@@ -604,7 +602,7 @@ def test_namedfits():
     fit = curvefit.CurveFit(arr, func='decay')
     fit.calculate()
     fit.out.lsq.plot_summary()
-    assert np.allclose(fit.out.lsq.mean, [8, 10], rtol=.2)
+    assert np.allclose(fit.out.lsq.coeffs, [8, 10], rtol=.2)
 
     # Logistic
     np.random.seed(994942)
@@ -615,7 +613,7 @@ def test_namedfits():
     fit = curvefit.CurveFit(arr, func='logistic', p0=(-4, 3, 20, 2))
     fit.calculate()
     fit.out.lsq.plot_summary()
-    assert np.allclose(fit.out.lsq.mean, (-4, 3, 20, 2), rtol=.1)
+    assert np.allclose(fit.out.lsq.coeffs, (-4, 3, 20, 2), rtol=.1)
 
 
 def test_absolutesigma():
@@ -702,9 +700,9 @@ def test_absolutesigma2():
     Fnom = 84
     pred2747nom = 5.69E-8, 6.06E-8
 
-    assert np.allclose(fit.out.lsq.mean, (anom, bnom))
-    assert np.isclose(fit.out.lsq.uncert[0], uanom, atol=.01E-10)
-    assert np.isclose(fit.out.lsq.uncert[1], ubnom, atol=.01E-6)
+    assert np.allclose(fit.out.lsq.coeffs, (anom, bnom))
+    assert np.isclose(fit.out.lsq.sigmas[0], uanom, atol=.01E-10)
+    assert np.isclose(fit.out.lsq.sigmas[1], ubnom, atol=.01E-6)
     assert np.isclose(fit.out.lsq.properties['Syx'], stderrnom, atol=0.005E-10)
     assert np.isclose(fit.out.lsq.properties['r']**2, r2nom, atol=.001)
     assert np.isclose(fit.out.lsq.y(2747) + fit.out.lsq.u_pred(2747, conf=.95), pred2747nom[0])

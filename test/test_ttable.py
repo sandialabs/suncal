@@ -1,7 +1,7 @@
 ''' Test t-table calculations. Test values based on values in GUM Table G.2. '''
 
 import numpy as np
-from psluncert import ttable
+from suncal import ttable
 
 def test_t():
     # Test calculation of k given conf and degf

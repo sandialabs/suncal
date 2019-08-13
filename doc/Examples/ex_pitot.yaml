@@ -1,0 +1,55 @@
+- description: "Example from the original 1953 Kline-McClintock uncertainty paper\
+    \ on which the GUM is based, and discussed again in NIST 1900 Example E3.\n\n\
+    Here, the built-in units conversions are used with the original units given by\
+    \ Kline-McClintock. Note that air temperature is an absolute temperature (fahrenheit),\
+    \ while its uncertainty is a delta temperature (\u0394fahrenheit). Uncertainties\
+    \ were given at 95% (\"20 to 1 odds\"). "
+  functions:
+  - desc: Airspeed
+    expr: sqrt(2)*sqrt(Delta*R_s*T/p)
+    name: v
+    units: meter / second
+  inputs:
+  - desc: Difference in static vs total pressure
+    mean: 8.0
+    name: Delta
+    uncerts:
+    - degf: .inf
+      desc: ''
+      dist: normal
+      k: '2'
+      name: u(Delta)
+      unc: '.1'
+      units: H2O * inch
+    units: H2O * inch
+  - desc: Air Temperature
+    mean: 67.4
+    name: T
+    uncerts:
+    - degf: .inf
+      desc: ''
+      dist: normal
+      k: '2'
+      name: u(T)
+      unc: '0.2'
+      units: delta_degF
+    units: degF
+  - desc: Air Pressure
+    mean: 14.7
+    name: p
+    uncerts:
+    - degf: .inf
+      desc: ''
+      dist: normal
+      k: '2'
+      name: u(p)
+      unc: '.3'
+      units: pound_force_per_square_inch
+    units: pound_force_per_square_inch
+  - desc: Specific gas constant for dry air
+    mean: 287.06
+    name: R_s
+    units: joule / kelvin / kilogram
+  mode: uncertainty
+  name: uncertainty
+  samples: 1000000

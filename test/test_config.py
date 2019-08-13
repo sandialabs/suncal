@@ -4,7 +4,7 @@
 '''
 import pytest
 
-import psluncert.gui.configmgr as cfg
+import suncal.gui.configmgr as cfg
 
 s = cfg.Settings()
 s.setDefaults()

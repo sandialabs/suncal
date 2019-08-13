@@ -5,14 +5,14 @@ import os
 import numpy as np
 from scipy import stats
 
-import psluncert
-from psluncert import project
-from psluncert import anova
-from psluncert import sweeper
-from psluncert import reverse
-from psluncert import risk
-from psluncert import curvefit
-from psluncert import dist_explore
+import suncal
+from suncal import project
+from suncal import anova
+from suncal import sweeper
+from suncal import reverse
+from suncal import risk
+from suncal import curvefit
+from suncal import dist_explore
 
 
 def test_saveload_fname(tmpdir):
@@ -22,15 +22,15 @@ def test_saveload_fname(tmpdir):
 
     np.random.seed(588132535)
     # Set up several project components of the different types
-    u = psluncert.UncertCalc('f = m/(pi*r**2)', seed=44444)
+    u = suncal.UncertCalc('f = m/(pi*r**2)', seed=44444)
     u.set_input('m', nom=2, std=.2)
     u.set_input('r', nom=1, std=.1)
 
-    u2 = psluncert.UncertCalc('g = m * 5', seed=4444)
+    u2 = suncal.UncertCalc('g = m * 5', seed=4444)
     u2.set_input('m', nom=5, std=.5)
 
-    rsk = risk.UncertRisk()
-    rsk.set_process_dist(stats.t(loc=.5, scale=1, df=9))
+    rsk = risk.Risk()
+    rsk.set_procdist(stats.t(loc=.5, scale=1, df=9))
 
     swp = sweeper.UncertSweep(u)
     swp.add_sweep_nom('m', values=[.5, 1, 1.5, 2])
@@ -46,10 +46,10 @@ def test_saveload_fname(tmpdir):
     revswp = sweeper.UncertSweepReverse(rev)
     revswp.add_sweep_unc('r', values=[.01, .02, .03, .04], comp='u(r)', param='std')
 
-    explore = dist_explore.DistExplore()
-    explore.add_dist('a', stats.norm(loc=3, scale=2))
-    explore.add_dist('b', stats.uniform(loc=0, scale=2))
-    explore.add_dist('a+b')
+    explore = dist_explore.DistExplore(seed=8888)
+    explore.set_dist('a', stats.norm(loc=3, scale=2))
+    explore.set_dist('b', stats.uniform(loc=0, scale=2))
+    explore.set_dist('a+b')
     explore.get_config()
 
     anv = anova.ArrayGrouped()
@@ -87,8 +87,8 @@ def test_saveload_fname(tmpdir):
 
 def test_projrem():
     # Test add/remove items from project
-    u = psluncert.UncertCalc('f = a*b', name='function1')
-    u2 = psluncert.UncertCalc('g = c*d', name='function2')
+    u = suncal.UncertCalc('f = a*b', name='function1')
+    u2 = suncal.UncertCalc('g = c*d', name='function2')
 
     proj = project.Project()
     proj.add_item(u)

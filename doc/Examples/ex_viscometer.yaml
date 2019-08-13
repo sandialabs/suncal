@@ -8,59 +8,66 @@ functions:
 - desc: Viscosity
   expr: mu_c*t_m*(rho_b - rho_m)/(t_c*(rho_b - rho_c))
   name: mu_m
+  units: mPa s
 inputs:
 - desc: Viscosity of calibration liquid
   mean: 4.63
   name: mu_c
+  units: mPa s
   uncerts:
   - degf: .inf
     desc: ''
     dist: normal
-    name: u(mu_c)
+    name: u_{mu_c}
     std: '0.0463'
-- desc: Travel time (s) in sodium hydroxide solution
+- desc: Travel time in sodium hydroxide solution
   mean: 61.0
   name: t_m
+  units: s
   uncerts:
   - degf: .inf
     desc: ''
     dist: normal
-    name: u(t_m)
+    name: u_{t_m}
     std: '6.1'
-- desc: Density (kg/m3) of sodium hydroxide solution
+- desc: Density of sodium hydroxide solution
   mean: 1180.0
   name: rho_m
+  units: kg/m^3
   uncerts:
   - degf: .inf
     desc: ''
     dist: normal
-    name: u(rho_m)
+    name: u_{rho_m}
     std: '0.5'
-- desc: Density (kg/m3) of calibration liquid
+- desc: Density of calibration liquid
   mean: 810.0
   name: rho_c
+  units: kg/m^3
   uncerts:
   - degf: .inf
     desc: ''
     dist: normal
-    name: u(rho_c)
+    name: u_{rho_c}
     std: '0.5'
-- desc: Travel time (s) in calibration liquid
+- desc: Travel time in calibration liquid
   mean: 36.6
   name: t_c
+  units: s
   uncerts:
   - degf: .inf
     desc: ''
     dist: normal
-    name: u(t_c)
+    name: u_{t_c}
     std: '5.49'
-- desc: Density (kg/m3) of ball
+- desc: Density of ball
   mean: 2217.0
   name: rho_b
+  units: kg/m^3
   uncerts:
   - degf: .inf
     desc: ''
     dist: normal
-    name: u(rho_b)
+    name: u_{rho_b}
     std: '0.5'
 samples: 1000000

@@ -1,7 +1,7 @@
 ''' Test custom distributions '''
 import numpy as np
 from scipy import stats
-import psluncert.customdists as customdists
+import suncal.customdists as customdists
 
 # First cases are wrappers around scipy.stats distributions
 def test_uniform():

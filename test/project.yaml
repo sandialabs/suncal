@@ -13,13 +13,16 @@
   - desc: Time Constant
     expr: R1*(C2 + C3)
     name: tau
+    units: millisecond
   - desc: ''
     expr: 1/tau
     name: omega
+    units: Hz
   inputs:
   - desc: Capacitor 3
     mean: 0.22
     name: C3
+    units: microfarad
     uncerts:
     - a: '.01'
       degf: .inf
@@ -29,6 +32,7 @@
   - desc: ''
     mean: 32.2014
     name: R1
+    units: kiloohms
     uncerts:
     - degf: 9
       desc: Type A uncertainty from resistance.txt
@@ -44,6 +48,7 @@
   - desc: Capacitor 2
     mean: 0.1
     name: C2
+    units: microfarad
     uncerts:
     - a: '.005'
       degf: .inf
@@ -123,10 +128,12 @@
   - desc: Time Constant
     expr: R1*(C2 + C3)
     name: tau
+    units: millisecond
   inputs:
   - desc: Capacitor 3
     mean: 0.22
     name: C3
+    units: microfarad
     uncerts:
     - a: '.01'
       degf: .inf
@@ -136,6 +143,7 @@
   - desc: ''
     mean: 32.2014
     name: R1
+    units: kiloohms
     uncerts:
     - degf: 9
       desc: Type A uncertainty from resistance.txt
@@ -151,6 +159,7 @@
   - desc: Capacitor 2
     mean: 0.1
     name: C2
+    units: microfarad
     uncerts:
     - a: '.005'
       degf: .inf
@@ -179,10 +188,12 @@
   - desc: Time Constant
     expr: R1*(C2 + C3)
     name: tau
+    units: millisecond
   inputs:
   - desc: Capacitor 3
     mean: 0.22
     name: C3
+    units: microfarad
     uncerts:
     - a: '.01'
       degf: .inf
@@ -192,6 +203,7 @@
   - desc: ''
     mean: 32.2014
     name: R1
+    units: kiloohms
     uncerts:
     - degf: 9
       desc: Type A uncertainty from resistance.txt
@@ -207,6 +219,7 @@
   - desc: Capacitor 2
     mean: 0.1
     name: C2
+    units: microfarad
     uncerts:
     - a: '.005'
       degf: .inf

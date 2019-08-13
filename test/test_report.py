@@ -5,8 +5,8 @@ import sympy
 import numpy
 import matplotlib.pyplot as plt
 
-from psluncert import output
-from psluncert import project
+from suncal import output
+from suncal import project
 
 
 def test_format():
@@ -83,28 +83,41 @@ def test_runreports():
     u.calculate()
 
     os.makedirs('testreports', exist_ok=True)
-    # Plain text
-    with output.report_format(math='text', fig='test'):
+
+    # Plain text, UTF-8 encoding
+    with output.report_format(math='text', fig='text'):
         md = u.report_all().get_md()
-    with open('testreports/report.txt', 'w') as f:
+    with open('testreports/report.txt', 'w', encoding='utf-8') as f:
+        f.write(md)
+
+    # Markdown, embedded SVG, UTF-8
+    with output.report_format(math='mathjax', fig='svg'):
+        md = u.report_all().get_md()
+    with open('testreports/report_md.md', 'w', encoding='utf-8') as f:
+        f.write(md)
+
+    # Markdown, embedded SVG, ANSO
+    with output.report_format(math='mathjax', fig='svg'):
+        md = u.report_all().get_md(unicode=False)
+    with open('testreports/report_ansi.md', 'w', encoding='utf-8') as f:
         f.write(md)
 
     # HTML/Mathjax/SVG
     with output.report_format(math='mathjax', fig='svg'):
         md = u.report_all().get_html()
-    with open('testreports/html_mj_svg.html', 'w') as f:
+    with open('testreports/html_mj_svg.html', 'w', encoding='utf-8') as f:
         f.write(md)
 
     # HTML/Mathjax/PNG
     with output.report_format(math='mathjax', fig='png'):
         md = u.report_all().get_html()
-    with open('testreports/html_mj_png.html', 'w') as f:
+    with open('testreports/html_mj_png.html', 'w', encoding='utf-8') as f:
         f.write(md)
 
     # HTML/MPL/SVG
     with output.report_format(math='mpl', fig='svg'):
         md = u.report_all().get_html()
-    with open('testreports/html_mpl_svg.html', 'w') as f:
+    with open('testreports/html_mpl_svg.html', 'w', encoding='utf-8') as f:
         f.write(md)
 
     if output.pandoc_path:

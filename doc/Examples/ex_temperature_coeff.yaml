@@ -1,0 +1,66 @@
+- description: 'A resistor was calibrated at one temperature but used at another.
+    This calculation determines the resistance and its uncertainty at the temperature
+    of use.
+
+
+    The units for T and T0 are absolute temperature, entered as "degC" in the units
+    column, but their uncertainties are temperature differences, entered as "delta_degC"
+    in the units column. Subtraction of the two absolute temperatures results in a
+    delta temperature.'
+  functions:
+  - desc: Resistance corrected for temperature
+    expr: R0*(alpha*(T - T0) + 1)
+    name: R
+    units: ohm
+  inputs:
+  - desc: Temperature Coefficient of Resistance (copper)
+    mean: 0.0039
+    name: alpha
+    uncerts:
+    - degf: .inf
+      desc: Uncertainty in TCR value
+      dist: normal
+      k: '2'
+      name: u(alpha)
+      unc: 1%
+      units: 1 / delta_degC
+    units: 1 / delta_degC
+  - desc: Reference Temperature
+    mean: 20.0
+    name: T0
+    uncerts:
+    - degf: .inf
+      desc: Uncertainty in temperature when resistor was calibrated
+      dist: normal
+      k: '2'
+      name: u1(T0)
+      unc: '.05'
+      units: delta_degC
+    units: degC
+  - desc: Measurement Temperature
+    mean: 28.0
+    name: T
+    uncerts:
+    - degf: .inf
+      desc: Uncertainty in temperature at time of use
+      dist: normal
+      k: '2'
+      name: u(T)
+      unc: '.05'
+      units: delta_degC
+    units: degC
+  - desc: Resistance measured at T0
+    mean: 1.0
+    name: R0
+    uncerts:
+    - degf: .inf
+      desc: Uncertainty in resistor calibration
+      dist: normal
+      k: '2'
+      name: u(R0)
+      unc: '.0005'
+      units: ohm
+    units: ohm
+  mode: uncertainty
+  name: uncertainty
+  samples: 1000000

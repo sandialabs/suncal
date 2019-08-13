@@ -1,6 +1,6 @@
 ---
-title: Primary Standards Laboratory Uncertainty Calculator User's Guide
-date: January 15, 2019
+title: Sandia Primary Standards Laboratory Uncertainty Calculator User's Guide
+date: August 6, 2019
 author:
 - Sandia National Laboratories^[Sandia National Laboratories is a multimission laboratory managed and operated by National Technology and Engineering Solutions of Sandia, LLC., a wholly owned subsidiary of Honeywell International, Inc., for the U.S. Department of Energy’s National Nuclear Security Administration under contract DE-NA-0003525.]
 - uncertainty@sandia.gov
@@ -12,17 +12,31 @@ link-citations: true
 
 # Introduction
 
-The PSL Uncertainty Calculator software was developed by the Primary Standards Laboratory (PSL) at Sandia National Laboratories.
+The Sandia PSL Uncertainty Calculator software was developed by the Primary Standards Laboratory (PSL) at Sandia National Laboratories.
 After repeatedly writing individual bits of Python code to perform uncertainty propagation calculations for different systems, the decision was made to generalized and make it available to the PSL's customers as a tool for performing GUM and Monte Carlo uncertainty propagation on any measurement system.
 The initial software versions were limited to GUM and Monte Carlo uncertainty propagation, and were primarily used primarily at the PSL and Sandia.
 The calculations had to be written in Python Code. Eventually, a simple user interface was added to remove the coding requirement.
 Additional features, such as risk analysis and evaluating uncertainty in curve fitting, were later added as more code was developed.
 
+
 ## Features
+
+The available calculation types are:
+
+- Uncertainty propagation by the GUM and Monte Carlo methods
+- Reverse uncertainty propagation to determine measurement uncertainty required to meet a target combined uncertainty
+- Uncertainty sweep to calculate multiple uncertainty propagations over a range of inputs
+- Reverse uncertainty sweep to calculate multiple reverse uncertainty propagations
+- Analysis of variance on a two-dimensional data set
+- Curve fitting, accounting for uncertainty in x and y measurements, and providing uncertainty in the output curve
+- Risk analysis for determining probability of false accept and false reject
+- T-Table calculator for determining values based on a Student's-t distribution
+
 
 The PSL Uncertainty Calculator has a number of features that differentiate it from other uncertainty software solutions:
 
 - The GUM method is solved symbolically, providing the user with the actual formulas used, not just numerical results.
+- Automatic conversion of measurement units and dimensional analysis.
 - Expanded uncertainties can be calculated automatically based on degrees of freedom and the t-distribution.
 - The number of input variables is unlimited, and input variables can have multiple (e.g. Type A and Type B) uncertainty components.
 - Over 90 probability distributions are available. If used as a Python module, custom distributions can also be defined.
@@ -36,6 +50,7 @@ The PSL Uncertainty Calculator has a number of features that differentiate it fr
 - Desktop usage, no internet connection is required and all data stays local.
 - Open source software so algorithms can be analyzed at the code level.
 
+
 ## Implementation
 
 Many of the statistics and calculations used in this software leverage the well-established computing packages available in Python, including [NumPy](http://www.numpy.org), [SciPy](http://www.scipy.org), and [SymPy](https://www.sympy.org/).
@@ -43,16 +58,6 @@ The SymPy package allows this software to provide and solve symbolic equations f
 SciPy contains a vast collection of statistical methods and probability distribution definitions that are used throughout this software.
 The Monte Carlo simulations make use of the Mersenne Twister random number generator as implemented in SciPy, generally regarded as a quality PRNG for Monte Carlo methods.
 
-The available calculation types are:
-
-- Uncertainty propagation by the GUM and Monte Carlo methods
-- Reverse uncertainty propagation to determine measurement uncertainty required to meet a target combined uncertainty
-- Uncertainty sweep to calculate multiple uncertainty propagations over a range of inputs
-- Reverse uncertainty sweep to calculate multiple reverse uncertainty propagations
-- Analysis of variance on a two-dimensional data set
-- Curve fitting, accounting for uncertainty in x and y measurements, and providing uncertainty in the output curve
-- Risk analysis for determining probability of false accept and false reject
-- T-Table calculator for determining values based on a Student's-t distribution
 
 ## Installation
 
@@ -62,14 +67,14 @@ On Windows, two options are available. A standalone EXE file can be run without 
 
 # Calculations
 
-When the calculator user interface is launched, the Select Calculation Type page displays (see {*@fig:startup}).
+When the calculator user interface is launched, the Select Calculation Type menu displays (see {*@fig:startup}).
 Select one of the calculation options, or alternatively load a setup file from disk using the **Project** menu.
 The **Project** menu also contains options for adding additional calculations, saving the current setup, or saving a report of all output results.
 The **Window** menu provides options for calculating t-table values and showing a list of all calculations in the project.
 
 ![Select Calculation Type page](figs/startup.png){#fig:startup}
 
-Upon selecting a calculation type, an additional menu displays.
+Upon selecting a calculation type, an additional menu becomes available.
 This menu changes based on the calculation type and provides options specific to that calculation, such as loading in specific data from a CSV file or saving a report of that calculation's output.
 
 The following sections list the specific details of each calculation type.
@@ -114,25 +119,25 @@ Additional functions can be entered and calculated in parallel using the plus si
 These functions may be chained together, for example "f = a + b", and "g = 2*f".
 
 Once a function is entered, the variables in that function are extracted to fill in the names in the Measured Quantities table.
-In this table, a mean, standard uncertainty, and degrees of freedom can be entered for each variable.
+In this table, the nominal value, measurement units, and a description of each variable can be entered.
+The uncertainties row for each variable can be expanded to show all the uncertainty components assigned to that variable.
 If a variable has more than one uncertainty component (e.g. a type A and type B component), use the plus sign (**+**) button to add additional components.
 When multiple components are present, the standard uncertainty of each component is root-sum-squared together to obtain a standard uncertainty for the variable used by the GUM equation, and the degrees of freedom are combined using the W-S formula.
 The Monte Carlo method will separately sample each component before combining.
 
-![Measured quantities with multiple uncertainty components for R1](figs/multicomponents.png){#fig:multicomp}
+![Measured quantities table](figs/measuredqty.png){#fig:measuredqty}
 
-The standard uncertainty field can also process simple mathematical expressions, including percentages based on the entered mean value.
+For each uncertainty component, the probability distribution and any parameters necessary to define the distribution can be entered underneath each uncertainty component name.
+The probability distribution fields can also process simple mathematical expressions, including percentages based on the entered mean value.
 For example, with a mean of 10, entering an uncertainty of ".5 + 10%" will automatically reduce to 1.5, and be updated appropriately if the mean value is changed later.
 
 ![Entering an uncertainty as a percent](figs/percent.png){#id .class width=3in #fig:uncertpercent}
 
-When an input variable uncertainty is known as a non-standard uncertainty, such as a uniform distribution or a k = 2 uncertainty, the component can be customized using the ellipses (**...**) button.
-When this button is pressed, a new tab appears, showing additional parameters for defining a distribution type, such as normal, uniform, triangular, etc., along with a preview plot of the probability density function for that distribution.
-Normal and t distributions can be entered as uncertainty with either a k value or confidence percentage.
+Normal and t distributions have rows for entering both a k value and a confidence percentage. Entering one value will recompute the other based on the entered degrees of freedom.
 Uniform distributions can be entered by using the half-width "a" parameter.
-For more information on what the parameters for each distribution are, press the question mark (**?**) button.
-The most common distributions are shown in the drop-down list box, but others can be enabled in the **Preferences** menu.
-The custom distribution is converted to a standard uncertainty (shown in the Measured Quantities table) for use in the GUM formula, while the Monte Carlo method directly samples the custom distribution.
+For more information on what the parameters for each distribution are, press the question mark (**?**) button near the plot of the distribution.
+The most common distributions are shown in the drop-down list box, but many others can be enabled in the **Preferences** menu.
+The distribution is converted to a standard uncertainty (shown in the Uncertainty Components table) for use in the GUM formula, while the Monte Carlo method directly samples the distribution.
 The Distribution tab also has a button to import distribution settings from a CSV file of sampled data or from another calculation in the program.
 
 If the input variables are correlated, these can be entered on the **Correlations** tab (see {*@fig:correlation}).
@@ -148,6 +153,19 @@ This will open a dialog box where each input variable can be assigned to a colum
 Finally, the **Notes** tab contains a field for entering your own information to save with the calculation, and the **Settings** tab allows entry of the number of Monte Carlo samples and the random number generator seed.
 A seed of "None" will be randomized on every run.
 
+#### Entering Units
+
+The Measurement Model and Measured Quantites tables allow entry of measurement units.
+If omitted, units will be treated as dimensionless.
+Otherwise, the entered unit name will be interpreted as a measurement unit.
+Many common units and prefixes are recognized either as abbreviations or full names.
+For example, "meter", "m", "uF", "m/s^2", "kPa" are all recognized units (corresponding to meter, meter, microfarad, meter-per-second-squared, and kilopascal)
+To check unit compatibility and dimensionality, use the **Check Units** function from the **Uncertainty** menu.
+The **Units Converter** option in the **Tools** menu provides basic unit name recognition and conversion.
+Custom units can also be defined in the **Preferences** menu.
+
+Uncertainties do not necessarily need to be the same units as their input variables, for example a nominal value could be in meters with uncertainty in millimeters.
+Conversions will happen automatically to produce a result in the units specified in the Measurement Model table.
 
 ### Outputs
 
@@ -179,7 +197,7 @@ The Monte Carlo method can show either the symmetric expanded uncertainty (e.g. 
 
 #### Uncertainty Components
 
-The Uncertainty Components view  breaks down the total uncertainty into components displayed in three tables..
+The Uncertainty Components view  breaks down the total uncertainty into components displayed in three tables.
 It can be useful to determine which input is the largest contributor to the total uncertainty.
 The first table lists all the input variables and standardized uncertainties.
 The second table lists the uncertainty components as entered, and as combined for each variable.
@@ -192,14 +210,14 @@ The Monte Carlo method evaluates sensitivity coefficients and proportions by fix
 
 The GUM Derivation view displays the mathematical derivation used in calculating the GUM uncertainty (see {*@fig:gumderivation}).
 Here, the sensitivity coefficients (partial derivatives) are solved and then combined in the uncertainty formula.
-Right-click on the window and select **Show markup** to obtain these formulas in LaTeX-compatible math format if desired.
+Right-click on the window and select **Show markdown** to obtain these formulas in LaTeX-compatible math format if desired.
 
 ![GUM derivation report](figs/gumderivation.png){#fig:gumderivation}
 
 #### GUM Validity
 
 The GUM Validity view follows the approach in Section 8 of GUM-S1 [@GUMS1].
-The endpoints of 95% confidence intervals for the GUM and Monte Carlo methods are compared to be within a specific tolerance based on the number of significant figures (usually 1 or 2).
+The endpoints of 95% confidence intervals for the GUM and Monte Carlo methods are compared to a specific tolerance based on the number of significant figures (usually 1 or 2).
 If the endpoints agree within this tolerance, the validity test passes and the GUM is a reasonable approximation to the true uncertainty.
 
 #### Monte Carlo Distribution
@@ -233,8 +251,8 @@ This can be useful, for example, when selecting measurement equipment to use in 
 Reverse calculations are solved using both the GUM method and Monte Carlo method.
 The GUM method finds the symbolic GUM uncertainty equation and solves it for the variable of interest.
 The Monte Carlo method reverses the measurement function and treats the function output as another input variable.
-To do this, the Reverse Uncertainty calculator must account for the correlation between the model output and the original input variables. These correlation coefficients can be estimated using the sensitivity coefficients as described in the GUM
-[@GUM] C.3.6 note 3.
+To do this, the Reverse Uncertainty calculator must account for the correlation between the model output and the original input variables.
+These correlation coefficients are be estimated using the sensitivity coefficients as described in the GUM [@GUM] C.3.6 note 3.
 
 The Reverse Uncertainty Propagation interface is similar to the standard uncertainty propagation interface, with the addition of a **Target** tab.
 This tab allows entry of the target (mean) value for the function and desired uncertainty for the function.
@@ -286,12 +304,12 @@ Once the data is entered, statistics for each group (column) are provided in the
 Results of one-way analysis of variance are displayed in the third table.
 Both the F-statistic and P-value are computed. The groups are statistically equivalent if the F-statistic is less than the critical F value (with 95% confidence), and the P-value is greater than 0.05.
 
-The grouped mean and standard deviation can be used in other calculations, such as curve fitting.
+The grouped mean and standard deviation result can be used in other calculations, such as curve fitting.
 
 
 ## Curve Fitting
 
-The curve fitting calculation takes x and y data, with optional uncertainty in x and y, and computes the best fitting line, polynomial, or exponential function.
+The curve fitting calculation takes x and y data, with optional uncertainty in x and/or y, and computes the best fitting line, polynomial, or exponential function.
 Data can be entered manually or loaded from a file or an uncertainty sweep calculation.
 In contrast to other curve fitting calculators (such as in Excel), this one allows for uncertainty in both x and in y to be entered and accounted for.
 The model to fit can be:
@@ -350,7 +368,7 @@ Internally, the dates are converted to ordinal time before being applied to the 
 
 ![Output of curve fit calculation](figs/outcurvefit.png){#fig:curvefitoutput}
 
-After you enter the data click **Calculate**, several output views are available.
+After the x, y data is entered, click **Calculate** to show the results.
 The Fit Plot view shows the fit line and optionally the confidence and prediction bands, expanded to the desired confidence level.
 For straight line fits, the confidence band determines the confidence that the data is actually following this fit line. It is calculated from
 
@@ -391,21 +409,33 @@ The Correlations view shows the correlation coefficient between the fit paramete
 ## Risk Analysis
 
 The Risk Analysis calculation computes the risk associated with process and/or test distributions falling outside of specification limits.
+This tool has two operating modes: Simple and Full.
+
+In Simple mode, the risk calculation follows [@deaver] by assuming normal distributions and symmetric acceptance limits.
+Parameters are entered in terms of a test uncertainty ratio (TUR), in-tolerance probability (itp), and guard band factor.
+
+![Simple risk analysis assume both distributions are normal and symmetric.](figs/risksimple.png){#fig:risksimple}
+
+In Full mode, both process and test distributions, along with absolute acceptance limits and guard band limits, are specified. No assumptions are made about distribution type.
 With only a process distribution and specification limits, the probability of a value on the distribution falling outside the limit is calculated by integrating the probability distribution function outside the limits to give the "process risk".
-When a Test Measurement is added, the total probability of false accept and total probability of false reject is computed by the double integral of the product of the two distributions falling outside the limits. See [@deaver] for the integrals when the distributions are normal.
+When a Test Measurement is added, the total probability of false accept and total probability of false reject is computed by the double integral of the product of the two distributions falling outside the limits.
 Non-normal distributions can also be entered and are integrated numerically using the same approach.
-
 An optional guard band can be entered, as a relative offset to the specification limit; for example, with an upper specification limit of 2 and guard band of 0.1, the product will be rejected with a measurement over 1.9.
-The **Risk** menu provides a function for computing a guard band to achieve a desired probability of false accept. It uses a numerical minimization technique to solve for the limits on the double integral, and so will not always converge or hit the target exactly.
 
-![Risk analysis with beta process distribution and uniform test distribution](figs/risk.png){#fig:riskanalysis}
+![Full risk analysis allowing complete specification of process and test distributions](figs/risk.png){#fig:riskanalysis}
+
+A Monte Carlo calculation is also available in both Simple and Full modes. This method pulls random samples from the test and process distribution and counts the number of false accepts and false rejects to determine the PFA and PFR probabilities.
+
+![Monte Carlo risk calculation](figs/riskMC.png){#fig:riskMC}
+
+The **Risk** menu provides an option for computing a guard band. The guard band can be computed using one of several common methods (such as the RSS method $k = \sqrt{1-1/TUR^2}$), or by targeting a specific false accept probability. This method uses a numerical minimization technique to solve for the limits on the double integral, and so may not always converge or hit the target exactly.
 
 ## Distribution Explorer
 
-You can observe different distribution parameters, draw random samples from distributions, and perform manual Monte Carlo simulations from the Distribution Explorer window.
+You can draw random samples from distributions and perform manual Monte Carlo simulations from the Distribution Explorer window.
 It is included in the calculator software mainly for educational purposes.
-To run a Monte Carlo simulation, set the expression of a distribution to a formula using previously defined expressions as inputs. Expressions should be entered using the same syntax as the [Uncertainty Propagation](#inputs) function input.
-Click **Sample** to see the results. For each histogram, a distribution can be fit and normal probability plot shown to validate the fit to the data.
+To run a Monte Carlo simulation, define one or more Input Distributions, and add another distribution but set the its name field to a formula using the previously defined expressions as inputs. Expressions should be entered using the same syntax as the [Uncertainty Propagation](#inputs) function input.
+Click **Sample** to pull random samples from a distribution and see the resulting histogram. A distribution can be fit to the sampled data and probability plot shown to validate the fit to the data.
 
 
 ## T-Table Calculator
@@ -464,21 +494,23 @@ A **Preferences** window allows you to change some common settings, including:
 - Plot style, colors, and other plotting parameters
 - Significant figures and number formats to show in reports
 - Probability distributions to show in drop down lists
+- Custom unit definitions
 
-These settings will be in place the next time the program is opened.
+These settings will remain in place the next time the program is opened.
 
 
 # Python usage
 
 The back end of the calculator can be installed and run as a Python package to allow greater flexibility in defining the calculations, loading input data, and processing the results.
 Running as a package allows for uncertainty propagation through arbitrary functions, curve fitting to any curve, and loading/saving data to any file format available to Python.
+It can also run uncertainty propagation calculations on complex valued (real and imaginary) measurement models natively.
 To install the Python package, open a terminal window in the uncertainty calculator source folder and run
 
         python setup.py install
 
 The calculator can be imported into your code with
 
-        import psluncert
+        import suncal
 
 Refer to the docs folder of the source code repository for examples in Jupyter Notebook format.
 
@@ -489,21 +521,21 @@ Once the Python package is installed, a command-line interface to the calculator
 This allows for the calculator's algorithms to be used within other programming languages and scripts such as LabView, Metcal, or R.
 The following command line programs are installed with the Python package:
 
-- `psluncertui`: Launches the user interface
-- `psluncert`: Calculates an uncertainty propagation
-- `psluncertf`: Calculates all items in an uncertainty project file
-- `psluncertrev`: Reverse uncertainty propagation
-- `psluncertrisk`: Risk analysis calculation
-- `psluncertfit`: Curve fit uncertainty calculation
+- `suncalui`: Launches the user interface
+- `suncal`: Calculates an uncertainty propagation
+- `suncalf`: Calculates all items in an uncertainty project file
+- `suncalrev`: Reverse uncertainty propagation
+- `suncalrisk`: Risk analysis calculation
+- `suncalfit`: Curve fit uncertainty calculation
 
 Each command can be run with the '-h' flag to see all the arguments for that command.
-For example, running `psluncert -h` prints:
+For example, running `suncal -h` prints:
 
-        usage: psluncert [-h] [--variables VARIABLES [VARIABLES ...]]
-                         [--uncerts UNCERTS [UNCERTS ...]]
-                         [--correlate CORRELATE [CORRELATE ...]] [-o O]
-                         [-f {html,txt,md}] [--samples SAMPLES] [-s] [--verbose]
-                         funcs [funcs ...]
+        usage: suncal [-h] [--units UNITS [UNITS ...]] [--variables VARIABLES [VARIABLES ...]]
+                       [--uncerts UNCERTS [UNCERTS ...]]
+                       [--correlate CORRELATE [CORRELATE ...]] [-o O]
+                       [-f {html,txt,md}] [--samples SAMPLES] [-s] [--verbose]
+                       funcs [funcs ...]
 
         Compute combined uncertainty of a system.
 
@@ -512,6 +544,8 @@ For example, running `psluncert -h` prints:
 
         optional arguments:
           -h, --help            show this help message and exit
+          --units UNITS [UNITS ...]
+                                List of units for each function output
           --variables VARIABLES [VARIABLES ...]
                                 List of variable measured values (e.g. "x=10")
           --uncerts UNCERTS [UNCERTS ...]
@@ -543,7 +577,7 @@ The **-o** option, followed by a filename, will save the output report to the fi
 
 Calculate uncertainty of model $f = ab + c$ with a and c as normal distributions and b as a uniform distribution. Additionally, add correlation coefficients between a and b and between b and c:
 
-        psluncert "f=a*b+c" --variables "a=10" "b=5" "c=3" --uncerts "a; std=1"
+        suncal "f=a*b+c" --variables "a=10" "b=5" "c=3" --uncerts "a; std=1"
           "b; dist=uniform; a=.5" "c; unc=3; k=2" --correlate "a; b; .6" "c; b; -.3"
 
 Output:
@@ -564,22 +598,22 @@ Adding the '-s' option results in:
 
 Compute risk given specification limits of -8 and +8, with a process distribution standard deviation of 4 and test distribution standard deviation of 1.
 
-        psluncertrisk --procdist "loc=0; scale=4" --testdist "loc=0; scale=1" -LL -8 -UL 8
+        suncalrisk --procdist "loc=0; scale=4" --testdist "loc=0; scale=1" -LL -8 -UL 8
 
 Output:
 
         Process Risk                             |Test Measurement Risk     |Combined Risk
         -----------------------------------------|--------------------------|-----------------
-        Process Risk: 4.55%                      |Measured value: 0         |Total PFA: 0.78%
-        Upper limit risk: 2.28%                  |Result: ACCEPT            |Total PFR: 1.47%
-        Lower limit risk: 2.28%                  |PFA of measurement: 0.00% |
-        Process capability index (Cpk): 0.666667 |                          |
+        Process Risk: 4.55%                      | TUR: 4.0                 |Total PFA: 0.78%
+        Upper limit risk: 2.28%                  | Measured value: 0        |Total PFR: 1.47%
+        Lower limit risk: 2.28%                  | Result: ACCEPT           |
+        Process capability index (Cpk): 0.666667 | PFA of measurement: 0.00% |
 
 ### Line Fit
 
 Fit a line through the points (1, 0.5), (2, 1.2), (3, 1.8), (4, 2.4), (5, 2.9), (6, 3.6) using Least-Squares fit:
 
-        psluncertfit -x 1 2 3 4 5 6 -y .5 1.2 1.8 2.4 2.9 3.6
+        suncalfit -x 1 2 3 4 5 6 -y .5 1.2 1.8 2.4 2.9 3.6
 
 Output:
 
@@ -613,12 +647,14 @@ The components are given with tolerances, and thus are interpreted as uniform di
 To determine the time constant and its uncertainty using the calculator, set up a new Uncertainty Propagation calculation.
 Enter the measurement model name (`tau`) and expression (`R*(C1+C2)`) as shown in {*@fig:rcrisktau}.
 The Measured Quantities will fill in with the variable names.
+Enter "ms" in the units column to obtain the resulting time constant and uncertainty in milliseconds.
 
 ![Entering the time constant measurement model](figs/rcrisk_model.png){#fig:rcrisktau}
 
-Next, enter the nominal value for each component in the Mean column.
-Note that because resistance was entered in kilo-ohms and capacitance in microfarads, the resulting time constant will be in milliseconds.
-Since the components are all uniform distributions, press the Ellipses (**...**) button in each row and change the distribution to **uniform**.
+Next, enter the nominal value for each component in the Nominal column.
+Enter units for resistance of "kohm" and for the two capacitors of "uF".
+One uncertainty component for each variable is added by default.
+For each of the variables, click the row in the Measured Quantities table, and change the uncertainty distribution for the uncertainty component to **uniform**.
 The "a" parameter is the half-width of the distribution. In this case, "a" can be entered as a percent ({*@fig:rcriskinput}).
 Optionally, add a description for each variable and the measurement model.
 
@@ -696,10 +732,8 @@ $R_c = 25.5 \pm 17.3 \mathrm{k}\Omega$.
 
 The density of a gage ball must be calibrated by measuring the diameter and mass. Density is found using the formula:
 
-$$\rho = \frac{6 \times 10^{9} m}{\pi d^3}$$
+$$\rho = \frac{6 m}{\pi d^3}$$.
 
-where mass $m$ is given in milligrams and diameter $d$ in microns.
-The $10^9$ factor converts units into grams and centimeters, resulting in a density in $g/cm^3$.
 The nominal values of the gage ball are 86.03 g and 22.225 mm, leading to a nominal density of 14.967 $g/cm^3$.
 A calibration provider must be found who can meet a combined density uncertainty of 0.04 $g/cm^3$ (k = 2).
 
@@ -719,6 +753,7 @@ Under the **Sweep** tab, press the Plus Sign (**+**) button to add a new sweep c
 Because this diameter is a single standard normal uncertainty, there is only one option for component and parameter.
 After clicking **OK**, a new column is added to the Sweep table. Press the Ellipses (**...**) button to enter a range of values for diameter uncertainty to sweep.
 Set the range from 1 to 9 with count of 9.
+This value takes the same units as the diameter uncertainty component. Use the Measured Quantities tree to change the diameter uncertainty units to **um** to specify microns.
 
 ![Entering sweep values](figs/revswp_sweep.png){#fig:sweepentry}
 

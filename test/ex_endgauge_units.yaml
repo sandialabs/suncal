@@ -1,0 +1,98 @@
+- functions:
+  - desc: ''
+    expr: d - l_s*(alpha_s*d_theta + d_alpha*theta) + l_s
+    name: ''
+    units: nm
+  inputs:
+  - desc: Length of standard at 20C from certificate
+    mean: 50000623.6
+    name: l_s
+    uncerts:
+    - degf: 18
+      desc: Uncertainty of the standard
+      dist: normal
+      k: 3
+      name: u_{ls}
+      unc: 75
+      units: nanometer
+    units: nanometer
+  - desc: Measured difference between end gauges
+    mean: 215
+    name: d
+    uncerts:
+    - conf: 0.95
+      degf: 5
+      desc: Random effects of comparator
+      dist: t
+      name: u_{d1}
+      unc: 10
+      units: nanometer
+    - degf: 8
+      desc: Systematic effects of comparator
+      dist: normal
+      k: 3
+      name: u_{d2}
+      unc: 20
+      units: nanometer
+    - degf: 24
+      desc: Repeated obeservations
+      dist: normal
+      name: u_d
+      std: 5.8
+      units: nanometer
+    units: nanometer
+  - desc: Deviation in temperature of test bed from 20C ambient
+    mean: -0.1
+    name: theta
+    uncerts:
+    - a: 0.5
+      degf: .inf
+      desc: Cyclic variation of temperature in room
+      dist: arcsine
+      name: u_Delta
+      units: delta_degC
+    - degf: .inf
+      desc: Mean temperature of the bed
+      dist: normal
+      name: u_theta
+      std: 0.2
+      units: delta_degC
+    units: delta_degC
+  - desc: Coefficient of thermal expansion
+    mean: 1.15e-05
+    name: alpha_s
+    uncerts:
+    - a: 2.0e-06
+      degf: .inf
+      desc: Thermal expansion coefficient of standard
+      dist: uniform
+      name: u_{alpha_s}
+      units: 1 / delta_degC
+    units: 1 / delta_degC
+  - desc: Difference in expansion coefficients
+    mean: 0
+    name: d_alpha
+    uncerts:
+    - a: 1.0e-06
+      d: 1.0e-07
+      degf: 50
+      desc: Difference in expansion coefficients
+      dist: curvtrap
+      name: u_{da}
+      units: 1 / delta_degC
+    units: 1 / delta_degC
+  - desc: Difference in temperatures
+    mean: 0
+    name: d_theta
+    uncerts:
+    - a: 0.05
+      d: 0.025
+      degf: 2
+      desc: Difference in temperatures
+      dist: curvtrap
+      name: u_{dt}
+      units: delta_degC
+    units: delta_degC
+  mode: uncertainty
+  name: uncertainty
+  samples: 1000000
