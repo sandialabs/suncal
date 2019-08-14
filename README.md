@@ -19,12 +19,15 @@ Installation of the Python package and command line interface requires Python 3.
 - scipy
 - sympy
 - matplotlib
-- pyqt (only required for GUI)
+- pyqt5
+- pyyaml
+- markdown
+- pint
 
 To install (on Windows, Mac, or Linux), from a command prompt, run:
 
 ```
-python setup.py install
+pip install suncal
 ```
 
 ## Example Usage
