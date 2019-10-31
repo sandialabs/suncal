@@ -930,6 +930,29 @@ class MDstring(object):
             out, err = p.communicate(self.get_md().encode('utf-8'))
         return err.decode('utf-8')
 
+    def save_tex(self, fname):
+        ''' Save to raw LaTeX source '''
+        if not fname.lower().endswith('.tex'):
+            fname += '.tex'
+
+        if pandoc_path is None:
+            raise ValueError('TEX format requires Pandoc.')
+
+        with report_format(math='mathjax', fig='png'):
+            # NOTE: EPS format would be better but seems to be broken in Pandoc 2.7.
+            # It extracts the eps file but omits the extension so pdflatex won't run.
+            # SVG is not supported by pdflatex.
+
+            # Convert utf8 markdown into plain ascii with latex codes for special characters
+            # 'latex' handler was installed by importing latexchars.py
+            md = self.get_md().encode('ascii', 'latex')
+
+            fname = os.path.realpath(fname)
+            filepath = os.path.dirname(fname)
+            p = subprocess.Popen([pandoc_path, '--extract-media', 'images', '-s', '-o', fname], cwd=filepath, stdin=subprocess.PIPE, stderr=subprocess.PIPE, stdout=subprocess.PIPE)
+            out, err = p.communicate(md)
+        return err.decode('utf-8')
+
     def save_pdf(self, fname):
         ''' Save report to Word (docx) format. Requires Pandoc. '''
         if pandoc_path is None:

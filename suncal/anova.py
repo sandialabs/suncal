@@ -31,17 +31,21 @@ class AnovaOutput(output.Output):
         ''' Return a distribution from the output. For ANOVA, this will be t-distribution from one group
             specified by kwargs and using standard error of the mean.
         '''
-        names = self.group_names()
+        gnames = self.group_names()
         if name is None:
             # Return list of groups
-            return names
-        elif name in names:
+            return gnames + ['Repeatability', 'Reproducibility']
+        elif name in gnames:
             groupidx = self.group_names().index(name)
             mean = self.group_mean()[groupidx]
             std = self.group_std()[groupidx]
             degf = self.group_df()[groupidx]
             sem = std / np.sqrt(degf+1)
             return {'mean': mean, 'std': sem, 'df': degf}
+        elif name == 'Repeatability':
+            return {'mean': self.grand_mean(), 'std': self.std_pooled(), 'df': self.df_pooled()}
+        elif name == 'Reproducibility':
+            return {'mean': self.grand_mean(), 'std': self.reproducibility(), 'df': self.df_reproducibility()}
         else:
             return None
 

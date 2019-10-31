@@ -426,7 +426,7 @@ def savemarkdown(md):
     if ok:
         setup = dlg.get_setup()
         fmt = setup.get('fmt', 'html')
-        filter = {'html': 'HTML (*.html)', 'md': 'Markdown (*.md *.txt)', 'docx': 'Word DOCX (*.docx)',
+        filter = {'html': 'HTML (*.html)', 'tex': 'LaTeX source (*.tex)', 'md': 'Markdown (*.md *.txt)', 'docx': 'Word DOCX (*.docx)',
                   'pdf': 'PDF (*.pdf)', 'odt': 'Open Document Text (*.odt)'}[fmt]
 
         fname, _ = QtWidgets.QFileDialog.getSaveFileName(caption='File to Save', filter=filter)
@@ -437,6 +437,9 @@ def savemarkdown(md):
                 with open(fname, 'w') as f:
                     f.write(data)
                 err = None
+
+            elif fmt == 'tex':
+                err = md.save_tex(fname)
 
             elif fmt == 'html':
                 with output.report_format(math=setup.get('math'), fig=setup.get('image')):
@@ -468,7 +471,7 @@ class SaveReportOptions(QtWidgets.QDialog):
         self.btnbox.rejected.connect(self.reject)
         self.btnbox.accepted.connect(self.accept)
         self.cmbFormat = QtWidgets.QComboBox()
-        self.cmbFormat.addItems(['HTML', 'Markdown', 'PDF', 'Open Office ODT', 'Word DOCX'])
+        self.cmbFormat.addItems(['HTML', 'Markdown', 'LaTeX', 'PDF', 'Open Office ODT', 'Word DOCX'])
 
         self.cmbMath = QtWidgets.QComboBox()
         self.cmbMath.addItems(['Mathjax', 'Matplotlib'])
@@ -478,18 +481,20 @@ class SaveReportOptions(QtWidgets.QDialog):
         self.chkUnicode = QtWidgets.QCheckBox('Allow Unicode')
 
         if not output.pandoc_path:
-            self.cmbFormat.setItemText(2, 'PDF (requires Pandoc and LaTeX)')
-            self.cmbFormat.setItemText(3, 'Open Office ODT (requires Pandoc)')
-            self.cmbFormat.setItemText(4, 'Word DOCX (requires Pandoc)')
+            self.cmbFormat.setItemText(2, 'LaTeX (requires Pandoc)')
+            self.cmbFormat.setItemText(3, 'PDF (requires Pandoc and LaTeX)')
+            self.cmbFormat.setItemText(4, 'Open Office ODT (requires Pandoc)')
+            self.cmbFormat.setItemText(5, 'Word DOCX (requires Pandoc)')
             self.cmbFormat.model().item(2).setEnabled(False)
             self.cmbFormat.model().item(3).setEnabled(False)
             self.cmbFormat.model().item(4).setEnabled(False)
+            self.cmbFormat.model().item(5).setEnabled(False)
 
         if not output.latex_path:
-            self.cmbFormat.setItemText(2, 'PDF (requires Pandoc and LaTeX)')
-            self.cmbFormat.model().item(2).setEnabled(False)
+            self.cmbFormat.setItemText(3, 'PDF (requires Pandoc and LaTeX)')
+            self.cmbFormat.model().item(3).setEnabled(False)
 
-        self.cmbFormat.setCurrentIndex(['html', 'md', 'pdf', 'odt', 'docx'].index(gui_common.settings.getRptFormat()))
+        self.cmbFormat.setCurrentIndex(['html', 'md', 'tex', 'pdf', 'odt', 'docx'].index(gui_common.settings.getRptFormat()))
         self.cmbImage.setCurrentIndex(['svg', 'png'].index(gui_common.settings.getRptImgFormat()))
         self.cmbMath.setCurrentIndex(['mathjax', 'mpl'].index(gui_common.settings.getRptMath()))
         self.mjurl.setText(gui_common.settings.getRptMJURL())
@@ -533,7 +538,7 @@ class SaveReportOptions(QtWidgets.QDialog):
 
     def get_setup(self):
         ''' Get dictionary of report format options '''
-        fmt = ['html', 'md', 'pdf', 'odt', 'docx'][self.cmbFormat.currentIndex()]
+        fmt = ['html', 'md', 'tex', 'pdf', 'odt', 'docx'][self.cmbFormat.currentIndex()]
         math = ['mathjax', 'mpl'][self.cmbMath.currentIndex()]
         img = self.cmbImage.currentText().lower()
         return {'math': math, 'fmt': fmt, 'image': img, 'unicode': self.chkUnicode.isChecked()}
@@ -826,8 +831,10 @@ class DistributionEditTable(QtWidgets.QTableWidget):
 
         if distname == 'histogram':
             self.setItem(1, 0, ReadOnlyTableItem('data'))
-            self.setItem(1, 1, ReadOnlyTableItem('-loaded-'))
-            self.item(1, 1).setData(ROLE_HISTDATA, (initargs.get('hist'), initargs.get('edges')))
+            hist, edges = initargs.get('hist'), initargs.get('edges')
+            median = stats.rv_histogram((hist, edges)).median()
+            self.setItem(1, 1, QtWidgets.QTableWidgetItem(str(median)))
+            self.item(1, 1).setData(ROLE_HISTDATA, (hist, edges))
         else:
             for row, arg in enumerate(args):
                 self.setItem(row+1, 0, ReadOnlyTableItem(arg))
@@ -878,6 +885,9 @@ class DistributionEditTable(QtWidgets.QTableWidget):
 
         if distname == 'histogram':
             hist, edges = self.item(1, 1).data(ROLE_HISTDATA)
+            orgmedian = stats.rv_histogram((hist, edges)).median()
+            usermedian = float(self.item(1, 1).text())
+            edges = [e+(usermedian-orgmedian) for e in edges]
             self.statsdist = stats.rv_histogram((hist, edges))
             self.statsdist.dist = histdistclass()  # Make it look like other stats dists
             self.changed.emit()
@@ -898,65 +908,6 @@ class DistributionEditTable(QtWidgets.QTableWidget):
             self.changed.emit()
 
 
-class RptOpt(QtWidgets.QWidget):
-    ''' Report options widget '''
-    def __init__(self, parent=None):
-        super(RptOpt, self).__init__(parent)
-
-        self.cmbFmt = QtWidgets.QComboBox()
-        self.cmbFmt.addItems(['HTML', 'LaTeX', 'Plain Text'])
-        self.cmbFmt.currentIndexChanged.connect(self.fmtchange)
-        self.cmbMathfmt = QtWidgets.QComboBox()
-        self.cmbMathfmt.addItems(['SVG', 'PNG', 'Mathjax'])
-        self.cmbMathfmt.currentIndexChanged.connect(self.mathchange)
-        self.chkEmbed = QtWidgets.QCheckBox('Embed Images into HTML (single file output)')
-        self.chkEmbed.setChecked(True)
-        self.lblMathjax = QtWidgets.QLabel('Mathjax location:')
-        self.txtMathjax = QtWidgets.QLineEdit('https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.4/MathJax.js')
-        self.txtMathjax.setVisible(False)
-        self.lblMathjax.setVisible(False)
-        self.lblMathFmt = QtWidgets.QLabel('HTML Math Format')
-
-        layout = QtWidgets.QGridLayout()
-        layout.addWidget(QtWidgets.QLabel('Report Format'), 0, 0)
-        layout.addWidget(self.cmbFmt, 0, 1)
-        layout.addWidget(self.lblMathFmt, 1, 0)
-        layout.addWidget(self.cmbMathfmt, 1, 1)
-        layout.addWidget(self.lblMathjax, 2, 0)
-        layout.addWidget(self.txtMathjax, 2, 1)
-        layout.addWidget(self.chkEmbed, 3, 0, 1, 2)
-        layout.setColumnStretch(1, 10)
-        layout.setRowStretch(0, 10)
-        self.setLayout(layout)
-
-    def mathchange(self):
-        ''' Show/hide mathjax location '''
-        assert self.cmbMathfmt.findText('Mathjax') != -1  # Update here if names change
-        if self.cmbMathfmt.currentText() == 'Mathjax':
-            self.lblMathjax.setVisible(True)
-            self.txtMathjax.setVisible(True)
-            self.chkEmbed.setVisible(False)
-        else:
-            self.lblMathjax.setVisible(False)
-            self.txtMathjax.setVisible(False)
-            self.chkEmbed.setVisible(True)
-
-    def fmtchange(self):
-        ''' Show/hide HTML options '''
-        assert self.cmbFmt.findText('HTML') != -1  # Update here if names change
-        if self.cmbFmt.currentText() == 'HTML':
-            self.cmbMathfmt.setVisible(True)
-            self.lblMathFmt.setVisible(True)
-            self.lblMathjax.setVisible(True)
-            self.txtMathjax.setVisible(True)
-            self.chkEmbed.setVisible(True)
-            self.mathchange()
-        else:
-            self.cmbMathfmt.setVisible(False)
-            self.lblMathFmt.setVisible(False)
-            self.lblMathjax.setVisible(False)
-            self.txtMathjax.setVisible(False)
-            self.chkEmbed.setVisible(False)
 
 
 class QHLine(QtWidgets.QFrame):

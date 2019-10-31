@@ -430,7 +430,18 @@ class InputUncert(object):
 
         for aname, aval in self.args.items():
             if isinstance(aval, str):  # Convert string arguments to float
-                val = aval.replace('%', '/100*{}'.format(self.nom))  # Allow percent of nominal
+                nom = (self.nom*self.parentunits).to(self.units).magnitude  # Convert nominal to same units as uncertainty
+
+                # Allow entering % as % of nominal
+                # or %range(X) as percent of X range
+                # or ppm as ppm of nominal
+                # or ppmrange(X) as ppm of X range
+                aval = aval.replace('%range(', '/100*(')
+                aval = aval.replace('ppmrange(', '/1E6*(')
+                aval = aval.replace('ppbrange(', '/1E9*(')
+                aval = aval.replace('ppm', '/1E6*{}'.format(nom))
+                aval = aval.replace('ppb', '/1E9*{}'.format(nom))
+                val = aval.replace('%', '/100*{}'.format(nom))
                 try:
                     val = float(uparser.callf(val))
                 except (AttributeError, ValueError, TypeError):
@@ -516,14 +527,14 @@ class InputUncert(object):
             try:
                 samples = self.distfunc.rvs(1000000).astype(float)
                 if inc_nom:
-                    samples += self.nom
+                    samples += (self.nom*self.parentunits).to(self.units).magnitude
                 y, x = np.histogram(samples, bins=200)
                 x = x[1:]
             except ValueError:
                 x, y = [], []
         else:
             if inc_nom:
-                x = x + self.nom
+                x = x + (self.nom*self.parentunits).to(self.units).magnitude
         return x, y
 
     def sample(self, samples=1000000, inc_nom=True):
@@ -751,7 +762,7 @@ class InputFunc(object):
         if self.ftype == 'sympy':
             try:
                 return self._symgradient(), 'symbolic'
-            except ValueError:
+            except (ZeroDivisionError, ValueError):
                 pass  # Fall back to numeric
         return self._numgradient(), 'numeric'
 

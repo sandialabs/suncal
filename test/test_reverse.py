@@ -83,8 +83,8 @@ def test_sweep():
     s = sweeper.UncertSweep(u)
     s.add_sweep_unc('a', values=np.array([.5, 1.0, 1.5]))
     s.calculate()
-    assert s.out.get_single_desc(0) == 'u(a) = 0.50'   # Description of each sweep index
-    assert s.out.get_single_desc(1) == 'u(a) = 1.0'
+    assert s.out.get_single_desc(0) == 'u_{a} = 0.50'   # Description of each sweep index
+    assert s.out.get_single_desc(1) == 'u_{a} = 1.0'
     assert np.isclose(s.out.get_rptsingle(0).f.gum.uncert.magnitude, np.sqrt(0.5**2 + 0.5**2))  # Uncertainties should sweep
     assert np.isclose(s.out.get_rptsingle(1).f.gum.uncert.magnitude, np.sqrt(1**2 +.5**2))
     assert np.isclose(s.out.get_rptsingle(2).f.gum.uncert.magnitude, np.sqrt(1.5**2 + .5**2))
@@ -95,8 +95,8 @@ def test_sweep():
     s = sweeper.UncertSweep(u)
     s.add_sweep_df('a', values=np.array([10, 20, 30]))
     s.calculate()
-    assert s.out.get_single_desc(0) == 'u(a), df = 10'   # Description of each sweep index
-    assert s.out.get_single_desc(1) == 'u(a), df = 20'
+    assert s.out.get_single_desc(0) == 'a deg.f = 10'   # Description of each sweep index
+    assert s.out.get_single_desc(1) == 'a deg.f = 20'
     assert np.isclose(s.out.get_rptsingle(0).f.gum.degf, 15.625)  # Uncertainties should sweep
     assert np.isclose(s.out.get_rptsingle(1).f.gum.degf, 31.25)
     assert np.isclose(s.out.get_rptsingle(2).f.gum.degf, 46.875)
@@ -122,7 +122,7 @@ def test_sweepreverse():
     s.calculate()
     assert 'f (GUM)' in s.out.get_array()
     assert np.allclose(s.out.get_array('f (GUM)').x, np.array([.5, 1, 1.5]))
-    assert 'u(b)' in str(s.out.report())
+    assert '$u_{b}$' in str(s.out.report())
 
     u = reverse.UncertReverse('f = a+b', solvefor='a', targetnom=15, targetunc=1.5)
     u.set_input('a', nom=10, std=1)
@@ -143,8 +143,8 @@ def test_sweepreverse():
     s.calculate()
     assert 'f (GUM)' in s.out.get_array()
     assert np.allclose(s.out.get_array('f (GUM)').x, np.array([5, 10, 15]))
-    assert 'df' in str(s.out.report())[:10]
-    assert 'u(b)' in str(s.out.report())[:7]
+    assert 'deg.f' in str(s.out.report())[:10]
+    assert '$b$' in str(s.out.report())[:10]
 
     u = reverse.UncertReverse('f = a+b', solvefor='a', targetnom=15, targetunc=1.5)
     u.set_input('a', nom=10, std=1)

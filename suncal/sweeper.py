@@ -115,6 +115,7 @@ class UncertSweep(object):
 
         reportlist = []
         for sweepidx in range(N):
+            ucalccopy = uncertainty.UncertCalc.from_config(self.unccalc.get_config())
             for sweepparams in self.sweeplist:
                 inptname = sweepparams.get('var', None)
                 comp = sweepparams.get('comp', 'nom')
@@ -123,7 +124,6 @@ class UncertSweep(object):
                 # Make a copy (using config dictionary) so we don't destroy the original uncertcalc object and overwrite inputs
                 # Note: dont use deepcopy() or we'll be copying output data too
 
-                ucalccopy = uncertainty.UncertCalc.from_config(self.unccalc.get_config())
                 inptvar = ucalccopy.get_input(inptname)
                 if inptname == 'corr':
                     ucalccopy.correlate_vars(sweepparams['var1'], sweepparams['var2'], values[sweepidx])
@@ -310,13 +310,13 @@ class SweepOutput(output.Output):
             comp = sweepparams.get('comp', 'nom')
             param = sweepparams.get('param', None)
             if comp == 'nom':
-                self.inpthdr.append(inptname)
-            elif comp == 'df':
-                self.inpthdr.append(inptname + ' deg.f')
+                self.inpthdr.append(output.format_math(inptname))
+            elif param == 'df':
+                self.inpthdr.append(output.format_math(inptname) + ' deg.f')
             elif param in ['unc', 'std']:
-                self.inpthdr.append(comp)
+                self.inpthdr.append(output.format_math(comp.replace('(','_').replace(')','')))
             else:
-                self.inpthdr.append(comp + ', ' + param)
+                self.inpthdr.append(output.format_math(comp.replace('(','_').replace(')','')) + ', ' + param)
 
         self.inptvals = [v['values']*uncertainty.get_units(v.get('units', '')) for v in sweeplist]
         self.N = len(self.inptvals[0])
@@ -370,7 +370,7 @@ class SweepOutput(output.Output):
         slist = []
         for i in range(len(self.inpthdr)):
             valstrs = output.formatter.f_array(self.inptvals[i])
-            slist.append('{} = {}'.format(self.inpthdr[i], valstrs[idx]))
+            slist.append('{} = {}'.format(self.inpthdr[i].replace('$', ''), valstrs[idx]))
         return '; '.join(slist).strip()
 
     def report(self, **kwargs):
@@ -386,30 +386,30 @@ class SweepOutput(output.Output):
         rpt = output.MDstring()
         if kwargs.get('gum', True) and self.outpvalsgum is not None:
             rpt += '## GUM Results\n\n'
-            inptvalstrs = [output.formatter.f_array(a) for a in self.inptvals]
-            outvalstrs = [output.formatter.f_array(a) for a in self.outpvalsgum]
+            inptvalstrs = [output.formatter.f_array(a, **kwargs) for a in self.inptvals]
+            outvalstrs = [output.formatter.f_array(a, **kwargs) for a in self.outpvalsgum]
             uncstrs = [[output.formatter.f(a, **kwargs) for a in x] for x in self.outpuncsgum]
             rows = []
             for inpts, means, uncs in zip(list(zip(*inptvalstrs)), list(zip(*outvalstrs)), list(zip(*uncstrs))):
                 rows.append(list(inpts) + [k for j in list(zip(means, uncs)) for k in j])   # i.e. transpose
             hdr = self.inpthdr.copy()
             for n in self.outnames:
-                hdr.append(n)
-                hdr.append('u_{{{}}}'.format(n))
+                hdr.append(output.format_math(n))
+                hdr.append(output.format_math('u_{}'.format(n)))
             rpt += output.md_table(rows, hdr=hdr)
 
         if kwargs.get('mc', True) and self.outpvalsmc is not None:
             rpt += '## Monte Carlo results\n\n'
-            inptvalstrs = [output.formatter.f_array(a) for a in self.inptvals]
-            outvalstrs = [output.formatter.f_array(a) for a in self.outpvalsmc]
+            inptvalstrs = [output.formatter.f_array(a, **kwargs) for a in self.inptvals]
+            outvalstrs = [output.formatter.f_array(a, **kwargs) for a in self.outpvalsmc]
             uncstrs = [[output.formatter.f(a, **kwargs) for a in x] for x in self.outpuncsmc]
             rows = []
             for inpts, means, uncs in zip(list(zip(*inptvalstrs)), list(zip(*outvalstrs)), list(zip(*uncstrs))):
                 rows.append(list(inpts) + [k for j in list(zip(means, uncs)) for k in j])   # i.e. transpose
             hdr = self.inpthdr.copy()
             for n in self.outnames:
-                hdr.append(n)
-                hdr.append('u_{{{}}}'.format(n))
+                hdr.append(output.format_math(n))
+                hdr.append(output.format_math('u_{}'.format(n)))
             rpt += output.md_table(rows, hdr=hdr)
         return rpt
 
@@ -651,13 +651,13 @@ class SweepOutputReverse(output.Output):
             comp = sweepparams.get('comp', 'nom')
             param = sweepparams.get('param', None)
             if comp == 'nom':
-                self.inpthdr.append(inptname)
-            elif comp == 'df':
-                self.inpthdr.append(inptname + ' deg.f')
+                self.inpthdr.append(output.format_math(inptname))
+            elif param == 'df':
+                self.inpthdr.append(output.format_math(inptname) + ' deg.f')
             elif param in ['unc', 'std']:
-                self.inpthdr.append(comp)
+                self.inpthdr.append(output.format_math(comp.replace('(','_').replace(')','')))
             else:
-                self.inpthdr.append(comp + '\n' + param)
+                self.inpthdr.append(output.format_math(comp.replace('(','_').replace(')','') + '\n' + param))
 
         self.inptvals = [v['values']*uncertainty.get_units(v.get('units', '')) for v in sweeplist]
         self.N = len(self.inptvals[0])
@@ -726,7 +726,7 @@ class SweepOutputReverse(output.Output):
         eqn = sympy.Eq(self.outputlist[0].gumdata['fname'], self.outputlist[0].gumdata['f'])
         r = output.MDstring('## Reverse Sweep Results\n\n')
         r += output.sympyeqn(eqn) + '\n\n'
-        r += 'Target: {} = {} ± {}'.format(self.varname, output.formatter.f(f_req, matchto=uf_req, **kwargs), output.formatter.f(uf_req, **kwargs)) + '\n\n'
+        r += 'Target: {} = {} ± {}'.format(output.format_math(self.varname), output.formatter.f(f_req, matchto=uf_req, **kwargs), output.formatter.f(uf_req, **kwargs)) + '\n\n'
         r += self.report(**kwargs)
         with mpl.style.context(output.mplcontext):
             plt.ioff()

@@ -1,5 +1,9 @@
 # Change History
 
+## Version 1.3.2
+- Minor bug fixes
+
+
 ## Version 1.3
 
 - Added processing and conversion of measurement units

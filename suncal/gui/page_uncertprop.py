@@ -520,11 +520,11 @@ class InputTreeWidget(QtWidgets.QTreeWidget):
                 conf = float(uncobj.userargs['conf'])
                 k = ttable.t_factor(conf, degf)
             else:
-                k = float(uncobj.userargs.get('k', 1))
+                k = float(uncobj.userargs.get('k', 2))
                 conf = ttable.confidence(k, degf)
             TreeRow(compitem, uncobj, 'k', '{:.2f}'.format(k))
             TreeRow(compitem, uncobj, 'confidence', '{:.2f}%'.format(conf*100))
-            TreeRow(compitem, uncobj, 'uncertainty', '{}'.format(uncobj.userargs.get('unc', uncobj.args.get('std', 1))))
+            TreeRow(compitem, uncobj, 'uncertainty', '{}'.format(uncobj.userargs.get('unc', k*uncobj.args.get('std', 1))))
         elif uncobj.distname == 'histogram':
             pass  # No extra widgets
         else:
@@ -628,6 +628,9 @@ class InputTreeWidget(QtWidgets.QTreeWidget):
         elif param == 'uncertainty':
             obj.userargs['unc'] = value
             obj.userargs.pop('std', None)
+            if 'k' not in obj.userargs:
+                kitem = [item.parent().child(i) for i in range(item.parent().childCount()) if item.parent().child(i).text(self.COL_NAME) == 'k'][0]
+                obj.userargs['k'] = kitem.text(self.COL_VALUE)
 
         elif param in ['k', 'confidence', 'deg. freedom']:
             # Must be floating points
@@ -654,8 +657,8 @@ class InputTreeWidget(QtWidgets.QTreeWidget):
                     obj.userargs.pop('conf', None)
                     confitem = [item.parent().child(i) for i in range(item.parent().childCount()) if item.parent().child(i).text(self.COL_NAME) == 'confidence'][0]
                     confitem.setText(self.COL_VALUE, '{:.2f}%'.format(ttable.confidence(value, obj.degf)*100))
-                elif param == 'confidence':
 
+                elif param == 'confidence':
                     obj.userargs['conf'] = value/100   # Assume entry in percent
                     obj.userargs.pop('k', None)
                     kitem = [item.parent().child(i) for i in range(item.parent().childCount()) if item.parent().child(i).text(self.COL_NAME) == 'k'][0]
@@ -679,7 +682,7 @@ class InputTreeWidget(QtWidgets.QTreeWidget):
                 self.replotdist.emit(obj)
 
     def update_text(self):
-        ''' Uncertainty table changed downstream. Update the descriptive combined uncertaity column for each row.
+        ''' Uncertainty table changed downstream. Update the descriptive combined uncertainty column for each row.
             Also update units if they changed automatically.
         '''
         self.blockSignals(True)
@@ -874,6 +877,7 @@ class DistInfo(QtWidgets.QWidget):
         ax = self.distfig.add_subplot(1, 1, 1)
         x, y = comp.pdf()
         ax.plot(x, y)
+        ax.set_xlabel('{}{}'.format(comp.name, output.formatunittex(comp.units, bracket=True)))
         self.distfig.tight_layout()
         self.distcanvas.draw_idle()
         self.distname.setText('Probability Distribution for {}'.format(comp.get_nameunicode()))

@@ -523,9 +523,9 @@ def _PFR_discrete(dist_proc, dist_test, LL, UL, GBL=0, GBU=0):
 def PFAR_MC(dist_proc, dist_test, LL, UL, GBL=0, GBU=0, N=100000, retsamples=False):
     ''' Probability of False Accept/Reject using Monte Carlo Method
 
-        dist_proc: array or stats.rv_frozen
+        dist_proc: stats.rv_frozen
             Distribution of possible unit under test values from process
-        dist_test: array or stats.rv_frozen
+        dist_test: stats.rv_frozen
             Distribution of possible test measurement values
         LL: float
             Lower specification limit (absolute)
@@ -553,9 +553,14 @@ def PFAR_MC(dist_proc, dist_test, LL, UL, GBL=0, GBU=0, N=100000, retsamples=Fal
     '''
     proc_samples = dist_proc.rvs(size=N)
     median = dist_test.median()
-    kwds = customdists.get_distargs(dist_test)
-    locorig = kwds.pop('loc', 0)
-    test_samples = dist_test.dist.rvs(loc=proc_samples-(median-locorig), **kwds)
+
+    if isinstance(dist_test, stats.rv_histogram):
+        locorig = 0
+        test_samples = dist_test.rvs(loc=proc_samples-median)
+    else:
+        kwds = customdists.get_distargs(dist_test)
+        locorig = kwds.pop('loc', 0)
+        test_samples = dist_test.dist.rvs(loc=proc_samples-(median-locorig), **kwds)
 
     FA = np.count_nonzero(((proc_samples > UL) & (test_samples < UL-GBU)) | ((proc_samples < LL) & (test_samples > LL+GBL)))/N
     FR = np.count_nonzero(((proc_samples < UL) & (test_samples > UL-GBU)) | ((proc_samples > LL) & (test_samples < LL+GBL)))/N
