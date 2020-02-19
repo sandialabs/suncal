@@ -24,6 +24,7 @@
     calculation functions.
 '''
 
+from collections import namedtuple
 import numpy as np
 import yaml
 from scipy import stats
@@ -34,15 +35,15 @@ from scipy.integrate import dblquad
 from scipy.optimize import brentq, fsolve
 
 from . import output
-from . import customdists
+from . import distributions
 
 
-def process_risk(dist, LL, UL):
+def specific_risk(dist, LL, UL):
     ''' Calculate process risk and process capability index for the distribution.
 
         Parameters
         ----------
-        dist: stats.rv_frozen
+        dist: stats.rv_frozen or distributions.Distribution
             Distribution of possible unit under test values
         LL: float
             Lower specification limit
@@ -77,7 +78,7 @@ def process_risk(dist, LL, UL):
     risk_lower = dist.cdf(LL)
     risk_upper = 1 - dist.cdf(UL)
     risk_total = risk_lower + risk_upper
-    if dist.dist.name == 'norm':
+    if hasattr(dist, 'dist') and hasattr(dist.dist, 'name') and dist.dist.name == 'norm':
         # Normal distributions can use the standard definition of cpk, process capability index
         cpk = min((UL-dist.mean())/(3*dist.std()), (dist.mean()-LL)/(3*dist.std()))
     else:
@@ -86,7 +87,8 @@ def process_risk(dist, LL, UL):
         cpk = max(0, min(abs(stats.norm.ppf(risk_lower))/3, abs(stats.norm.ppf(risk_upper))/3))
         if risk_lower > .5 or risk_upper > .5:
             cpk = -cpk
-    return cpk, risk_total, risk_lower, risk_upper
+    res = namedtuple('SpecificRisk', ['cpk', 'total', 'lower', 'upper'])
+    return res(cpk, risk_total, risk_lower, risk_upper)
 
 
 def guardband_norm(method, TUR, **kwargs):
@@ -96,7 +98,7 @@ def guardband_norm(method, TUR, **kwargs):
         ----------
         method: string
             Guard band method to apply. One of: 'dobbert', 'rss',
-            'rp10', 'test', '4:1', 'pfa'.
+            'rp10', 'test', '4:1', 'pfa', 'mincost', 'minimax'.
         TUR: float
             Test Uncertainty Ratio
 
@@ -105,7 +107,11 @@ def guardband_norm(method, TUR, **kwargs):
         pfa: float (optional)
             Target PFA (for method 'pfa'. Defaults to 0.008)
         itp: float (optional)
-            In-tolerance probability (for method 'pfa' and '4:1'. Defaults to 0.95)
+            In-tolerance probability (for method 'pfa', '4:1', 'mincost',
+            and 'minimax'. Defaults to 0.95)
+        CcCp: float (optional)
+            Ratio of cost of false accept to cost of part (for methods
+            'mincost' and 'minimax')
 
         Returns
         -------
@@ -120,6 +126,8 @@ def guardband_norm(method, TUR, **kwargs):
         rp10 method: GB = 1.25 - 1/TUR (similar to test, but less conservative)
         pfa method: Solve for GB to produce desired PFA
         4:1 method: Solve for GB that results in same PFA as 4:1 at this itp
+        mincost method: Minimize the total expected cost due to false decisions (Ref Easterling 1991)
+        minimax method: Minimize the maximum expected cost due to false decisions (Ref Easterling 1991)
     '''
     if method == 'dobbert':
         # Dobbert Eq. 4 for Managed Guard Band, maintains max PFA 2% for any itp.
@@ -143,20 +151,34 @@ def guardband_norm(method, TUR, **kwargs):
             pfa_target = PFA_norm(itp, TUR=4)
         # In normal case, this is faster than guardband() method
         GB = fsolve(lambda x: PFA_norm(itp, TUR, GB=x)-pfa_target, x0=.8)[0]
+    elif method == 'mincost':
+        itp = kwargs.get('itp', 0.95)
+        Cc_over_Cp = kwargs.get('CcCp', 10)
+        conf = 1 - (1 / (1 + Cc_over_Cp))
+        sigtest = 1/TUR/2
+        sigprod = 1/stats.norm.ppf((1+itp)/2)
+        k = stats.norm.ppf(conf) * np.sqrt(1 + sigtest**2/sigprod**2) - sigtest/sigprod**2
+        GB = 1 - k * sigtest
+    elif method == 'minimax':
+        itp = kwargs.get('itp', 0.95)
+        Cc_over_Cp = kwargs.get('CcCp', 10)
+        conf = 1 - (1 / (1 + Cc_over_Cp))
+        k = stats.norm.ppf(conf)
+        GB = 1 - k * (1/TUR/2)
     else:
         raise ValueError('Unknown guard band method {}.'.format(method))
     return GB
 
 
-def guardband(dist_proc, dist_test, LL, UL, target_PFA, approx=False):
+def guardband(dist_proc, dist_test, LL, UL, target_PFA, testbias=0, approx=False):
     ''' Calculate (symmetric) guard band required to meet a target PFA value, for
         arbitrary distributons.
 
         Parameters
         ----------
-        dist_proc: stats.rv_frozen
+        dist_proc: stats.rv_frozen or distributions.Distribution
             Distribution of possible unit under test values from process
-        dist_test: stats.rv_frozen
+        dist_test: stats.rv_frozen or distributions.Distribution
             Distribution of possible test measurement values
         LL: float
             Lower specification limit (absolute)
@@ -164,6 +186,9 @@ def guardband(dist_proc, dist_test, LL, UL, target_PFA, approx=False):
             Upper specification limit (absolute)
         target_PFA: float
             Probability of false accept required
+        testbias: float
+            Bias (difference between distribution median and expected value)
+            in test distribution
         approx: bool
             Approximate the integral using discrete probability distribution.
             Faster than using scipy.integrate.
@@ -182,7 +207,7 @@ def guardband(dist_proc, dist_test, LL, UL, target_PFA, approx=False):
     # NOTE: This can be slow (several minutes) especially for non-normals. Any way to speed up?
     w = UL-(LL+UL)/2
     try:
-        gb, r = brentq(lambda x: PFA(dist_proc, dist_test, LL, UL, GBU=x, GBL=x, approx=approx)-target_PFA, a=-w/2, b=w/2, full_output=True)
+        gb, r = brentq(lambda x: PFA(dist_proc, dist_test, LL, UL, GBU=x, GBL=x, testbias=testbias, approx=approx)-target_PFA, a=-w/2, b=w/2, full_output=True)
     except ValueError:
         return np.nan  # Problem solving
 
@@ -190,6 +215,11 @@ def guardband(dist_proc, dist_test, LL, UL, target_PFA, approx=False):
         return gb
     else:
         return np.nan
+
+
+def get_guardbandoffset(gbf, LL, UL):
+    ''' Convert guardband factor into offset from spec limits '''
+    return (UL-LL)/2 * (1-gbf)
 
 
 def PFA_norm(itp, TUR, GB=1, **kwargs):
@@ -223,7 +253,7 @@ def PFA_norm(itp, TUR, GB=1, **kwargs):
 
     A = GB  # A = T * GB = 1 * GB
     c, _ = dblquad(lambda y, t: np.exp((-y*y)/2/sigma0**2)*np.exp(-(t-y)**2/2/sigmatest**2),
-                   -A, A, gfun=lambda t: 1, hfun=lambda t: np.inf)
+                   -A, A, gfun=1, hfun=np.inf)
     c = c / (2 * np.pi * sigmatest * sigma0)
     return c * 2
 
@@ -257,7 +287,7 @@ def PFR_norm(itp, TUR, GB=1, **kwargs):
 
     A = GB
     c, _ = dblquad(lambda y, t: np.exp((-y*y)/2/sigma0**2)*np.exp(-(t-y)**2/2/sigmatest**2),
-                   A, np.inf, gfun=lambda t: -1, hfun=lambda t: 1)
+                   A, np.inf, gfun=-1, hfun=1)
     c = c / (2 * np.pi * sigmatest * sigma0)
     return c * 2
 
@@ -318,15 +348,15 @@ def PFR_deaver(SL, TUR, GB=1):
     return p
 
 
-def PFA(dist_proc, dist_test, LL, UL, GBL=0, GBU=0, approx=False):
+def PFA(dist_proc, dist_test, LL, UL, GBL=0, GBU=0, testbias=0, approx=False):
     ''' Calculate Probability of False Accept (Consumer Risk) for arbitrary
         process and test distributions.
 
         Parameters
         ----------
-        dist_proc: stats.rv_frozen
+        dist_proc: stats.rv_frozen or distributions.Distribution
             Distribution of possible unit under test values from process
-        dist_test: stats.rv_frozen
+        dist_test: stats.rv_frozen or distributions.Distribution
             Distribution of possible test measurement values
         LL: float
             Lower specification limit (absolute)
@@ -336,6 +366,9 @@ def PFA(dist_proc, dist_test, LL, UL, GBL=0, GBU=0, approx=False):
             Lower guard band, as offset. Test limit is LL + GBL.
         GBU: float
             Upper guard band, as offset. Test limit is UL - GBU.
+        testbias: float
+            Bias (difference between distribution median and expected value)
+            in test distribution
         approx: bool
             Approximate using discrete probability distribution. This
             uses trapz integration so it may be faster than letting
@@ -349,24 +382,26 @@ def PFA(dist_proc, dist_test, LL, UL, GBL=0, GBU=0, approx=False):
     if approx:
         xx = np.linspace(dist_proc.median() - dist_proc.std()*8, dist_proc.median() + dist_proc.std()*8, num=1000)
         xx2 = np.linspace(dist_test.median() - dist_test.std()*8,  dist_test.median() + dist_test.std()*8, num=1000)
-        return _PFA_discrete((xx, dist_proc.pdf(xx)), (xx2, dist_test.pdf(xx2)), LL, UL, GBL=GBL, GBU=GBU)
+        procpdf = dist_proc.pdf(xx)
+        testpdf = dist_test.pdf(xx2)
+        return _PFA_discrete((xx, procpdf), (xx2, testpdf), LL, UL, GBL=GBL, GBU=GBU, testbias=testbias)
 
     else:
         # Strip loc keyword from test distribution so it can be changed,
-        # but shift loc so the MEDIAN (expected) value starts at the spec limit.
-        median = dist_test.median()
-        kwds = customdists.get_distargs(dist_test)
+        # but shift loc so the median (expected) value starts at the spec limit.
+        test_expected = dist_test.median() - testbias
+        kwds = distributions.get_distargs(dist_test)
         locorig = kwds.pop('loc', 0)
 
         def integrand(y, t):
-            return dist_test.dist.pdf(y, loc=t-(median-locorig), **kwds) * dist_proc.pdf(y)
+            return dist_test.dist.pdf(y, loc=t-(test_expected-locorig), **kwds) * dist_proc.pdf(y)
 
-        c1, _ = dblquad(integrand, LL+GBL, UL-GBU, gfun=lambda t: UL, hfun=lambda t: np.inf)
-        c2, _ = dblquad(integrand, LL+GBL, UL-GBU, gfun=lambda t: -np.inf, hfun=lambda t: LL)
+        c1, _ = dblquad(integrand, LL+GBL, UL-GBU, gfun=UL, hfun=np.inf)
+        c2, _ = dblquad(integrand, LL+GBL, UL-GBU, gfun=-np.inf, hfun=LL)
         return c1 + c2
 
 
-def _PFA_discrete(dist_proc, dist_test, LL, UL, GBL=0, GBU=0):
+def _PFA_discrete(dist_proc, dist_test, LL, UL, GBL=0, GBU=0, testbias=0):
     ''' Calculate Probability of False Accept (Consumer Risk) using
         sampled distributions.
 
@@ -384,6 +419,9 @@ def _PFA_discrete(dist_proc, dist_test, LL, UL, GBL=0, GBU=0):
             Lower guard band, as offset. Test limit is LL + GBL.
         GBU: float
             Upper guard band, as offset. Test limit is UL - GBU.
+        testbias: float
+            Bias (difference between distribution median and expected value)
+            in test distribution
 
         Returns
         -------
@@ -406,29 +444,29 @@ def _PFA_discrete(dist_proc, dist_test, LL, UL, GBL=0, GBU=0):
         dx = testx[1]-testx[0]
         testx = testx[1:] - dx/2
 
-    testmed = np.median(testx)
+    expected = np.median(testx) - testbias
     c = 0
     for t, ut in zip(procx[np.where(procx > UL)], procy[np.where(procx > UL)]):
-        idx = np.where(testx+t-testmed < UL-GBU)
+        idx = np.where(testx+t-expected < UL-GBU)
         c += np.trapz(ut*testy[idx], dx=dx)
 
     for t, ut in zip(procx[np.where(procx < LL)], procy[np.where(procx < LL)]):
-        idx = np.where(testx+t-testmed > LL+GBL)
+        idx = np.where(testx+t-expected > LL+GBL)
         c += np.trapz(ut*testy[idx], dx=dx)
 
     c *= dy
     return c
 
 
-def PFR(dist_proc, dist_test, LL, UL, GBL=0, GBU=0, approx=False):
+def PFR(dist_proc, dist_test, LL, UL, GBL=0, GBU=0, testbias=0, approx=False):
     ''' Calculate Probability of False Reject (Producer Risk) for arbitrary
         process and test distributions.
 
         Parameters
         ----------
-        dist_proc: stats.rv_frozen
+        dist_proc: stats.rv_frozen or distribution.Distribution instance
             Distribution of possible unit under test values from process
-        dist_test: stats.rv_frozen
+        dist_test: stats.rv_frozen or distribution.Distribution instance
             Distribution of possible test measurement values
         LL: float
             Lower specification limit (absolute)
@@ -438,6 +476,9 @@ def PFR(dist_proc, dist_test, LL, UL, GBL=0, GBU=0, approx=False):
             Lower guard band, as offset. Test limit is LL + GBL.
         GBU: float
             Upper guard band, as offset. Test limit is UL - GBU.
+        testbias: float
+            Bias (difference between distribution median and expected value)
+            in test distribution
         approx: bool
             Approximate using discrete probability distribution. This
             uses trapz integration so it may be faster than letting
@@ -451,24 +492,26 @@ def PFR(dist_proc, dist_test, LL, UL, GBL=0, GBU=0, approx=False):
     if approx:
         xx = np.linspace(dist_proc.median() - dist_proc.std()*8, dist_proc.median() + dist_proc.std()*8, num=1000)
         xx2 = np.linspace(dist_test.median() - dist_test.std()*8,  dist_test.median() + dist_test.std()*8, num=1000)
-        return _PFR_discrete((xx, dist_proc.pdf(xx)), (xx2, dist_test.pdf(xx2)), LL, UL, GBL=GBL, GBU=GBU)
+        procpdf = dist_proc.pdf(xx)
+        testpdf = dist_test.pdf(xx2)
+        return _PFR_discrete((xx, procpdf), (xx2, testpdf), LL, UL, GBL=GBL, GBU=GBU, testbias=testbias)
 
     else:
         # Strip loc keyword from test distribution so it can be changed,
-        # but shift loc so the MEDIAN value starts at the spec limit.
-        median = dist_test.median()
-        kwds = customdists.get_distargs(dist_test)
+        # but shift loc so the median (expected) value starts at the spec limit.
+        expected = dist_test.median() - testbias
+        kwds = distributions.get_distargs(dist_test)
         locorig = kwds.pop('loc', 0)
 
         def integrand(y, t):
-            return dist_test.dist.pdf(y, loc=t-(median-locorig), **kwds) * dist_proc.pdf(y)
+            return dist_test.dist.pdf(y, loc=t-(expected-locorig), **kwds) * dist_proc.pdf(y)
 
-        p1, _ = dblquad(integrand, UL-GBU, np.inf, gfun=lambda t: LL, hfun=lambda t: UL)
-        p2, _ = dblquad(integrand, -np.inf, LL+GBL, gfun=lambda t: LL, hfun=lambda t: UL)
+        p1, _ = dblquad(integrand, UL-GBU, np.inf, gfun=LL, hfun=UL)
+        p2, _ = dblquad(integrand, -np.inf, LL+GBL, gfun=LL, hfun=UL)
         return p1 + p2
 
 
-def _PFR_discrete(dist_proc, dist_test, LL, UL, GBL=0, GBU=0):
+def _PFR_discrete(dist_proc, dist_test, LL, UL, GBL=0, GBU=0, testbias=0):
     ''' Calculate Probability of False Reject (Producer Risk) using
         sampled distributions.
 
@@ -486,6 +529,9 @@ def _PFR_discrete(dist_proc, dist_test, LL, UL, GBL=0, GBU=0):
             Lower guard band, as offset. Test limit is LL + GBL.
         GBU: float
             Upper guard band, as offset. Test limit is UL - GBU.
+        testbias: float
+            Bias (difference between distribution median and expected value)
+            in test distribution
 
         Returns
         -------
@@ -508,19 +554,19 @@ def _PFR_discrete(dist_proc, dist_test, LL, UL, GBL=0, GBU=0):
         dx = testx[1]-testx[0]
         testx = testx[1:] - dx/2
 
-    testmed = np.median(testx)
+    expected = np.median(testx) - testbias
     c = 0
     for t, ut in zip(procx[np.where((procx > LL) & (procx < UL))], procy[np.where((procx > LL) & (procx < UL))]):
-        idx = np.where(testx+t-testmed > UL-GBU)
+        idx = np.where(testx+t-expected > UL-GBU)
         c += np.trapz(ut*testy[idx], dx=dx)
-        idx = np.where(testx+t-testmed < LL+GBL)
+        idx = np.where(testx+t-expected < LL+GBL)
         c += np.trapz(ut*testy[idx], dx=dx)
 
     c *= dy
     return c
 
 
-def PFAR_MC(dist_proc, dist_test, LL, UL, GBL=0, GBU=0, N=100000, retsamples=False):
+def PFAR_MC(dist_proc, dist_test, LL, UL, GBL=0, GBU=0, N=100000, testbias=0, retsamples=False):
     ''' Probability of False Accept/Reject using Monte Carlo Method
 
         dist_proc: stats.rv_frozen
@@ -537,6 +583,9 @@ def PFAR_MC(dist_proc, dist_test, LL, UL, GBL=0, GBU=0, N=100000, retsamples=Fal
             Upper guard band, as offset. Test limit is UL - GBU.
         N: int
             Number of Monte Carlo samples
+        testbias: float
+            Bias (difference between distribution median and expected value)
+            in test distribution
         retsamples: bool
             Return samples along with probabilities
 
@@ -552,18 +601,25 @@ def PFAR_MC(dist_proc, dist_test, LL, UL, GBL=0, GBU=0, N=100000, retsamples=Fal
             Monte Carlo samples for test measurement (if retsamples==True)
     '''
     proc_samples = dist_proc.rvs(size=N)
-    median = dist_test.median()
+    expected = dist_test.median() - testbias
+    kwds = distributions.get_distargs(dist_test)
+    locorig = kwds.pop('loc', 0)
+    try:
+        # Works for normal stats distributions, but not rv_histograms
+        test_samples = dist_test.dist.rvs(loc=proc_samples-(expected-locorig), size=N, **kwds)
+    except TypeError:
+        # Works for histograms, but not regular distributions...
+        test_samples = dist_test.dist(**kwds).rvs(loc=proc_samples-(expected-locorig), size=N)
+    except ValueError:
+        # Invalid parameter in kwds
+        test_samples = np.array([])
+        if retsamples:
+            return np.nan, np.nan, None, None
+        else:
+            return np.nan, np.nan
 
-    if isinstance(dist_test, stats.rv_histogram):
-        locorig = 0
-        test_samples = dist_test.rvs(loc=proc_samples-median)
-    else:
-        kwds = customdists.get_distargs(dist_test)
-        locorig = kwds.pop('loc', 0)
-        test_samples = dist_test.dist.rvs(loc=proc_samples-(median-locorig), **kwds)
-
-    FA = np.count_nonzero(((proc_samples > UL) & (test_samples < UL-GBU)) | ((proc_samples < LL) & (test_samples > LL+GBL)))/N
-    FR = np.count_nonzero(((proc_samples < UL) & (test_samples > UL-GBU)) | ((proc_samples > LL) & (test_samples < LL+GBL)))/N
+    FA = np.count_nonzero(((test_samples < UL-GBU) & (test_samples > LL+GBL)) & ((proc_samples > UL) | (proc_samples < LL))) / N
+    FR = np.count_nonzero(((test_samples > UL-GBU) | (test_samples < LL+GBL)) & ((proc_samples < UL) & (proc_samples > LL))) / N
 
     if retsamples:
         return FA, FR, proc_samples, test_samples
@@ -578,13 +634,16 @@ class Risk(object):
     def __init__(self, name='risk'):
         self.name = name
         self.description = ''
-        self.procdist = customdists.normal(.51021346)  # For 95% itp starting value
-        self.testdist = customdists.normal(0.125)
+        self.procdist = distributions.get_distribution('normal', std=.51021346)  # For 95% itp starting value
+        self.testdist = distributions.get_distribution('normal', std=.125)
+        self.testbias = 0              # Offset between testdist median and measurement result
         self.speclimits = (-1.0, 1.0)  # Upper/lower specification limits
         self.guardband = (0, 0)        # Guard band offset (A = speclimits - guardband)
         self.out = RiskOutput(self)
+        self.cost_FA = None  # Cost of false accept
+        self.cost_RF = None  # Cost of false reject
 
-    def set_testdist(self, testdist):
+    def set_testdist(self, testdist, testbias=None):
         ''' Set the test distribution
 
             Parameters
@@ -593,6 +652,8 @@ class Risk(object):
                 Test distribution instance
         '''
         self.testdist = testdist
+        if testbias is not None:
+            self.testbias = testbias
 
     def set_procdist(self, procdist):
         ''' Set the process distribution
@@ -651,7 +712,7 @@ class Risk(object):
         '''
         self.to_simple()
         sigma = self.speclimits[1] / stats.norm.ppf((1+itp)/2)
-        self.procdist = stats.norm(loc=0, scale=sigma)
+        self.procdist = distributions.get_distribution('normal', loc=0, std=sigma)
 
     def set_tur(self, tur):
         ''' Set test uncertainty ratio by adjusting test distribution
@@ -664,7 +725,7 @@ class Risk(object):
         self.to_simple()
         sigma = 1/tur/2
         median = self.testdist.median()
-        self.testdist = stats.norm(loc=median, scale=sigma)
+        self.testdist = distributions.get_distribution('normal', loc=median, std=sigma)
 
     def set_testmedian(self, median):
         ''' Set median of test measurement
@@ -675,7 +736,12 @@ class Risk(object):
                 Median value of a particular test measurement result
         '''
         sigma = self.testdist.std()
-        self.testdist = stats.norm(loc=median, scale=sigma)
+        self.testdist = distributions.get_distribution('normal', loc=median, std=sigma)
+
+    def set_costs(self, FA, FR):
+        ''' Set cost of false accept and reject for cost-minimization techniques '''
+        self.cost_FA = FA
+        self.cost_FR = FR
 
     def get_testmedian(self):
         ''' Get test measurement median '''
@@ -685,9 +751,9 @@ class Risk(object):
         ''' Check if simplified normal-only functions can be used '''
         if self.procdist is None or self.testdist is None:
             return False
-        if self.procdist.median() != 0:
+        if self.procdist.median() != 0 or self.testbias != 0:
             return False
-        if self.procdist.dist.name != 'norm' or self.testdist.dist.name != 'norm':
+        if self.procdist.name != 'normal' or self.testdist.name != 'normal':
             return False
         if self.speclimits[1] != 1 or self.speclimits[0] != -1:
             return False
@@ -709,9 +775,9 @@ class Risk(object):
         # Convert to normal/symmetric
         self.set_speclimits(-1, 1)
         sigma0 = self.speclimits[1] / stats.norm.ppf((1+itp)/2)
-        self.procdist = stats.norm(loc=0, scale=sigma0)
+        self.procdist = distributions.get_distribution('normal', loc=0, std=sigma0)
         sigmat = 1/tur/2
-        self.testdist = stats.norm(loc=median, scale=sigmat)
+        self.testdist = distributions.get_distribution('normal', loc=median, std=sigmat)
         self.set_gbf(gbf)
 
     def get_tur(self):
@@ -756,7 +822,7 @@ class Risk(object):
         ----------
         method: string
             Guard band method to apply. One of: 'dobbert', 'rss',
-            'rp10', 'test', '4:1', 'pfa'.
+            'rp10', 'test', '4:1', 'pfa', 'minimax', 'mincost'.
         TUR: float
             Test Uncertainty Ratio
         pfa: float (optional)
@@ -770,12 +836,20 @@ class Risk(object):
         rp10 method: GB = 1.25 - 1/TUR (similar to test, but less conservative)
         pfa method: Solve for GB to produce desired PFA
         4:1 method: Solve for GB that results in same PFA as 4:1 at this itp
+        mincost method: Minimize the total expected cost due to false decisions (Ref Easterling 1991)
+        minimax method: Minimize the maximum expected cost due to false decisions (Ref Easterling 1991)
         '''
+        CcCp = None
+        if method in ['minimax', 'mincost']:
+            if (self.cost_FA is None or self.cost_FR is None):
+                raise ValueError('Minimax and Mincost methods must set costs of false accept/reject using `set_costs`.')
+            CcCp = self.cost_FA/self.cost_FR
+
         if self.is_simple() or method != 'pfa':
-            gbf = guardband_norm(method, self.get_tur(), pfa=pfa, itp=self.get_itp())
+            gbf = guardband_norm(method, self.get_tur(), pfa=pfa, itp=self.get_itp(), CcCp=CcCp)
             self.set_gbf(gbf)
         else:
-            gb = guardband(self.get_procdist(), self.get_testdist(), *self.get_speclimits(), pfa, approx=True)
+            gb = guardband(self.get_procdist(), self.get_testdist(), *self.get_speclimits(), pfa, self.get_testbias(), approx=True)
             self.set_guardband(gb, gb)   # Returns guardband as offset
 
     def PFA(self, approx=True):
@@ -791,11 +865,8 @@ class Risk(object):
             PFA: float
                 Probability of false accept (0-1)
         '''
-        if self.is_simple():
-            return PFA_norm(self.get_itp(), self.get_tur(), self.get_gbf())
-        else:
-            return PFA(self.procdist, self.testdist, *self.speclimits,
-                       *self.guardband, approx)
+        return PFA(self.procdist, self.testdist, *self.speclimits,
+                   *self.guardband, self.testbias, approx)
 
     def PFR(self, approx=True):
         ''' Calculate probability of false reject (producer risk).
@@ -810,17 +881,14 @@ class Risk(object):
             PFR: float
                 Probability of false reject (0-1)
         '''
-        if self.is_simple():
-            return PFR_norm(self.get_itp(), self.get_tur(), self.get_gbf())
-        else:
-            return PFR(self.procdist, self.testdist, *self.speclimits,
-                       *self.guardband, approx)
+        return PFR(self.procdist, self.testdist, *self.speclimits,
+                   *self.guardband, self.testbias, approx)
 
     def proc_risk(self):
         ''' Calculate total process risk, risk of process distribution being outside
             specification limits
         '''
-        return process_risk(self.procdist, *self.speclimits)[1]
+        return specific_risk(self.procdist, *self.speclimits)[1]
 
     def cpk(self):
         ''' Get process risk and CPK values
@@ -837,7 +905,7 @@ class Risk(object):
         risk_upper: float
             Risk of nonconformance above UL
         '''
-        return process_risk(self.procdist, *self.speclimits)
+        return specific_risk(self.procdist, *self.speclimits)
 
     def test_risk(self):
         ''' Calculate PFA or PFR of the specific test measurement defined by dist_test
@@ -852,7 +920,7 @@ class Risk(object):
             accept: bool
                 Accept or reject this measurement
         '''
-        med = self.testdist.median()
+        med = self.testdist.median() + self.testbias
         LL, UL = self.speclimits
         LL, UL = min(LL, UL), max(LL, UL)  # Make sure LL < UL
         accept = (med >= LL + self.guardband[0] and med <= UL - self.guardband[0])
@@ -866,11 +934,23 @@ class Risk(object):
     # Extra functions for GUI
     def get_procdist_args(self):
         ''' Get dictionary of arguments for process distribution '''
-        return self.get_config()['distproc']
+        args = self.procdist.kwds.copy()
+        args.update({'dist': self.procdist.name})
+        return args
 
     def get_testdist_args(self):
         ''' Get dictionary of arguments for test distribution '''
-        return self.get_config()['disttest']
+        args = self.testdist.kwds.copy()
+        args.update({'dist': self.testdist.name})
+        return args
+
+    def get_testbias(self):
+        ''' Get bias in test distribution '''
+        return self.testbias
+
+    def set_testbias(self, bias=0):
+        ''' Set bias in test distribution '''
+        self.testbias = bias
 
     # Stuff to make it compatible with UncertCalc projects
     def calculate(self):
@@ -888,12 +968,13 @@ class Risk(object):
         d['mode'] = 'risk'
         d['name'] = self.name
         d['desc'] = self.description
+        d['bias'] = self.testbias
 
         if self.procdist is not None:
-            d['distproc'] = customdists.get_config(self.procdist)
+            d['distproc'] = self.procdist.get_config()
 
         if self.testdist is not None:
-            d['disttest'] = customdists.get_config(self.testdist)
+            d['disttest'] = self.testdist.get_config()
 
         d['GBL'] = self.guardband[0]
         d['GBU'] = self.guardband[1]
@@ -924,17 +1005,18 @@ class Risk(object):
         newrisk.description = config.get('desc', '')
         newrisk.set_speclimits(config.get('LL', 0), config.get('UL', 0))
         newrisk.set_guardband(config.get('GBL', 0), config.get('GBU', 0))
+        newrisk.set_testbias(config.get('bias', 0))
 
         dproc = config.get('distproc', None)
         if dproc is not None:
-            dist_proc = customdists.from_config(dproc)
+            dist_proc = distributions.from_config(dproc)
             newrisk.set_procdist(dist_proc)
         else:
             newrisk.procdist = None
 
         dtest = config.get('disttest', None)
         if dtest is not None:
-            dist_test = customdists.from_config(dtest)
+            dist_test = distributions.from_config(dtest)
             newrisk.set_testdist(dist_test)
         else:
             newrisk.testdist = None
@@ -981,6 +1063,7 @@ class RiskOutput(output.Output):
         ''' Generate report of risk calculation '''
         hdr = []
         cols = []
+        cost = None
 
         if self.risk.get_procdist() is not None:
             cpk, risk_total, risk_lower, risk_upper = self.risk.cpk()
@@ -989,9 +1072,11 @@ class RiskOutput(output.Output):
                          'Upper limit risk: {:.2f}%'.format(risk_upper*100),
                          'Lower limit risk: {:.2f}%'.format(risk_lower*100),
                          'Process capability index (Cpk): {:.6f}'.format(cpk)])
+            if self.risk.cost_FA is not None:
+                cost = self.risk.cost_FA * risk_total  # Everything accepted - no false rejects
 
         if self.risk.get_testdist() is not None:
-            val = self.risk.get_testdist().median()
+            val = self.risk.get_testdist().median() + self.risk.get_testbias()
             PFx, accept = self.risk.test_risk()  # Get PFA/PFR of specific measurement
 
             hdr.extend(['Test Measurement Risk'])
@@ -1004,15 +1089,26 @@ class RiskOutput(output.Output):
 
         if self.risk.get_testdist() is not None and self.risk.get_procdist() is not None:
             hdr.extend(['Combined Risk'])
+            pfa = self.risk.PFA()
+            pfr = self.risk.PFR()
             cols.append([
-                'Total PFA: {:.2f}%'.format(self.risk.PFA()*100),
-                'Total PFR: {:.2f}%'.format(self.risk.PFR()*100), '', ''])
+                'Total PFA: {:.2f}%'.format(pfa*100),
+                'Total PFR: {:.2f}%'.format(pfr*100), '', ''])
+            if self.risk.cost_FA is not None and self.risk.cost_FR is not None:
+                cost = self.risk.cost_FA * pfa + self.risk.cost_FR * pfr
 
         if len(hdr) > 0:
             rows = list(map(list, zip(*cols)))  # Transpose cols->rows
-            return output.md_table(rows=rows, hdr=hdr)
+            rpt = output.md_table(rows=rows, hdr=hdr)
         else:
-            return output.MDstring()
+            rpt = output.MDstring()
+
+        if cost is not None:
+            costrows = [['Cost of false accept', format(self.risk.cost_FA, '.4g')],
+                        ['Cost of false reject', format(self.risk.cost_FR, '.4g')],
+                        ['Expected cost', format(cost, '.4g')]]
+            rpt += output.md_table(costrows, hdr=['Cost', 'Value'])
+        return rpt
 
     def report_all(self, **kwargs):
         ''' Report with table and plots '''
@@ -1032,12 +1128,11 @@ class RiskOutput(output.Output):
             r += self.report(**kwargs)
         return r
 
-    def plot_dists(self, fig=None):
+    def plot_dists(self, plot=None):
         ''' Plot risk distributions '''
         with mpl.style.context(output.mplcontext):
             plt.ioff()
-            if fig is None:
-                fig = plt.figure()
+            fig, ax = output.initplot(plot)
             fig.clf()
 
             procdist = self.risk.get_procdist()
@@ -1067,22 +1162,24 @@ class RiskOutput(output.Output):
                 ax.set_xlabel('Value')
                 ax.legend(loc='upper left')
                 if self.labelsigma:
-                    ax.xaxis.set_major_formatter(FormatStrFormatter(r'%d$\sigma$'))
+                    ax.xaxis.set_major_formatter(FormatStrFormatter(r'%dSL'))
                 plotnum += 1
 
             if testdist is not None:
                 ytest = testdist.pdf(x)
                 median = self.risk.get_testmedian()
+                measured = median + self.risk.get_testbias()
                 ax = fig.add_subplot(nrows, 1, plotnum+1)
                 ax.plot(x, ytest, label='Test Distribution', color='C1')
-                ax.axvline(median, ls='--', color='C1')
+                ax.axvline(measured, ls='--', color='C1')
+                ax.axvline(median, ls=':', lw=.5, color='lightgray')
                 ax.axvline(LL, ls='--', label='Specification Limits', color='C2')
                 ax.axvline(UL, ls='--', color='C2')
                 if GBL != 0 or GBU != 0:
                     ax.axvline(LL+GBL, ls='--', label='Guard Band', color='C3')
                     ax.axvline(UL-GBU, ls='--', color='C3')
 
-                if median > UL-GBU or median < LL+GBL:   # Shade PFR
+                if measured > UL-GBU or measured < LL+GBL:   # Shade PFR
                     ax.fill_between(x, ytest, where=((x >= LL) & (x <= UL)), alpha=.5, color='C1')
                 else:  # Shade PFA
                     ax.fill_between(x, ytest, where=((x <= LL) | (x >= UL)), alpha=.5, color='C1')
@@ -1091,7 +1188,7 @@ class RiskOutput(output.Output):
                 ax.set_xlabel('Value')
                 ax.legend(loc='upper left')
                 if self.labelsigma:
-                    ax.xaxis.set_major_formatter(FormatStrFormatter(r'%d$\sigma$'))
+                    ax.xaxis.set_major_formatter(FormatStrFormatter(r'%dSL'))
             fig.tight_layout()
         return fig
 
@@ -1101,37 +1198,34 @@ class RiskOutput(output.Output):
         SL = self.risk.get_speclimits()
         GB = self.risk.get_guardband()
         pfa, pfr, psamples, tsamples = PFAR_MC(self.risk.get_procdist(), self.risk.get_testdist(),
-                                               *SL, *GB, N=N, retsamples=True)
+                                               *SL, *GB, N=N, testbias=self.risk.get_testbias(), retsamples=True)
 
         if fig is not None:
             fig.clf()
             ax = fig.add_subplot(1, 1, 1)
-            ifr1 = (psamples > SL[0]) & (tsamples < SL[0]+GB[0])
-            ifa1 = (psamples < SL[0]) & (tsamples > SL[0]+GB[0])
-            ifr2 = (psamples < SL[1]) & (tsamples > SL[1]-GB[1])
-            ifa2 = (psamples > SL[1]) & (tsamples < SL[1]-GB[1])
-            good = np.logical_not(ifa1 | ifa2 | ifr1 | ifr2)
-            ax.plot(psamples[good], tsamples[good], marker='.', ls='', markersize=1, color='C0')
-            ax.plot(psamples[ifa1], tsamples[ifa1], marker='.', ls='', markersize=1, color='C1', label='False Accept')
-            ax.plot(psamples[ifr1], tsamples[ifr1], marker='.', ls='', markersize=1, color='C2', label='False Reject')
-            ax.plot(psamples[ifa2], tsamples[ifa2], marker='.', ls='', markersize=1, color='C1')
-            ax.plot(psamples[ifr2], tsamples[ifr2], marker='.', ls='', markersize=1, color='C2')
-            ax.axvline(SL[0], ls='--', lw=1, color='black')
-            ax.axvline(SL[1], ls='--', lw=1, color='black')
-            ax.axhline(SL[0]+GB[0], lw=1, ls='--', color='gray')
-            ax.axhline(SL[1]-GB[1], lw=1, ls='--', color='gray')
-            ax.axhline(SL[0], ls='--', lw=1, color='black')
-            ax.axhline(SL[1], ls='--', lw=1, color='black')
-            ax.legend(loc='upper left', fontsize=10)
-            ax.set_xlabel('Process Distribution')
-            ax.set_ylabel('Test Distribution')
+            if psamples is not None:
+                ifa1 = (tsamples > SL[0]+GB[0]) & (tsamples < SL[1]-GB[1]) & ((psamples < SL[0]) | (psamples > SL[1]))
+                ifr1 = ((tsamples < SL[0]+GB[0]) | (tsamples > SL[1]-GB[1])) & ((psamples > SL[0]) & (psamples < SL[1]))
+                good = np.logical_not(ifa1 | ifr1)
+                ax.plot(psamples[good], tsamples[good], marker='o', ls='', markersize=2, color='C0', label='Correct Decision', rasterized=True)
+                ax.plot(psamples[ifa1], tsamples[ifa1], marker='o', ls='', markersize=2, color='C1', label='False Accept', rasterized=True)
+                ax.plot(psamples[ifr1], tsamples[ifr1], marker='o', ls='', markersize=2, color='C2', label='False Reject', rasterized=True)
+                ax.axvline(SL[0], ls='--', lw=1, color='black')
+                ax.axvline(SL[1], ls='--', lw=1, color='black')
+                ax.axhline(SL[0]+GB[0], lw=1, ls='--', color='gray')
+                ax.axhline(SL[1]-GB[1], lw=1, ls='--', color='gray')
+                ax.axhline(SL[0], ls='--', lw=1, color='black')
+                ax.axhline(SL[1], ls='--', lw=1, color='black')
+                ax.legend(loc='upper left', fontsize=10)
+                ax.set_xlabel('Actual Product')
+                ax.set_ylabel('Test Result')
 
-            slrange = SL[1] - SL[0]
-            slmin = SL[0] - slrange
-            slmax = SL[1] + slrange
-            ax.set_xlim(slmin, slmax)
-            ax.set_ylim(slmin, slmax)
-            fig.tight_layout()
+                slrange = SL[1] - SL[0]
+                slmin = SL[0] - slrange
+                slmax = SL[1] + slrange
+                ax.set_xlim(slmin, slmax)
+                ax.set_ylim(slmin, slmax)
+                fig.tight_layout()
 
         s = '- TUR: {:.2f}\n- Total PFA: {:.2f}%\n- Total PFR: {:.2f}%'.format(self.risk.get_tur(), pfa*100, pfr*100)
         return output.MDstring(s)

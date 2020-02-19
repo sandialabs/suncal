@@ -76,8 +76,8 @@ def test_sweep():
     assert s.out.get_rptsingle(0).f.gum.mean.magnitude == 14   # Verify mean values of GUM calculation
     assert s.out.get_rptsingle(1).f.gum.mean.magnitude == 15
     assert s.out.get_rptsingle(2).f.gum.mean.magnitude == 16
-    assert 'f (GUM)' in s.out.get_array()
-    assert np.allclose(s.out.get_array('f (GUM)').y, np.array([14, 15, 16]))
+    assert 'f (GUM)' in s.out.get_dataset()
+    assert np.allclose(s.out.get_dataset('f (GUM)').get_column('f'), np.array([14, 15, 16]))
 
     # Sweep uncertainty value
     s = sweeper.UncertSweep(u)
@@ -88,8 +88,8 @@ def test_sweep():
     assert np.isclose(s.out.get_rptsingle(0).f.gum.uncert.magnitude, np.sqrt(0.5**2 + 0.5**2))  # Uncertainties should sweep
     assert np.isclose(s.out.get_rptsingle(1).f.gum.uncert.magnitude, np.sqrt(1**2 +.5**2))
     assert np.isclose(s.out.get_rptsingle(2).f.gum.uncert.magnitude, np.sqrt(1.5**2 + .5**2))
-    assert 'f (GUM)' in s.out.get_array()
-    assert np.allclose(s.out.get_array('f (GUM)').y, np.array([15, 15, 15]))  # Mean value shouldnt change
+    assert 'f (GUM)' in s.out.get_dataset()
+    assert np.allclose(s.out.get_dataset('f (GUM)').get_column('f'), np.array([15, 15, 15]))  # Mean value shouldnt change
 
     # Sweep degrees of freedom
     s = sweeper.UncertSweep(u)
@@ -120,8 +120,8 @@ def test_sweepreverse():
     s = sweeper.UncertSweepReverse(u)
     s.add_sweep_unc('b', values=np.array([.5, 1.0, 1.5]))
     s.calculate()
-    assert 'f (GUM)' in s.out.get_array()
-    assert np.allclose(s.out.get_array('f (GUM)').x, np.array([.5, 1, 1.5]))
+    assert 'f (GUM)' in s.out.get_dataset()
+    assert np.allclose(s.out.get_dataset('f (GUM)').get_column('$u_{b}$'), np.array([.5, 1, 1.5]))
     assert '$u_{b}$' in str(s.out.report())
 
     u = reverse.UncertReverse('f = a+b', solvefor='a', targetnom=15, targetunc=1.5)
@@ -130,10 +130,9 @@ def test_sweepreverse():
     s = sweeper.UncertSweepReverse(u)
     s.add_sweep_nom('b', values=np.array([4, 5, 6]))
     s.calculate()
-    assert 'f (GUM)' in s.out.get_array()
-    assert np.allclose(s.out.get_array('f (GUM)').x, np.array([4, 5, 6]))
-    assert np.allclose(s.out.get_array('f (GUM)').uy, np.full(3, 1.12), atol=.005)
-    assert 'b' in str(s.out.report())[:4]
+    assert 'f (GUM)' in s.out.get_dataset()
+    assert np.allclose(s.out.get_dataset('f (GUM)').get_column('$b$'), np.array([4, 5, 6]))
+    assert np.allclose(s.out.get_dataset('f (GUM)').get_column('u(a)'), np.full(3, 1.12), atol=.005)
 
     u = reverse.UncertReverse('f = a+b', solvefor='a', targetnom=15, targetunc=1.5)
     u.set_input('a', nom=10, std=1)
@@ -141,10 +140,8 @@ def test_sweepreverse():
     s = sweeper.UncertSweepReverse(u)
     s.add_sweep_df('b', values=np.array([5, 10, 15]))
     s.calculate()
-    assert 'f (GUM)' in s.out.get_array()
-    assert np.allclose(s.out.get_array('f (GUM)').x, np.array([5, 10, 15]))
-    assert 'deg.f' in str(s.out.report())[:10]
-    assert '$b$' in str(s.out.report())[:10]
+    assert 'f (GUM)' in s.out.get_dataset()
+    assert np.allclose(s.out.get_dataset('f (GUM)').get_column('$b$ deg.f'), np.array([5, 10, 15]))
 
     u = reverse.UncertReverse('f = a+b', solvefor='a', targetnom=15, targetunc=1.5)
     u.set_input('a', nom=10, std=1)
@@ -152,6 +149,5 @@ def test_sweepreverse():
     s = sweeper.UncertSweepReverse(u)
     s.add_sweep_corr('a', 'b', values=np.array([-.5, 0, 0.5]))
     s.calculate()
-    assert 'f (GUM)' in s.out.get_array()
-    assert np.allclose(s.out.get_array('f (GUM)').x, np.array([-.5, 0, 0.5]))
-    assert 'corr' in str(s.out.report())[:10]
+    assert 'f (GUM)' in s.out.get_dataset()
+    assert np.allclose(s.out.get_dataset('f (GUM)').get_column('$corr$'), np.array([-.5, 0, 0.5]))

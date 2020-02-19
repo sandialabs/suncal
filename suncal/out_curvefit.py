@@ -158,48 +158,30 @@ class CurveFitOutput(output.Output):
                 r.add_fig(fig)
         return r
 
-    def get_dists(self, name=None, **kwargs):
+    def get_dists(self):
         ''' Get distributions in this output. If name is none, return a list of
             available distribution names.
-
-            Keyword Arguments
-            -----------------
-            xval: x-value for a confidence/prediction interval distribution
-            predmode: prediction band mode
         '''
-        names = []
+        dists = {}
         for method in self._baseoutputs:
+            methodname = method._method.upper()
+            baseout = self.get_output(method=method._method)
             for param in self.pnames:
-                names.append('{} ({})'.format(param, method._method.upper()))
-            names.append('Confidence ({})'.format(method._method.upper()))
-            names.append('Prediction ({})'.format(method._method.upper()))
+                pidx = self.pnames.index(param)
+                if 'mc' in method._method:
+                    dists[f'{param} ({methodname})'] = {'samples': baseout.properties['samples'][:, pidx]}
+                else:
+                    dists[f'{param} ({methodname})'] = {'mean': baseout.coeffs[pidx], 'std': baseout.sigmas[pidx], 'df': baseout.degf}
 
-        if name is None:
-            return names
+        for method in self._baseoutputs:
+            methodname = method._method.upper()
+            baseout = self.get_output(method=method._method)
+            dists[f'Confidence ({methodname})'] = {'xdates': self.xdates,
+                                                   'function': lambda x, baseout=baseout: {'mean': baseout.y(x), 'std': baseout.u_conf(x), 'df': baseout.degf}}
+            dists[f'Prediction ({methodname})'] = {'xdates': self.xdates,
+                                                   'function': lambda x, baseout=baseout: {'mean': baseout.y(x), 'std': baseout.u_pred(x), 'df': baseout.degf}}
 
-        elif name in names:
-            param, method = name.split()
-            baseout = self.get_output(method=method[1:-1].lower())
-            if 'Confidence' in name:
-                xval = kwargs.get('xval', 1.0)
-                return {'mean': baseout.y(xval), 'std': baseout.u_conf(xval), 'df': baseout.degf}
-
-            elif 'Prediction' in name:
-                xval = kwargs.get('xval', 1.0)
-                mode = kwargs.get('predmode', self.predmode)
-                return {'mean': baseout.y(xval), 'std': baseout.u_pred(xval, mode=mode), 'df': baseout.degf}
-
-            pidx = self.pnames.index(param)
-            if '(MC)' in method or '(MCMC)' in method:
-                samples = baseout.properties['samples'][:, pidx]
-                return samples
-
-            else:  # (GUM), (LSQ)
-                return {'mean': baseout.coeffs[pidx], 'std': baseout.sigmas[pidx], 'df': baseout.degf}
-
-        else:
-            raise ValueError('{} not found in output'.format(name))
-        return names
+        return dists
 
 
 class CurveFitMethodOutput(output.Output):
@@ -320,7 +302,7 @@ class CurveFitMethodOutput(output.Output):
             k: float
                 k-value to apply
             conf: float
-                Confidence interval (0 to 1). Overrides value of k parameter
+                Level of confidence (0 to 1). Overrides value of k parameter
 
             Keyword Arguments
             -----------------
@@ -344,7 +326,7 @@ class CurveFitMethodOutput(output.Output):
             k: float
                 k-value to apply
             conf: float
-                Confidence interval (0 to 1). Overrides value of k parameter
+                Level of confidence (0 to 1). Overrides value of k parameter
         '''
         if conf is not None:
             k = t_factor(conf, self.degf)
@@ -698,7 +680,7 @@ class CurveFitMethodOutput(output.Output):
             k: float
                 k-value to apply to uncertainty intervals
             conf: float
-                Confidence interval (0 to 1). Overrides value of k.
+                Level of confidence (0 to 1). Overrides value of k.
             plot: bool
                 Include a plot showing the full curve fit with the predicted value
             mode: string
@@ -760,7 +742,7 @@ class CurveFitMethodOutput(output.Output):
             k: float
                 k-value
             conf: float
-                Confidence interval (0 to 1). overrides value of k.
+                Level of confidence (0 to 1). Overrides value of k.
             mode: string
                 Prediction band mode. One of 'Syx', 'sigy', or 'sigylast'.
 
@@ -802,7 +784,7 @@ class CurveFitMethodOutput(output.Output):
             k: float
                 K-value to apply to uncertainty
             conf: float
-                Confidence interval (0 to 1). overrides value of k.
+                Level of confidence (0 to 1). Overrides value of k.
             ax: matplotlib axis
                 Axis to plot on
             mode: string
@@ -839,7 +821,7 @@ class CurveFitMethodOutput(output.Output):
             k: float
                 k-value
             conf: float
-                Confidence interval (0 to 1). overrides value of k.
+                Level of confidence (0 to 1). Overrides value of k.
 
             Keyword Arguments
             -----------------
@@ -937,7 +919,7 @@ class CurveFitMethodOutput(output.Output):
             k: float
                 k-value for uncertainty bands
             conf: float
-                Confidence interval (0 to 1). overrides value of k.
+                Level of confidence (0 to 1). Overrides value of k.
         '''
         if ax is None:
             fig = plt.gcf()
@@ -1293,7 +1275,7 @@ class CurveFitMethodOutput(output.Output):
                 For example, nominal=0 to test that a slope parameter is different
                 than 0.
             conf: float
-                Confidence (0-1) of range
+                Level of confidence (0-1) of range
             verbose: boolean
                 Print values
 
@@ -1320,7 +1302,7 @@ class CurveFitMethodOutput(output.Output):
                 Range must not contain this value for test to pass. For example,
                 nominal=0 to test that a slope parameter is different than 0.
             conf: float
-                Confidence (0-1) of range
+                Level of confidence (0-1) of range
             verbose: boolean
                 Print values
 

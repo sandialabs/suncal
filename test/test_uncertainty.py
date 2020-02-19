@@ -181,6 +181,42 @@ def test_vectorize():
     MC = u.out.get_output(method='mc')
     assert np.isclose(MC.mean.magnitude, 0.0005, atol=.0001)
 
+@pytest.mark.filterwarnings('ignore')  # Will generate unitstripped warning due to use of np.vectorize with unit values
+def test_vectorize_units():
+    def test(x):
+        ''' A function that will fail if called with an array '''
+        if x > 0:
+            return x*2
+        else:
+            return x
+
+    # First run has no units
+    u = uc.UncertCalc(samples=1000)
+    u.set_function(test)
+    u.set_input('x', nom=100, std=1)
+    u.calculate(gum=False)
+    MC = u.out.get_output(method='mc')
+    assert np.isclose(MC.mean.magnitude, 200, atol=1)
+    assert str(MC.mean.units) == 'dimensionless'
+
+    # Now input has units but output units are not specified
+    u = uc.UncertCalc(samples=1000)
+    u.set_function(test)
+    u.set_input('x', nom=100, std=1, units='cm')
+    u.calculate(gum=False)
+    MC = u.out.get_output(method='mc')
+    assert np.isclose(MC.mean.magnitude, 200, atol=1)
+    assert str(MC.mean.units) == 'centimeter'
+
+    # Finally, request a unit converion on the output
+    u = uc.UncertCalc(samples=1000)
+    u.set_function(test, outunits='meter')
+    u.set_input('x', nom=100, std=1, units='cm')
+    u.calculate(gum=False)
+    MC = u.out.get_output(method='mc')
+    assert np.isclose(MC.mean.magnitude, 2, atol=.1)
+    assert str(MC.mean.units) == 'meter'
+
 
 @pytest.mark.filterwarnings('ignore')  # Will generate a np warning about degrees of freedom <= 0
 def test_constant():
@@ -282,7 +318,6 @@ def test_checkinput():
     ''' Test InputVar.check_args '''
     i = uc.InputUncert('b', nom=10, dist='gamma', std=1)
     assert i.check_args() == True # 'a' parameter automatically set to 1
-    assert 'a' in i.args
 
     i = uc.InputUncert('b', nom=10, dist='gamma', std=1, a=-1)
     assert i.check_args() == False # Invalid 'a' parameter value

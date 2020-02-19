@@ -8,7 +8,7 @@ import yaml
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 
-from . import customdists
+from . import distributions
 from . import output
 from . import uparser
 
@@ -35,21 +35,6 @@ class DistExplore(object):
         self.seed = seed
         self.name = name
         self.description = ''
-        self.out = DistOutput(self.samplevalues)
-
-    def set_dist(self, name, dist=None):
-        ''' Add a distribution.
-
-            Parameters
-            ----------
-            name: string
-                Name or formula for the distribution
-            dist: rv_continuous
-                Stats distribution. Omit if name is a formula.
-        '''
-        uparser.check_expr(name)
-        self.dists[name] = dist
-        self.samplevalues.pop(name, None)
         self.out = DistOutput(self.samplevalues)
 
     def set_numsamples(self, N):
@@ -109,7 +94,7 @@ class DistExplore(object):
         d['desc'] = self.description
         d['seed'] = self.seed
         d['distnames'] = [str(x) for x in self.dists.keys()]
-        d['distributions'] = [customdists.get_config(x) if x is not None else None for x in self.dists.values()]
+        d['distributions'] = [x.get_config() if x is not None else None for x in self.dists.values()]
         return d
 
     @classmethod
@@ -119,7 +104,7 @@ class DistExplore(object):
         newdist.description = config.get('desc', '')
         newdist.seed = config.get('seed', None)
         exprs = config.get('distnames', [])
-        dists = [customdists.from_config(x) if x is not None else None for x in config.get('distributions', [])]
+        dists = [distributions.from_config(x) if x is not None else None for x in config.get('distributions', [])]
         newdist.dists = dict(zip(exprs, dists))
         return newdist
 
@@ -205,7 +190,7 @@ class DistOutput(output.Output):
                 ['Median', output.formatter.f(np.median(samples), fmin=3, **kwargs)],
                 ['Third Quartile', output.formatter.f(q75, fmin=3, **kwargs)],
                 ['Maximum', output.formatter.f(samples.max(), fmin=3, **kwargs)],
-                ['95% Confidence Interval', '{}, {}'.format(output.formatter.f(q025, fmin=3, **kwargs), output.formatter.f(q975, fmin=3, **kwargs))],
+                ['95% Coverage Interval', '{}, {}'.format(output.formatter.f(q025, fmin=3, **kwargs), output.formatter.f(q975, fmin=3, **kwargs))],
                 ]
         r = output.md_table(rows, hdr)
 
@@ -216,15 +201,15 @@ class DistOutput(output.Output):
 
         return r
 
-    def plot_hist(self, name, fig=None, **kwargs):
+    def plot_hist(self, name, plot=None, **kwargs):
         ''' Plot histogram of the sampled values
 
             Parameters
             ----------
             name: string
                 Name of distribution to plot
-            fig: maptlotlib figure
-                Figure to plot on. Will be created if not provided.
+            plot: maptlotlib figure or axis
+                Figure or axis to plot on. Will be created if not provided.
 
             Keyword Arguments
             -----------------
@@ -232,24 +217,22 @@ class DistOutput(output.Output):
                 Plot a fit of the named distribution to the data
             qqplot: bool
                 Show a Q-Q probability plot in a second axis
-            conf: bool
+            coverage: bool
                 Show 95% coverage (symmetric) interval as vertical lines
         '''
         samples = self.samples.get(name)
         fitdist = kwargs.get('fitdist', None)
         qqplot = kwargs.get('qqplot', False)
-        conf = None
-        if kwargs.get('conf', False):
-            conf = np.quantile(samples, (0.025, 0.975))
+        coverage = None
+        if kwargs.get('coverage', False):
+            coverage = np.quantile(samples, (0.025, 0.975))
 
-        if fig is None:
-            fig = plt.figure()
-
+        fig, ax = output.initplot(plot)
         if len(np.atleast_1d(samples)) > 1:
-            params = output.fitdist(samples, dist=fitdist, fig=fig, qqplot=qqplot, conf=conf)
+            params = output.fitdist(samples, distname=fitdist, plot=fig, qqplot=qqplot, coverage=coverage)
         else:
             fig.clf()
-            ax = fig.add_subplot(1,1,1)
+            ax = fig.add_subplot(1, 1, 1)
             ax.axvline(samples, label='Sample')
             params = None
         self.fitparams = params
@@ -258,16 +241,15 @@ class DistOutput(output.Output):
         ''' Report all values '''
         fitdist = kwargs.get('fitdist', None)
         qqplot = kwargs.get('qqplot', False)
-        conf = kwargs.get('conf', False)
+        coverage = kwargs.get('coverage', False)
         r = output.MDstring()
         for name in self.samples.keys():
 
             with mpl.style.context(output.mplcontext):
                 plt.ioff()
                 fig = plt.figure()
-                self.plot_hist(name, fig=fig, fitdist=fitdist, qqplot=qqplot, conf=conf)
+                self.plot_hist(name, plot=fig, fitdist=fitdist, qqplot=qqplot, coverage=coverage)
                 fig.suptitle(name)
             r.add_fig(fig)
             r += self.report_single(name, **kwargs)
         return r
-

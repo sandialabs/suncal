@@ -9,7 +9,7 @@ from . import gui_common
 from . import gui_widgets
 from . import page_uncertprop
 from . import page_reverse
-from . import page_data
+from . import page_dataimport
 
 
 class StartStopCountWidget(QtWidgets.QDialog):
@@ -144,10 +144,10 @@ class SweepSetupWidget(QtWidgets.QWidget):
         elif col < 0:
             col = 0
 
-        dlg = page_data.SweepSelectWidget(project=self.calcsweep.project)
+        dlg = page_dataimport.ArraySelectWidget(singlecol=True, project=self.calcsweep.project)
         ok = dlg.exec_()
         if ok:
-            sweep = dlg.get_sweep()
+            sweep = dlg.get_array().y
             if sweep is not None:
                 self.table.blockSignals(True)
                 if len(sweep) > self.table.rowCount():
@@ -304,7 +304,7 @@ class SweepParamWidget(QtWidgets.QDialog):
         if compname:
             compidx = [u.name for u in self.inptlist[varidx].uncerts].index(compname)
             self.uncparam.clear()
-            self.uncparam.addItems(self.inptlist[varidx].uncerts[compidx].userargs.keys())
+            self.uncparam.addItems(self.inptlist[varidx].uncerts[compidx].args.keys())
         self.blockSignals(False)
 
     def get_sweepstr(self):

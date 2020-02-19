@@ -9,7 +9,6 @@ from dateutil.parser import parse
 import suncal 
 from suncal import uarray
 from suncal import curvefit
-from suncal import anova
 
 
 # Made up data, hard-coded here for consistent testing
@@ -263,95 +262,6 @@ def test_linefitcalc():
     assert np.isclose(u.out.get_output(fidx=1, method='gum').mean.magnitude, u.out.get_output(fidx=0, method='gum').mean.magnitude + 10)
     # Only uncertainty is from slope, so u(slope) == u(slope+10)
     assert np.isclose(u.out.get_output(fidx=0, method='gum').uncert.magnitude, u.out.get_output(fidx=1, method='gum').uncert.magnitude)
-
-
-def test_arraygroup():
-    ''' Test ArrayGrouped class - Make sure it takes x and 2D y data and generates
-        the correct Array class x, y, and uy.
-    '''
-    # ArrayGrouped from array data, all same length
-    np.random.seed(100)
-    x = np.arange(10)
-    ynom = 3*x + 2
-    samples = 8
-    y = np.random.normal(loc=ynom, scale=.4, size=(samples, len(ynom))).T
-    arr = anova.ArrayGrouped(x, y).to_array()
-
-    assert np.allclose(arr.x, x)
-    assert np.allclose(arr.y, y.mean(axis=1))
-    assert np.allclose(arr.uy, y.std(axis=1, ddof=1))
-
-
-def test_anova():
-    ''' Test analysis of variance in ArrayGrouped class '''
-    # Data from Dilip Shaw's example Excel spreadsheet at NCSLI ABQ Section Meeting 6/4/2018
-    x1 = [0.999156418,0.999474238,0.999339856,1.000160754,1.000744245,1.000737791,1.000495481,0.9995736,1.000723728,1.00060071]
-    x2 = [1.000349612,0.999883249,0.999050897,1.00017474,0.999602596,1.000824172,0.999356241,0.999806955,1.000643518,1.000444615]
-    x3 = [0.999757491,0.999817772,1.000194482,0.999679647,1.000937242,1.000470251,0.999027869,0.999911651,0.999590441,1.000451023]
-    x4 = [0.999719098,0.99964781,1.000822782,0.999409639,0.999109266,1.000785761,0.999307039,1.000469276,1.000654864,1.000987112]
-
-    g = anova.ArrayGrouped()
-    g.add_group(x1)
-    g.add_group(x2)
-    g.add_group(x3)
-    g.add_group(x4)
-    result = g.anova()
-    assert np.isclose(result.F, .0850416)
-    assert np.isclose(result.Fcrit, 2.866266)
-    assert np.isclose(result.P, .96777478)
-    assert np.isclose(g.reproducibility(), 57.6E-6, atol=.01E-5)
-    assert np.isclose(g.std_pooled(), 624.4E-6, atol=.1E-6)
-    assert np.isclose(g.std_all(), 602.1E-6, atol=.1E-6)
-    assert np.allclose(g.group_df(), [9,9,9,9])
-    assert np.allclose(g.group_mean(), [1.000100682,1.000013659,0.999983787,1.000091265])
-    assert np.allclose(g.group_std(), [0.000646229,0.00057407,0.000542976,0.000719539])
-    assert g.df_reproducibility() == 3
-    assert g.df_pooled() == 36
-    assert g.df_all() == 39
-
-    # Also try groups of uneven lengths, use excel anova function to verify
-    g = anova.ArrayGrouped()
-    g.add_group(x1)
-    g.add_group(x2[:8])
-    g.add_group(x3[:9])
-    g.add_group(x4[:6])
-    assert np.allclose(g.group_df(), [9,7,8,5])
-    assert g.df_reproducibility() == 3
-    assert g.df_pooled() == 29
-    result = g.anova()
-    assert np.isclose(result.F, .23239)
-    assert np.isclose(result.Fcrit, 2.93403)
-    assert np.isclose(result.P, .873061)
-
-
-def test_anovameans():
-    ''' Test ANOVA when only means and standard deviations of each group are given. Use GUM H.5 data. '''
-    x = np.arange(1, 11)
-    y = np.array([10.000172, 10.000116, 10.000013, 10.000144, 10.000106, 10.000031, 10.000060, 10.000125, 10.000163, 10.000041])
-    ystd = np.array([60, 77, 111, 101, 67, 93, 80, 73, 88, 86]) * 1E-6
-    nmeas = np.full(len(y), 5)
-    a = anova.ArrayGroupedSummary(x, y, ystd, nmeas)
-    a.calculate()
-    assert np.isclose(a.grand_mean(), 10.000097, atol=.0000005)  # From GUM Table H.9
-    assert np.isclose(a.reproducibility(), 57E-6, atol=.5E-6)
-    assert np.isclose(a.std_pooled(), 85E-6, atol=.5E-6)
-    result = a.anova()
-    assert np.isclose(result.F, 2.25, atol=.02)  # Equation H.27
-    assert a.ngroups() == 10
-
-    # Data from Glantz Table 7-4, results in table 7-5
-    x = ['Healthy', 'Nonmelancholic', 'Melancholoc']  # Check with x as strings too
-    y = np.array([9.2, 10.7, 13.5])
-    ystd = np.array([2.9, 2.8, 4.7])
-    nmeas = np.array([16, 22, 18])
-    a = anova.ArrayGroupedSummary(x, y, ystd, nmeas)
-    result = a.anova()
-    assert np.isclose(result.SSbet, 164.67, atol=.01)
-    assert np.isclose(result.SSwit, 666.02, atol=1)  # Rounding error in table, large atol
-    assert np.isclose(result.MSbet, 82.3, atol=.1)
-    assert np.isclose(result.MSwit, 12.5, atol=.1)
-    assert np.isclose(result.F, 6.612, atol=.1)
-    assert np.isclose(result.P, .003, atol=.001)
 
 
 def test_mcmc1():

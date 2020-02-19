@@ -9,14 +9,10 @@ import numpy as np
 
 from . import output
 
-try:
-    import matplotlib as mpl
-    import matplotlib.pyplot as plt
-except ImportError:
-    pass
-else:
-    mpl.style.use('bmh')
+import matplotlib as mpl
+import matplotlib.pyplot as plt
 
+mpl.style.use('bmh')
 dfltsubplots = {'wspace': .1, 'hspace': .1, 'left': .05, 'right': .95, 'top': .95, 'bottom': .05}
 
 
@@ -237,13 +233,13 @@ class BaseOutput(output.Output):
         '''
         return stats.norm.pdf(x, loc=self.mean.magnitude, scale=self.uncert.magnitude)
 
-    def plot_pdf(self, ax=None, **kwargs):
+    def plot_pdf(self, plot=None, **kwargs):
         ''' Plot probability density function
 
             Parameters
             ----------
-            ax: matplotlib axis
-                Axis to plot on
+            plot: object
+                Matplotlib Figure or Axis to plot on
 
             Keyword Arguments
             -----------------
@@ -259,7 +255,6 @@ class BaseOutput(output.Output):
             ax: matplotlib axis
         '''
         stdevs = kwargs.pop('stddevs', 4)
-        fig = kwargs.pop('fig', None)
         intervals = kwargs.pop('intervalsGUM', [])
         intervaltype = kwargs.pop('intTypeGUMt', True)  # Use student-t (vs. k-value) to compute interval
         kwargs.pop('intTypeMC', None)  # not used in gum pdf
@@ -268,10 +263,7 @@ class BaseOutput(output.Output):
         kwargs.setdefault('label', self.method)
         kwargs.setdefault('color', 'C1')
 
-        if ax is None and fig is None:
-            fig = plt.gcf()
-            ax = fig.gca()
-
+        fig, ax = output.initplot(plot)
         mean = self.mean.magnitude
         uncert = self.uncert.magnitude
         units = self.units
@@ -439,12 +431,12 @@ class BaseOutputMC(BaseOutput):
         yy = np.interp(x, xx, yy)
         return yy
 
-    def plot_pdf(self, ax=None, **kwargs):
+    def plot_pdf(self, plot=None, **kwargs):
         ''' Plot probability density function
 
             Parameters
             ----------
-            ax: matplotlib axis
+            plot: matplotlib axis or figure
                 Axis to plot on
 
             Keyword Arguments
@@ -475,10 +467,7 @@ class BaseOutputMC(BaseOutput):
         kwargs.pop('intTypeGUMt', None)   # Not used by MC
         kwargs.pop('intervalsGUM', None)  # Not used by MC
 
-        if ax is None:
-            fig = plt.gcf()
-            ax = fig.gca()
-
+        fig, ax = output.initplot(plot)
         if hist:
             kwargs.setdefault('bins', 120)
             kwargs.setdefault('density', True)
@@ -517,7 +506,7 @@ class BaseOutputMC(BaseOutput):
             intervallegend = ax.legend(ilines, ilabels, fontsize=10, loc='upper right', title='Monte Carlo\nIntervals')
             ax.add_artist(intervallegend)
 
-    def plot_normprob(self, ax=None, points=None, **kwargs):
+    def plot_normprob(self, plot=None, points=None, **kwargs):
         '''
         Plot a normal probability plot of the Monte-Carlo samples vs.
         expected quantile. If data falls on straight line, data is
@@ -525,13 +514,12 @@ class BaseOutputMC(BaseOutput):
 
         Parameters
         ----------
-        ax: matplotlib axis (optional)
+        plot: matplotlib figure or axis
             Axis to plot on
         points: int
             Number of sample points to include for speed. Default is 100.
         '''
-        if ax is None:
-            ax = plt.gca()
+        fig, ax = output.initplot(plot)
         if points is None:
             points = min(100, len(self.samples))
 
@@ -660,7 +648,7 @@ class FuncOutput(output.Output):
             ndig: int
                 Number of significant figures for comparison
             conf: float
-                Confidence interval to compare (0-1 range)
+                Level of confidence for comparison (0-1 range)
             full: boolean
                 Return full set of values, including delta, dlow and dhigh
 
@@ -728,7 +716,7 @@ class FuncOutput(output.Output):
             See NumFormatter()
         '''
         # rows are GUM, MC, LSQ, etc. Columns are means, uncertainties. Checks if baseoutput is CurveFit, and if so uses that format.
-        conf = .95
+        conf = .95  # Level of confidence for expanded unceratinty
         hdr = ['Method', 'Mean', 'Std. Uncertainty', '95% Coverage', 'k', 'Deg. Freedom']
         rows = []
         for out in self._baseoutputs:
@@ -909,7 +897,7 @@ class FuncOutput(output.Output):
             Parameters
             ----------
             conf: float
-                Confidence interval to use
+                Level of confidence (0-1) used for comparison
             ndig: int
                 Number of significant digits for comparison
 
@@ -918,27 +906,30 @@ class FuncOutput(output.Output):
             GUM Supplement 1, Section 8
             NPL Report DEM-ES-011, Chapter 8
         '''
-        valid, params = self.validate_gum(ndig=ndig, conf=conf, full=True)
-        deltastr = output.formatter.f(params['delta'], fmin=1, **kwargs)
         r = '### Comparison to Monte Carlo {:.2f}% Coverage\n\n'.format(conf*100)
-        r += u'{:d} significant digit{}. δ = {}.\n\n'.format(ndig, 's' if ndig > 1 else '', deltastr)
+        if not hasattr(self, 'gum') or not hasattr(self, 'mc'):
+            r += 'GUM and Monte Carlo result not run. No validity check can be made.'
+        else:
+            valid, params = self.validate_gum(ndig=ndig, conf=conf, full=True)
+            deltastr = output.formatter.f(params['delta'], fmin=1, **kwargs)
+            r += u'{:d} significant digit{}. δ = {}.\n\n'.format(ndig, 's' if ndig > 1 else '', deltastr)
 
-        rows = []
-        hdr = ['{:.2f}% Coverage'.format(conf*100), 'Lower Limit', 'Upper Limit']
-        rows.append(['GUM', output.formatter.f(params['gumlo'], matchto=params['dlow'], **kwargs), output.formatter.f(params['gumhi'], matchto=params['dhi'], **kwargs)])
-        rows.append(['MC', output.formatter.f(params['mclo'], matchto=params['dlow'], **kwargs), output.formatter.f(params['mchi'], matchto=params['dhi'], **kwargs)])
-        rows.append(['abs(GUM - MC)', output.formatter.f(params['dlow'], matchto=params['dlow'], **kwargs), output.formatter.f(params['dhi'], matchto=params['dhi'], **kwargs)])
-        rows.append([u'abs(GUM - MC) < δ', '<font color="green">PASS</font>' if params['dlow'] < params['delta'] else '<font color="red">FAIL</font>',
-                                      '<font color="green">PASS</font>' if params['dhi'] < params['delta'] else '<font color="red">FAIL</font>'])
-        r += output.md_table(rows, hdr=hdr, **kwargs)
+            rows = []
+            hdr = ['{:.2f}% Coverage'.format(conf*100), 'Lower Limit', 'Upper Limit']
+            rows.append(['GUM', output.formatter.f(params['gumlo'], matchto=params['dlow'], **kwargs), output.formatter.f(params['gumhi'], matchto=params['dhi'], **kwargs)])
+            rows.append(['MC', output.formatter.f(params['mclo'], matchto=params['dlow'], **kwargs), output.formatter.f(params['mchi'], matchto=params['dhi'], **kwargs)])
+            rows.append(['abs(GUM - MC)', output.formatter.f(params['dlow'], matchto=params['dlow'], **kwargs), output.formatter.f(params['dhi'], matchto=params['dhi'], **kwargs)])
+            rows.append([u'abs(GUM - MC) < δ', '<font color="green">PASS</font>' if params['dlow'] < params['delta'] else '<font color="red">FAIL</font>',
+                                          '<font color="green">PASS</font>' if params['dhi'] < params['delta'] else '<font color="red">FAIL</font>'])
+            r += output.md_table(rows, hdr=hdr, **kwargs)
         return output.MDstring(r)
 
-    def plot_pdf(self, ax=None, **kwargs):
+    def plot_pdf(self, plot=None, **kwargs):
         ''' Plot probability density function of all methods
 
             Parameters
             ----------
-            ax: list of matplotlib axis
+            plot: matplotlib figure or axis
                 Axis to plot on
 
             Keyword Arguments
@@ -952,13 +943,10 @@ class FuncOutput(output.Output):
             -------
             ax: matplotlib axis
         '''
-        if ax is None:
-            fig = plt.gcf()
-            ax = fig.gca()
-
+        fig, ax = output.initplot(plot)
         for b in self._baseoutputs:
             kwargs['label'] = b.method
-            b.plot_pdf(ax=ax, **kwargs)
+            b.plot_pdf(plot=ax, **kwargs)
         ax.set_xlabel(output.format_math(self.name) + output.formatunittex(self._baseoutputs[0].units, bracket=True))
         ax.legend(loc='best', fontsize=10)
         return ax
@@ -1021,34 +1009,26 @@ class CalcOutput(output.Output):
         else:
             return foutput
 
-    def get_dists(self, name=None):
+    def get_dists(self):
         ''' Get distributions in this output. If name is none, return a list of
-            available distribution names. Only returns first parameter if multi-param
-            (i.e. curve fit) output.
+            available distribution names.
         '''
-        names = []
+        dists = {}
         for f in self.foutputs:
             for method in f._baseoutputs:
-                names.append('{} ({})'.format(f.name, method._method.upper()))
-
-        if name is None:
-            return names
-
-        elif name in names:
-            fname, method = name.split()
-            method = method[1:-1].lower()
-            baseout = self.get_output(fname, method=method)
-            if 'mc' in method:
-                samples = baseout.properties['samples'].magnitude
-                return samples
-            else:  # (GUM), (LSQ)
-                mean = baseout.mean.magnitude
-                std = baseout.uncert.magnitude
-                degf = baseout.degf
-                return {'mean': mean, 'std': std, 'df': degf}
-        else:
-            raise ValueError('{} not found in output'.format(name))
-        return names
+                name = '{} ({})'.format(f.name, method._method.upper())
+                baseout = self.get_output(f.name, method=method._method)
+                if 'mc' in method._method:
+                    samples = baseout.properties['samples'].magnitude
+                    expected = baseout.properties['expected'].magnitude
+                    dists[name] = {'samples': samples,
+                                   'median': np.median(samples),
+                                   'expected': expected}
+                else:
+                    dists[name] = {'mean': baseout.mean.magnitude,
+                                   'std': baseout.uncert.magnitude,
+                                   'df': baseout.degf}
+        return dists
 
     def report(self, **kwargs):
         ''' Generate report of all mean/uncerts for each function.
@@ -1100,7 +1080,7 @@ class CalcOutput(output.Output):
         with mpl.style.context(output.mplcontext):
             plt.ioff()
             fig = plt.figure()
-            self.plot_pdf(fig=fig)
+            self.plot_pdf(plot=fig)
         r = output.MDstring()
         r.add_fig(fig)
         return r
@@ -1139,9 +1119,9 @@ class CalcOutput(output.Output):
                 params = kwargs.get('outplotparams', {})
                 joint = params.get('joint', False)
                 if joint:
-                    self.plot_outputscatter(fig=fig, **params.get('plotargs', {}))
+                    self.plot_outputscatter(plot=fig, **params.get('plotargs', {}))
                 else:
-                    self.plot_pdf(fig=fig, **params.get('plotargs', {}))
+                    self.plot_pdf(plot=fig, **params.get('plotargs', {}))
                 r.add_fig(fig)
             if kwargs.get('inputs', True):
                 r += '## Standardized Input Values\n\n'
@@ -1161,25 +1141,25 @@ class CalcOutput(output.Output):
                 r += self.report_expanded(covlist=params.get('intervalsmc', [0.95]),
                                           normal=params.get('norm', False), shortest=params.get('shortest', False),
                                           covlistgum=params.get('intervalsgum', None), **kwargs)
-            if kwargs.get('gumderv', True):
+            if kwargs.get('gumderv', True) and hasattr(self.foutputs[0], 'gum'):
                 solve = kwargs.get('gumvalues', False)
                 r += '## GUM Derivation\n\n'
                 r += self.report_derivation(solve=solve, **kwargs)
-            if kwargs.get('gumvalid', True):
+            if kwargs.get('gumvalid', True) and hasattr(self.foutputs[0], 'gum') and hasattr(self.foutputs[0], 'mc'):
                 ndig = kwargs.get('gumvaliddig', 2)
                 r += '## GUM Validity\n\n'
                 r += self.report_validity(ndig=ndig, **kwargs)
-            if kwargs.get('mchist', True):
+            if kwargs.get('mchist', True) and hasattr(self.foutputs[0], 'mc'):
                 params = kwargs.get('mchistparams', {})
                 fig = plt.figure()
                 plotparams = params.get('plotargs', {})
                 if params.get('joint', False):
-                    self.plot_xscatter(fig=fig, **plotparams)
+                    self.plot_xscatter(plot=fig, **plotparams)
                 else:
-                    self.plot_xhists(fig=fig, **plotparams)
+                    self.plot_xhists(plot=fig, **plotparams)
                 r += '## Monte Carlo Inputs\n\n'
                 r.add_fig(fig)
-            if kwargs.get('mcconv', True):
+            if kwargs.get('mcconv', True) and hasattr(self.foutputs[0], 'mc'):
                 relative = kwargs.get('mcconvnorm', False)
                 fig = plt.figure()
                 self.plot_converge(fig, relative=relative)
@@ -1299,7 +1279,7 @@ class CalcOutput(output.Output):
             Parameters
             ----------
             conf: float
-                Confidence interval to use
+                Level of confidence (0-1) for comparison
             ndig: int
                 Number of significant digits for comparison
 
@@ -1367,13 +1347,13 @@ class CalcOutput(output.Output):
                 r += f.report_sens(**kwargs)
         return r
 
-    def plot_pdf(self, fig=None, **kwargs):
+    def plot_pdf(self, plot=None, **kwargs):
         ''' Plot output probability (histogram and/or PDF curve)
 
             Parameters
             ----------
-            fig : matplotlib figure, optional
-                Figure to plot on. Existing figure will be cleared. If omitted, a new figure/axis
+            plot: matplotlib figure or axis
+                Figure or axis to plot on. Existing figure will be cleared. If omitted, a new figure/axis
                 will be created in interactive mode.
 
             Keyword Arguments
@@ -1407,17 +1387,15 @@ class CalcOutput(output.Output):
         stds = kwargs.pop('stddevs', 4)
         mccolor = kwargs.pop('mccolor', 'C0')
         gumcolor = kwargs.pop('gumcolor', 'C1')
-        showmc = kwargs.pop('showmc', True)
-        showgum = kwargs.pop('showgum', True)
+        showmc = kwargs.pop('showmc', hasattr(self.foutputs[0], 'mc'))
+        showgum = kwargs.pop('showgum', hasattr(self.foutputs[0], 'gum'))
         bins = max(3, kwargs.pop('bins', 120))
         contour = kwargs.pop('contour', False)
         labelmode = kwargs.pop('labelmode', 'name')  # or 'desc'
         showleg = kwargs.pop('legend', True)
         [kwargs.pop(k, None) for k in ['points', 'inpts', 'overlay', 'cmap', 'cmapmc', 'equal_scale']]  # Ignore these in pdf plot
 
-        if fig is None:
-            fig = plt.gcf()
-
+        fig, ax = output.initplot(plot)
         fig.clf()
         fig.subplots_adjust(**dfltsubplots)
         if len(funcs) == 0: return fig
@@ -1445,11 +1423,11 @@ class CalcOutput(output.Output):
 
             if showmc:
                 kwargs['color'] = mccolor
-                func.mc.plot_pdf(ax=ax, hist=not contour, bins=bins, stddevs=stds, **kwargs)
+                func.mc.plot_pdf(plot=ax, hist=not contour, bins=bins, stddevs=stds, **kwargs)
 
             if showgum:
                 kwargs['color'] = gumcolor
-                func.gum.plot_pdf(ax=ax, stddevs=stds, **kwargs)
+                func.gum.plot_pdf(plot=ax, stddevs=stds, **kwargs)
 
             if np.isfinite(xlow) and np.isfinite(xhi) and xhi != xlow:
                 ax.set_xlim(xlow, xhi)
@@ -1469,13 +1447,13 @@ class CalcOutput(output.Output):
 
         fig.tight_layout()
 
-    def plot_outputscatter(self, fig=None, **kwargs):
+    def plot_outputscatter(self, plot=None, **kwargs):
         ''' Plot scatter plot of output functions (if more than one function in system)
 
             Parameters
             ----------
-            fig: matplotlib figure
-                Figure to plot on. Will be cleared.
+            plot: matplotlib figure or axis
+                Figure or axis to plot on. Will be cleared.
 
             Keyword Arguments
             -----------------
@@ -1507,8 +1485,8 @@ class CalcOutput(output.Output):
         funcs = kwargs.get('funcs', None)
         color = kwargs.get('color', 'C3')
         contour = kwargs.get('contour', False)
-        showgum = kwargs.get('showgum', True)
-        showmc = kwargs.get('showmc', True)
+        showgum = kwargs.pop('showgum', hasattr(self.foutputs[0], 'gum'))
+        showmc = kwargs.pop('showmc', hasattr(self.foutputs[0], 'mc'))
         points = kwargs.get('points', -1)
         bins = max(3, kwargs.get('bins', 40))
         labelmode = kwargs.get('labelmode', 'name')
@@ -1518,8 +1496,7 @@ class CalcOutput(output.Output):
         cmapmc = kwargs.get('cmapmc', 'viridis')
         overlay = overlay and showgum and showmc
 
-        if fig is None:
-            fig = plt.gcf()
+        fig, ax = output.initplot(plot)
         fig.clf()
         fig.subplots_adjust(**dfltsubplots)
 
@@ -1607,12 +1584,12 @@ class CalcOutput(output.Output):
 
         fig.tight_layout()
 
-    def plot_xhists(self, fig=None, **kwargs):
+    def plot_xhists(self, plot=None, **kwargs):
         ''' Plot histograms for each input variable.
 
             Parameters
             ----------
-            fig: matplotlib figure instance
+            plot: matplotlib figure or axis
                 If omitted, a new figure will be created. Existing figure will be cleared.
 
             Keyword Arguments
@@ -1631,8 +1608,7 @@ class CalcOutput(output.Output):
         bins = max(3, kwargs.get('bins', 200))
         labelmode = kwargs.get('labelmode', 'name')
 
-        if fig is None:
-            fig = plt.gcf()
+        fig, ax = output.initplot(plot)
 
         # fig.clf() doesn't reset subplots_adjust parameters that change on tight_layout.
         # Reset them here or we can get strange exceptions about negative width while
@@ -1657,12 +1633,12 @@ class CalcOutput(output.Output):
                 ax.set_xlabel('$' + inpt.get_latex() + '$' + unitstr)
         fig.tight_layout()
 
-    def plot_xscatter(self, fig=None, **kwargs):
+    def plot_xscatter(self, plot=None, **kwargs):
         ''' Plot input samples against each other to look for correlation.
 
             Parameters
             ----------
-            fig: matplotlib figure instance
+            plot: matplotlib figure or axis
                 If omitted, a new figure will be created.
 
             Keyword Arguments
@@ -1690,8 +1666,7 @@ class CalcOutput(output.Output):
         bins = max(3, kwargs.get('bins', 200))
         labelmode = kwargs.get('labelmode', 'name')
 
-        if fig is None:
-            fig = plt.gcf()
+        fig, ax = output.initplot(plot)
         fig.clf()
         fig.subplots_adjust(**dfltsubplots)
 
@@ -1743,14 +1718,14 @@ class CalcOutput(output.Output):
                 ax.ticklabel_format(style='sci', axis='x', scilimits=(-4, 4), useOffset=False)
                 ax.ticklabel_format(style='sci', axis='y', scilimits=(-4, 4), useOffset=False)
 
-    def plot_converge(self, fig=None, **kwargs):
+    def plot_converge(self, plot=None, **kwargs):
         ''' Plot Monte-Carlo convergence. Using the same sampled values, the mean
             and standard uncertainty will be recomputed at fixed intervals
             throughout the sample array.
 
             Parameters
             ----------
-            fig: matplotlib figure instance, optional
+            plot: matplotlib figure or axis
                 If omitted, a new figure will be created.
 
             Keyword Arguments
@@ -1759,11 +1734,9 @@ class CalcOutput(output.Output):
                 Number of points to plot
         '''
         rows = len(self.foutputs)
-        if fig is None:
-            fig = plt.gcf()
-        else:
-            fig.clf()
-            fig.subplots_adjust(**dfltsubplots)
+        fig, ax = output.initplot(plot)
+        fig.clf()
+        fig.subplots_adjust(**dfltsubplots)
         cols = 2
         ax = []
         for i in range(rows):

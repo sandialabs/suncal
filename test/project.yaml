@@ -243,12 +243,12 @@
     - 0.25
     - 0.3
     var: C3
-- groupnames:
+- colnames:
   - '1'
   - '2'
   - '3'
   - '4'
-  groupvals:
+  data:
   - - 0.999156418
     - 0.999474238
     - 0.999339856
@@ -289,8 +289,8 @@
     - 1.000469276
     - 1.000654864
     - 1.000987112
-  mode: anova
-  name: Anova Calculation
+  mode: data
+  name: DataSet
 - arrx:
   - 0.25
   - 0.5

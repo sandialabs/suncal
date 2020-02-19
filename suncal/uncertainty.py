@@ -3,7 +3,6 @@
 Main module for computing uncertainties.
 '''
 import sympy
-import sympy.abc
 import numpy as np
 import scipy.stats as stat
 import inspect
@@ -14,10 +13,9 @@ from pint import DimensionalityError, UndefinedUnitError, OffsetUnitCalculusErro
 
 from . import ureg
 from . import uparser
-from . import customdists
+from . import distributions
 from . import output
 from . import out_uncert
-from . import ttable
 
 np.seterr(all='warn', divide='ignore', invalid='ignore', under='ignore')  # Don't show div/0 warnings. We usually just want to happily return Inf.
 
@@ -126,7 +124,7 @@ class InputVar(object):
             -------
             Combined standard uncertainty: float
         '''
-        if str(self.units) in ['degC', 'degF']:
+        if str(self.units) in ['degC', 'degF', 'celsius', 'fahrenheit']:
             dfltunits = getattr(ureg, 'delta_'+str(self.units))   # stdev of temperature units must be delta_
         else:
             dfltunits = self.units
@@ -173,7 +171,7 @@ class InputVar(object):
                 Uncertainty name
             dist: string or scipy.stats.rv_continuous
                 Distribution definition. Can be name of distribution in scipy.stats,
-                name of distribution in customdists, or an instance
+                name of distribution in distributions, or an instance
                 of scipy.stats.rv_continuous or scipy.stats_rv_discrete.
             degf: float
                 Degrees of freedom
@@ -196,7 +194,7 @@ class InputVar(object):
 
             if units is None:
                 units = str(self.units)  # Default to nominal variable units
-                if units in ['degC', 'degF']:   # But uncertainty of temperature units should default to delta_temperature units.
+                if units in ['degC', 'degF', 'celsius', 'fahrenheit']:   # But uncertainty of temperature units should default to delta_temperature units.
                     units = 'delta_{}'.format(units)
 
             self.uncerts.append(InputUncert(name, dist=dist, degf=degf, desc=desc, nom=self.nom, units=units, parentunits=str(self.units), **args))
@@ -230,7 +228,7 @@ class InputVar(object):
         for unc in self.uncerts:
             unc.parentunits = self.units
             if unc.units is None or unc.units.dimensionality != self.units.dimensionality:
-                if units in ['degC', 'degF']:   # Temperature units are always delta_ type
+                if units in ['degC', 'degF', 'celsius', 'fahrenheit']:   # Temperature units are always delta_ type
                     units = 'delta_'+units
                 unc.set_units(units)
 
@@ -262,9 +260,10 @@ class InputVar(object):
 
     def sample(self, samples=1000000):
         ''' Generate random samples for this variable, stored in self.sampledvalues. '''
-        self.sampledvalues = np.ones(samples) * self.nom * self.units
-        for u in self.uncerts:
-            self.sampledvalues += u.sample(samples=samples, inc_nom=False)
+        if self.sampledvalues is None:
+            self.sampledvalues = np.ones(samples) * self.nom * self.units
+            for u in self.uncerts:
+                self.sampledvalues += u.sample(samples=samples, inc_nom=False)
         return self.sampledvalues
 
     def get_latex(self):
@@ -316,7 +315,7 @@ class InputUncert(object):
             in a system, can be left out to add in at the end.
         dist: string or scipy.stats.rv_continuous
             Distribution definition. Can be name of distribution in scipy.stats,
-            name of distribution in customdists, or an instance
+            name of distribution in distributions, or an instance
             of scipy.stats.rv_continuous or scipy.stats_rv_discrete.
         degf: float
             Degrees of freedom
@@ -339,8 +338,7 @@ class InputUncert(object):
         self.degf = degf
         self.nom = nom
         self.parentunits = get_units(parentunits)
-        self.args = args.copy()
-        self.userargs = args.copy()  # User-entered arguments   (e.g. '5%' with nom=100)
+        self.args = args.copy()  # User-entered arguments   (e.g. '5%' with nom=100)
         self.savedargs = {}      # Saved argument entries keep if distribution changes then changes back.
         self.required_args = []
         self.sampledvalues = None
@@ -362,72 +360,20 @@ class InputUncert(object):
             ----------
             dist: string or scipy.stats.rv_continuous
                 Distribution definition. Can be name of distribution in scipy.stats,
-                name of distribution in customdists, or an instance
+                name of distribution in distributions, or an instance
                 of scipy.stats.rv_continuous or scipy.stats_rv_discrete.
         '''
         self.distname = distname
         self.updateparams()
-        for a in list(self.userargs.keys()):
-            if ((distname in ['normal', 't'] and a not in ['std', 'unc', 'k', 'conf']) or
-                (distname not in ['normal', 't'] and a not in self.required_args)):
-                    self.userargs.pop(a)
-
-        if distname in ['normal', 't'] and 'std' not in self.userargs:
-            self.userargs.setdefault('unc', self.savedargs.get('unc', 1))
-            if 'conf' in self.savedargs:
-                self.userargs['conf'] = self.savedargs['conf']
-            elif 'k' in self.savedargs:
-                self.userargs['k'] = self.savedargs['k']
-        else:
-            [self.userargs.setdefault(r, self.savedargs.get(r, 1)) for r in self.required_args if r not in self.userargs]
 
     def updateparams(self):
         ''' Update the distribution function from the provided arguments. '''
-        dist = self.distname
-        self.savedargs.update(self.userargs)
-        self.args.clear()
-        self.args.update(self.userargs)
+        self.savedargs.update(self.args)
 
-        if dist == 'gaussian':
-            dist = 'normal'  # Gaussian, normal, whatever
+        if self.distname == 'gaussian':
+            self.distname = 'normal'  # Gaussian, normal, whatever
 
-        if isinstance(dist, str) and hasattr(customdists, dist):
-            # Customized distribution function name in dists.py module
-            dist = getattr(customdists, dist)
-            self.helpstr = dist.__doc__
-            self.required_args = list(inspect.signature(dist).parameters.keys())
-
-        elif (isinstance(dist, stat.rv_continuous) or isinstance(dist, stat.rv_discrete) or
-              isinstance(dist, stat.rv_histogram) or
-              (isinstance(dist, str) and hasattr(stat, dist))):
-            # Instance of stat.rv_continuous. Need to freeze it with our parameters
-            if isinstance(dist, str):
-                dist = getattr(stat, dist)
-            self.helpstr = dist.__class__.__doc__.split('\n')
-            self.helpstr = '\n'.join([l for l in self.helpstr if not l.startswith('    %')])
-
-            self.required_args = dist.shapes  # Find required arguments
-            if self.required_args is not None:
-                self.required_args = [r.strip() for r in self.required_args.split(',')]  # .shapes returns a comma-sep string
-            else:
-                self.required_args = []
-
-            if isinstance(dist, stat.rv_continuous):
-                self.required_args = ['loc', 'scale'] + self.required_args
-            else:
-                self.required_args = ['loc'] + self.required_args  # discrete/histogram distributions don't use scale.
-
-        elif dist == 'histogram':
-            self.required_args = ['hist', 'edges']
-            self.distfunc = stat.rv_histogram((self.userargs['hist'], self.userargs['edges']))
-            self.sampledvalues = None
-            self.normsamples = None
-            self.helpstr = 'Histogram loaded from data.'
-            return True
-
-        else:
-            raise ValueError('Distribution {} not defined'.format(dist))
-
+        self.required_args = distributions.get_argnames(self.distname)
         for aname, aval in self.args.items():
             if isinstance(aval, str):  # Convert string arguments to float
                 nom = (self.nom*self.parentunits).to(self.units).magnitude  # Convert nominal to same units as uncertainty
@@ -455,28 +401,7 @@ class InputUncert(object):
         elif 'df' in self.args:
             self.degf = float(self.args['df'])
 
-        if 'unc' in self.args:
-            if 'conf' in self.args:
-                conf = float(self.args.pop('conf'))
-                if conf > 1 and conf < 100:  # Given as percent
-                    conf = conf / 100
-
-                if self.distname == 't':
-                    k = ttable.t_factor(conf, self.degf)
-                else: # Use infinite degf
-                    k = ttable.t_factor(conf, 1E100)  # df=np.inf results in k=inf!
-                self.args['std'] = self.args.pop('unc') / k
-            else:
-                self.args['std'] = self.args.pop('unc') / self.args.pop('k', 1)
-
-        # Remove args that aren't needed (i.e. distribution type has changed)
-        [self.args.pop(a) for a in list(self.args.keys()) if a not in self.required_args]
-
-        # Add defaults for args not there
-        [self.args.setdefault(r, 1) for r in self.required_args if r not in self.args]
-
-        # Freeze the distribution with correct arguments
-        self.distfunc = dist(**self.args)
+        self.distribution = distributions.get_distribution(self.distname, **self.args)
         self.sampledvalues = None
         self.normsamples = None
 
@@ -484,6 +409,12 @@ class InputUncert(object):
 
     def set_units(self, units):
         ''' Change units (without changing any values) '''
+        # Uncertianties always use differential temperature units
+        if units in ['degC', 'celsius']:
+            units = 'delta_degC'
+        elif units in ['degF', 'fahrenheit']:
+            units = 'delta_degF'
+
         try:
             units = get_units(units)
         except ValueError:
@@ -517,24 +448,24 @@ class InputUncert(object):
             have PDF functions, in this case a Monte Carlo approximation of the PDF
             will be returned.
         '''
-        s = self.distfunc.std()
-        med = self.distfunc.median()
-        x = np.linspace(med-s*stds, med+s*stds, num=100)
+        s = self.distribution.std()
+        med = self.distribution.median()
+        x = (np.linspace(med-s*stds, med+s*stds, num=100)*self.units).magnitude
         try:
-            y = self.distfunc.pdf(x)
+            y = self.distribution.pdf(x)
         except AttributeError:
             # Discrete dists don't have PDF
             try:
-                samples = self.distfunc.rvs(1000000).astype(float)
+                samples = self.distribution.rvs(1000000).astype(float)
                 if inc_nom:
-                    samples += (self.nom*self.parentunits).to(self.units).magnitude
+                    samples += (self.nom*self.parentunits).magnitude
                 y, x = np.histogram(samples, bins=200)
                 x = x[1:]
             except ValueError:
                 x, y = [], []
         else:
             if inc_nom:
-                x = x + (self.nom*self.parentunits).to(self.units).magnitude
+                x = x + (self.nom*self.parentunits).magnitude
         return x, y
 
     def sample(self, samples=1000000, inc_nom=True):
@@ -548,9 +479,9 @@ class InputUncert(object):
                 Sample values about nominal value instead of 0
         '''
         if self.normsamples is None:  # Uncorrelated variables
-            self.sampledvalues = self.distfunc.rvs(size=samples)
+            self.sampledvalues = self.distribution.rvs(size=samples)
         else:  # Input has been correlated using correlate_inputs()
-            self.sampledvalues = self.distfunc.ppf(self.normsamples)
+            self.sampledvalues = self.distribution.ppf(self.normsamples)
         if inc_nom:
             self.sampledvalues += self.nom
         return self.sampledvalues * self.units
@@ -562,16 +493,16 @@ class InputUncert(object):
 
     def std(self):
         ''' Return the standard deviation of the distribution function '''
-        return self.distfunc.std() * self.units
+        return self.distribution.std() * self.units
 
     def var(self):
         ''' Return the variance of the distribution function'''
-        return self.distfunc.var() * self.units**2
+        return self.distribution.var() * self.units**2
 
     def check_args(self):
         ''' Return true if all arguments are valid. '''
         try:
-            self.distfunc.rvs()
+            self.distribution.rvs()
         except (AttributeError, ValueError):
             return False
         return True
@@ -712,14 +643,35 @@ class InputFunc(object):
             self.sampledvalues = uparser.callf(basefunc, self.varsamples)
             # Must have N samples in, N samples out... but only if there's actually variables in the equation.
             if len(self.varsamples) > 0 and len(self.sampledvalues) != samples: raise ValueError
+        except DimensionalityError:
+            # Hack around Pint bug/inconsistency (see https://github.com/hgrecco/pint/issues/670, closed without solution)
+            #   with x = np.arange(5) * ureg.dimensionless
+            #   np.exp(x) --> returns dimensionless array
+            #   2**x --> raises DimensionalityError
+            # Since units/dimensionality has already been verified, this fix strips units and adds them back.
+            varsamples = {name: val.magnitude for name, val in self.varsamples.items()}
+            self.sampledvalues = uparser.callf(basefunc, varsamples) * ureg.dimensionless
+            
         except (TypeError, ValueError):
             # Call might have failed if basefunc is not vectorizable. Use numpy vectorize
             # to broadcast over array and try again.
-
-            # WATCH: pint merge request #652, fixes ureg.wraps with keyword arguments which
-            # could be useful here to make sure units are converted before vectorize
-            self.sampledvalues = uparser.callf(np.vectorize(basefunc), self.varsamples)
             logging.info('Vectorizing function {}...'.format(str(basefunc)))
+
+            # Vectorize will strip units - see https://github.com/hgrecco/pint/issues/828.
+            # First, run a single sample through the function to determine what units come out
+            outsingle = uparser.callf(basefunc, {k: v[0] for k, v in self.varsamples.items()})
+            mcoutunits = outsingle.units if hasattr(outsingle, 'units') else ureg.dimensionless
+
+            # Then apply those units to whole array of sampled values.
+            # vectorize() will issue a UnitStripped warning, but we're handling it outside Pint, so ignore it.
+            with warnings.catch_warnings():
+                warnings.simplefilter('ignore')
+                self.sampledvalues = uparser.callf(np.vectorize(basefunc), self.varsamples) * mcoutunits
+
+            # Convert to desired output units if necessary
+            if self.outunits is not None and mcoutunits != self.outunits:
+                self.sampledvalues.ito(self.outunits)
+
         return self.sampledvalues
 
     def mean(self):
@@ -824,11 +776,15 @@ class InputFunc(object):
 
         # Recursively substitute each function in until the function doesn't change anymore
         oldfunc = None
-        while oldfunc != func:
+        count = 0
+        while oldfunc != func and count < 100:
             oldfunc = func
-            for v in self.variables[::-1]:  # Functions must be defined in logical order
+            for v in self.variables[::-1]:
                 if isinstance(v, InputFunc) and v.ftype == 'sympy':
                     func = func.subs(v.name, v.function)
+            count += 1
+        if count >= 100:
+            raise RecursionError('Circular reference in function set')
         return func
 
     def get_basevars(self):
@@ -975,13 +931,16 @@ class InputFunc(object):
             if self.outunits is not None:
                 units = ureg.parse_units(self.outunits)
                 mean.ito(units)
-                uncert.ito(units)
+                uncertunits = units if str(units) not in ['degF', 'degC', 'celsius', 'fahrenheit'] else f'delta_{units}'
+                uncert.ito(uncertunits)
             else:
                 try:
                     mean.ito_reduced_units()
                 except AttributeError:   # Some callable function types won't pass through units
                     mean *= ureg.dimensionless
                 units = mean.units
+                uncertunits = units if str(units) not in ['degF', 'degC', 'celsius', 'fahrenheit'] else f'delta_{units}'
+                uncert.ito(uncertunits)
         except OverflowError:
             warns.append('Overflow in GUM uncertainty calculation')
             units = ureg.dimensionless
@@ -1006,7 +965,7 @@ class InputFunc(object):
             residual = np.nan
             props = np.zeros(len(u)) * np.nan
         else:
-            residual = 1 - sum(g2overuncert2)
+            residual = 1 - sum(g2overuncert2).magnitude
             if abs(residual) < 1E-7: residual = 0
             residual = residual * 100
             #props = gradu2 / (uncert*uncert) * 100
@@ -1023,7 +982,7 @@ class InputFunc(object):
         params = {'function': str(self),
                   'latex': self.get_latex(),
                   'mean': mean,
-                  'uncert': uncert.to(units),
+                  'uncert': uncert,
                   'props': props,
                   'residual': residual,
                   'sensitivity': grad,
@@ -1064,12 +1023,13 @@ class InputFunc(object):
         except AttributeError:      # Callable types may not pass through units
             y *= ureg.dimensionless
         units = y.units
+        uncertunits = units if str(units) not in ['degF', 'degC', 'celsius', 'fahrenheit'] else ureg.parse_units(f'delta_{units}')
         y = np.array(y.magnitude, ndmin=1, copy=False) * y.units  # MC constants may come through as scalars
 
         if not all(np.isfinite(y.magnitude)):
             warns.append('Some Monte-Carlo samples are NaN. Ignoring in statistics.')
 
-        stdY = np.nanstd(y.magnitude, ddof=1) * units
+        stdY = np.nanstd(y.magnitude, ddof=1) * uncertunits
         meanY = np.nanmean(y.magnitude) * units
         medY = np.nanmedian(y.magnitude) * units
 
@@ -1089,6 +1049,9 @@ class InputFunc(object):
                 x[v.name] = v.sampledvalues
                 try:
                     ustd = uparser.callf(basefunc, x).std()
+                except DimensionalityError:
+                    x = {name: val.magnitude for name, val in x.items()}
+                    ustd = uparser.callf(basefunc, x).std()
                 except AttributeError:
                     ustd = 0   # callf returns single value.. no std
                 except (TypeError, ValueError):
@@ -1099,6 +1062,7 @@ class InputFunc(object):
                 props.append((ustd/stdY).to_reduced_units().magnitude**2 * 100)
 
         params = {'mean': meanY,
+                  'expected': self.mean(),   # expected/measured value may not match mean or median of MC distribution
                   'uncert': stdY,
                   'median': medY,
                   'samples': y,
@@ -1175,7 +1139,7 @@ class InputFunc(object):
         for p in partials:
             try:
                 partials_solved.append(sympy.lambdify(Xmeans.keys(), p, 'numpy')(**Xmeans))
-            except (TypeError, ValueError, OverflowError):
+            except (TypeError, ValueError, OverflowError, ZeroDivisionError):
                 partials_solved.append(sympy.nan)
 
         symout = {'function': self.full_func(),
@@ -1276,6 +1240,14 @@ class UncertCalc(object):
                 self.set_input(iname, nom=inpt.get('nom', 0), desc=inpt.get('desc', ''), units=units)
                 for udict in uncerts:
                     self.set_uncert(var=iname, **udict)
+
+    def clearall(self):
+        ''' Clear all inputs, resetting to blank calculator '''
+        self.functions[:] = []
+        self._corr = None
+        self.longdescription = ''
+        self.out = None
+        self.variables[:] = []
 
     def set_function(self, func, idx=None, name=None, outunits=None, desc='', show=True, kwnames=None):
         ''' Add or update a function in the system.
@@ -1673,6 +1645,21 @@ class UncertCalc(object):
         for inpt in self.get_baseinputs():
             inpt.stdunc()
 
+    def check_circular(self):
+        ''' Check the functions list to ensure no circular dependencies
+
+            Returns
+            -------
+            True if the function set has a circular reference
+        '''
+        if len(self.functions) > 1:
+            for f in self.functions:
+                try:
+                    f.get_basefunc()
+                except RecursionError:
+                    return True
+        return False
+
     def get_output(self):
         return self.out
 
@@ -1767,6 +1754,7 @@ class UncertCalc(object):
         >>> x, y, p = u.get_contour(0, 1)
         >>> plt.contour(x, y, p)
         '''
+        # Get mean/uncertainty in original units so they're compatible with sens coefficients
         m0 = self.functions[func1].out.gum.mean.to(self.functions[func1].out.gum.properties['origunits']).magnitude
         m1 = self.functions[func2].out.gum.mean.to(self.functions[func2].out.gum.properties['origunits']).magnitude
         u0 = self.functions[func1].out.gum.uncert.to(self.functions[func1].out.gum.properties['origunits']).magnitude
@@ -1791,10 +1779,10 @@ class UncertCalc(object):
         S = np.diag([i.stdunc().magnitude for i in self.get_baseinputs()])
         Ux = S @ corr @ S   # Convert correlation to covariance
         Uy = Cx @ Ux @ Cx.T
-        
+
         if getcorr:
-            return Uy[0,1] / (u0*u1)
-        
+            return Uy[0, 1] / (u0*u1)
+
         try:
             rv = stat.multivariate_normal(np.array([m0, m1]), cov=Uy)
         except (ValueError, np.linalg.LinAlgError):
@@ -1802,7 +1790,9 @@ class UncertCalc(object):
 
         x, y = np.meshgrid(np.linspace(m0-3*u0, m0+3*u0), np.linspace(m1-3*u1, m1+3*u1))
         pos = np.dstack((x, y))
-        return x*self.functions[func1].out.gum.properties['origunits'], y*self.functions[func2].out.gum.properties['origunits'], rv.pdf(pos)
+        x = (x*self.functions[func1].out.gum.properties['origunits']).to(self.functions[func1].out.gum.units)
+        y = (y*self.functions[func2].out.gum.properties['origunits']).to(self.functions[func2].out.gum.units)
+        return x, y, rv.pdf(pos)
 
     def get_config(self):
         ''' Get configuration dictionary describing this calculation '''
@@ -1827,10 +1817,10 @@ class UncertCalc(object):
                 for unc in inpt.uncerts:
                     udict = {'name': unc.name, 'desc': unc.desc, 'degf': unc.degf, 'units': format(unc.units) if unc.units else None}
                     if not isinstance(unc.distname, str):
-                        udict.update(customdists.get_config(unc.distname))
+                        udict.update(distributions.get_config(unc.distname))
                     else:
                         udict.update({'dist': unc.distname})
-                        udict.update(dict(unc.userargs))
+                        udict.update(dict(unc.args))
                     ulist.append(udict)
                 idict['uncerts'] = ulist
             d['inputs'].append(idict)
@@ -1991,7 +1981,7 @@ class UncertCalc(object):
             except DimensionalityError as e:
                 msg = '<font color="red">' + str(e) + '</font>'
                 mean = None
-            except OffsetUnitCalculusError as e:
+            except OffsetUnitCalculusError:
                 msg = '<font color="red">Ambiguous offset (temerature) units. Try delta_degC.'
                 mean = None
 
@@ -2031,10 +2021,10 @@ class UncertCalc(object):
                 except DimensionalityError:
                     rows.append([output.format_math(comp.get_symbol()), '<font color="red">Cannot convert {} to {}</font>'.format(comp.units, inpt.units), '-', '-'])
                 else:
-                        rows.append([output.format_math(comp.get_symbol()),
-                                    output.formatunit(comp.units, fullunit=True, dimensionlessabbr='-'),
-                                    output.formatunit(comp.units, fullunit=False, dimensionlessabbr='-'),
-                                    output.formatunit(comp.units.dimensionality, fullunit=True, dimensionlessabbr='-')])
+                    rows.append([output.format_math(comp.get_symbol()),
+                                output.formatunit(comp.units, fullunit=True, dimensionlessabbr='-'),
+                                output.formatunit(comp.units, fullunit=False, dimensionlessabbr='-'),
+                                output.formatunit(comp.units.dimensionality, fullunit=True, dimensionlessabbr='-')])
         return output.md_table(rows, hdr, **kwargs)
 
 

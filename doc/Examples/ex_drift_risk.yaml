@@ -1,13 +1,13 @@
 - desc: Five calibrations, each consisting of five measurements, were taken between
     2011 and 2018. This calculation reduces the sets of five measurements into a mean
     and standard deviation for each year's calibration.
-  groupnames:
+  colnames:
   - 2011-11-06 00:00:00
   - 2013-10-07 00:00:00
   - 2015-08-01 00:00:00
   - 2016-07-23 00:00:00
   - 2018-05-11 00:00:00
-  groupvals:
+  data:
   - - 180.02945641
     - 180.26180522
     - 179.75678302
@@ -33,7 +33,7 @@
     - 184.28613981
     - 184.0489668
     - 184.09539855
-  mode: anova
+  mode: data 
   name: data
   xdate: true
 - arruy:

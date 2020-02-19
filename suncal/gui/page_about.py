@@ -26,7 +26,7 @@ Version: {} - {}<br><br>
 <font size=5>Primary Standards Lab<br>Sandia National Laboratories<br></font>
 <font size=4>uncertainty@sandia.gov<br><br></font>
 <font size=3>
-Copyright 2019 National Technology & Engineering Solutions of Sandia, LLC (NTESS).
+Copyright 2019-2020 National Technology & Engineering Solutions of Sandia, LLC (NTESS).
 <br>Under the terms of Contract DE-NA0003525 with NTESS, the U.S. Government
 <br>retains certain rights in this software.
 </font>'''.format(version.__version__, version.__date__)

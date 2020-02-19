@@ -23,7 +23,7 @@ import shutil
 import yaml
 
 from . import uncertainty
-from . import anova
+from . import dataset
 from . import sweeper
 from . import output
 from . import curvefit
@@ -61,8 +61,8 @@ class Project(object):
             mode = 'risk'
         elif isinstance(item, curvefit.CurveFit):
             mode = 'curvefit'
-        elif isinstance(item, anova.ArrayGrouped) or isinstance(item, anova.ArrayGroupedSummary):
-            mode = 'anova'
+        elif isinstance(item, dataset.DataSet) or isinstance(item, dataset.DataSetSummary):
+            mode = 'data'
         elif isinstance(item, dist_explore.DistExplore):
             mode = 'distributions'
         else:
@@ -174,8 +174,8 @@ class Project(object):
                 item = risk.Risk.from_config(configdict)
             elif mode == 'curvefit':
                 item = curvefit.CurveFit.from_config(configdict)
-            elif mode == 'anova':
-                item = anova.ArrayGrouped.from_config(configdict)
+            elif mode == 'data':
+                item = dataset.DataSet.from_config(configdict)
             elif mode == 'distributions':
                 item = dist_explore.DistExplore.from_config(configdict)
             else:

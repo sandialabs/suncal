@@ -20,7 +20,7 @@ from suncal import output
 from suncal import reverse
 from suncal import risk
 from suncal import curvefit
-from suncal import customdists
+from suncal import distributions
 from suncal import ureg
 
 
@@ -270,7 +270,7 @@ def main_risk(args=None):
             dproc[key.strip()] = float(val)
         else:
             dproc[key.strip()] = val
-    dproc = customdists.from_config(dproc)
+    dproc = distributions.from_config(dproc)
 
     dtest = None
     if args.testdist is not None:
@@ -281,7 +281,7 @@ def main_risk(args=None):
                 dtest[key.strip()] = float(val)
             else:
                 dtest[key.strip()] = val
-        dtest = customdists.from_config(dtest)
+        dtest = distributions.from_config(dtest)
 
     rsk = risk.Risk()
     rsk.set_procdist(dproc)
@@ -290,7 +290,7 @@ def main_risk(args=None):
     rsk.set_guardband(GBL=args.GBL, GBU=args.GBU)
 
     if args.s:
-        procrisk = rsk.process_risk()[1]
+        procrisk = rsk.specific_risk()[1]
         try:
             pfa = rsk.PFA()
             pfr = rsk.PFR()

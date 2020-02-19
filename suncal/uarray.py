@@ -6,7 +6,7 @@ from arrays. For example, find the uncertainty of a pulse
 width or uncertainty in the slope of a linear regression.
 
 Start by defining an Array object, using x, y and ux, uy data.
-Alternatively, define an ArrayGrouped object using measured data,
+Alternatively, define a DataSetSummary object using measured data,
 where uncertainty values will be determined from the standard deviation
 of each measurement group. The resulting Array object can be sampled,
 generating random variates of the array.

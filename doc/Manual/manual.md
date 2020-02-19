@@ -1,6 +1,6 @@
 ---
 title: Sandia Primary Standards Laboratory Uncertainty Calculator User's Guide
-date: August 6, 2019
+date: January 8, 2020
 author:
 - Sandia National Laboratories^[Sandia National Laboratories is a multimission laboratory managed and operated by National Technology and Engineering Solutions of Sandia, LLC., a wholly owned subsidiary of Honeywell International, Inc., for the U.S. Department of Energy’s National Nuclear Security Administration under contract DE-NA-0003525.]
 - uncertainty@sandia.gov
@@ -27,7 +27,7 @@ The available calculation types are:
 - Reverse uncertainty propagation to determine measurement uncertainty required to meet a target combined uncertainty
 - Uncertainty sweep to calculate multiple uncertainty propagations over a range of inputs
 - Reverse uncertainty sweep to calculate multiple reverse uncertainty propagations
-- Analysis of variance on a two-dimensional data set
+- Analyze measured data sets, including computation of autocorrelation and analysis of variance
 - Curve fitting, accounting for uncertainty in x and y measurements, and providing uncertainty in the output curve
 - Risk analysis for determining probability of false accept and false reject
 - T-Table calculator for determining values based on a Student's-t distribution
@@ -127,12 +127,6 @@ The Monte Carlo method will separately sample each component before combining.
 
 ![Measured quantities table](figs/measuredqty.png){#fig:measuredqty}
 
-For each uncertainty component, the probability distribution and any parameters necessary to define the distribution can be entered underneath each uncertainty component name.
-The probability distribution fields can also process simple mathematical expressions, including percentages based on the entered mean value.
-For example, with a mean of 10, entering an uncertainty of ".5 + 10%" will automatically reduce to 1.5, and be updated appropriately if the mean value is changed later.
-
-![Entering an uncertainty as a percent](figs/percent.png){#id .class width=3in #fig:uncertpercent}
-
 Normal and t distributions have rows for entering both a k value and a confidence percentage. Entering one value will recompute the other based on the entered degrees of freedom.
 Uniform distributions can be entered by using the half-width "a" parameter.
 For more information on what the parameters for each distribution are, press the question mark (**?**) button near the plot of the distribution.
@@ -140,18 +134,27 @@ The most common distributions are shown in the drop-down list box, but many othe
 The distribution is converted to a standard uncertainty (shown in the Uncertainty Components table) for use in the GUM formula, while the Monte Carlo method directly samples the distribution.
 The Distribution tab also has a button to import distribution settings from a CSV file of sampled data or from another calculation in the program.
 
+#### Relative Uncertainties
+
+The probability distribution fields can also process simple mathematical expressions, including percentages based on the entered mean value.
+For example, with a mean of 10, entering an uncertainty of ".5 + 10%" will automatically reduce to 1.5, and be updated appropriately if the mean value is changed later.
+When uncertainties are entered as percents or ppm, the standard uncertainty is computed relative to the nominal value for that variable.
+
+Manufacturer's specifications are often given in terms of "percent reading + percent range", or "ppm reading + ppm range". For ease of entry, `X%range()` and `Xppmrange()` functions can
+also be entered in the uncertainty field, where `X` denotes the desired percent and the value in parenthesis is the instrument range. For example, if an uncertainty is given
+as 1% reading + 5% range, when operating on the 100 V range, enter "1% + 5%range(100)". With a nominal value of 100 V, this expression will reduce to 6 V.
+
+
+![Entering an uncertainty as a percent reading + percent range](figs/percent.png){#id .class width=3in #fig:uncertpercent}
+
+
+#### Correlated Uncertainties
+
 If the input variables are correlated, these can be entered on the **Correlations** tab (see {*@fig:correlation}).
 Correlation coefficients are entered one pair at a time, and must be a value between -1 and +1.
 
 ![Correlation coefficient entry table](figs/correlations.png){#fig:correlation}
 
-If the measurements consist of multiple measurement values stored in a CSV file, both the uncertainties and correlations can be loaded by selecting **Load Uncertainties from File** from the **Uncertainty** menu (see {*@fig:importing}).
-This will open a dialog box where each input variable can be assigned to a column of data. The mean and standard deviation of the mean, along with correlations between columns, will be automatically loaded.
-
-![Importing measurement data into uncertainty propagation](figs/dataimporter.png){#fig:importing}
-
-Finally, the **Notes** tab contains a field for entering your own information to save with the calculation, and the **Settings** tab allows entry of the number of Monte Carlo samples and the random number generator seed.
-A seed of "None" will be randomized on every run.
 
 #### Entering Units
 
@@ -159,13 +162,32 @@ The Measurement Model and Measured Quantites tables allow entry of measurement u
 If omitted, units will be treated as dimensionless.
 Otherwise, the entered unit name will be interpreted as a measurement unit.
 Many common units and prefixes are recognized either as abbreviations or full names.
-For example, "meter", "m", "uF", "m/s^2", "kPa" are all recognized units (corresponding to meter, meter, microfarad, meter-per-second-squared, and kilopascal)
+For example, "meter", "m", "uF", "m/s^2", "kPa" are all recognized units (corresponding to meter, meter, microfarad, meter-per-second-squared, and kilopascal).
+The full name of the unit can always be spelled out to avoid confusion. For example, use "celsius" rather than "C" which results in Coulombs.
+Capitalization also matters. "K" results in Kelvin, but "k" is converted to Boltzmann's constant.
+
 To check unit compatibility and dimensionality, use the **Check Units** function from the **Uncertainty** menu.
-The **Units Converter** option in the **Tools** menu provides basic unit name recognition and conversion.
+The **Units Converter** option in the **Tools** menu provides basic unit name recognition and conversion and can help ensure a unit name is being interpreted correctly.
 Custom units can also be defined in the **Preferences** menu.
 
 Uncertainties do not necessarily need to be the same units as their input variables, for example a nominal value could be in meters with uncertainty in millimeters.
 Conversions will happen automatically to produce a result in the units specified in the Measurement Model table.
+
+
+#### Loading uncertainties from measured data
+
+If the measurements consist of multiple measured values stored in a CSV file, both the uncertainties and correlations can be loaded by selecting **Import uncertainty distributions** from the **Uncertainty** menu (see {*@fig:importing}).
+In this dialog, first select a data source, which can be a CSV file or the result of another calculation in the project.
+Use the table and the **Assigned Variable** dropdown to select which columns of the data to import.
+Use the **Distribution to Fit** dropdown to select different probability distributions, or use the default of normal distribution, computing standard error of the mean of the column of data.
+After clicking **OK**, the assigned distributions will be loaded into the uncertainty calculation.
+
+![Importing measurement data into uncertainty propagation](figs/dataimporter.png){#fig:importing}
+
+Finally, the **Notes** tab contains a field for entering your own information to save with the calculation, and the **Settings** tab allows entry of the number of Monte Carlo samples and the random number generator seed.
+A seed of "None" will be randomized on every run.
+
+
 
 ### Outputs
 
@@ -284,27 +306,35 @@ Each of these outputs present one calculation of the sweep at a time, and have a
 
 ## Data Sets and Analysis of Variance
 
-The Data Sets and Analysis of Variance function allows you to enter a table of data and perform Analysis of Variance (ANOVA) calculations.
-The data can be entered in two ways. In the first and default method, accessed by selecting **Enter all measured values**, data can be entered as a 2-dimensional data set representing multiple measurements in a group.
-For example, each column (group) in the table could be a different measurement temperature, while each row would list one measurement of multiples made at that temperature, or each column could be a day in which multiple measurements (rows) were taken under identical conditions.
-The resulting two-dimensional data will be reduced to a mean and type A uncertainty for each column/group.
-The second method of entering data, accessed by selecting **Enter group means and standard deviations**, is used when each group has already been reduced to a mean, standard deviation, and number of measurements.
-In either case, statistics on the data set, including pooled standard deviation (repeatability), reproducibility, and ANOVA information are calculated.
+The Data Sets and Analysis of Variance function allows you to load experimental data for analysis and for use in other uncertainty calculations.
 
-The data table can be entered manually, copied/pasted from Excel, or the data can be loaded from a CSV file.
-The CSV loader dialog does its best to determine how to interpret the data, and gives the option of grouping measurements by rows or by columns.
-The first row or column can be specified as the Group Value; for example, if the first row provides the temperature value at which resistance measurements were made, select this check box.
-A preview plot is shown ({*@fig:anovaimport}), with the group number on the x axis and the individual measurements on the y axis. Measurements in the same group are plotted with the same color.
-This plot allows you to check that the CSV data is interpreted correctly.
+Data values can be entered manually, copied/pasted from Excel, or loaded from a CSV file.
+When loading from a CSV file using the **Load data from CSV** menu option, the full CSV file will be shown in a table.
+Select the values to import, including any header row or column if applicable. If the data is grouped by rows (i.e. with a header as the left column), check the **Transpose** box.
+After clicking **OK**, the values will be loaded into the Data Sets table.
 Note that missing data is acceptable, and will be disregarded in the ANOVA calculation; the groups do not have to be the same length.
 
-![ANOVA data set import from CSV](figs/anovaloader.png){#fig:anovaimport}
+As an example, each column (group) in the table could be a different measurement temperature, while each row would list one measurement of multiples made at that temperature,
+or each column could be a day in which multiple measurements (rows) were taken under identical conditions.
 
-Once the data is entered, statistics for each group (column) are provided in the first table, with statistics for the overall data set given in the second table.
+
+![Data set loaded from CSV](figs/datasets.png){#fig:datasets}
+
+Once the data is entered, summary statistics for each group (column) are provided in the first table, with statistics for the overall data set given in the second table.
 Results of one-way analysis of variance are displayed in the third table.
-Both the F-statistic and P-value are computed. The groups are statistically equivalent if the F-statistic is less than the critical F value (with 95% confidence), and the P-value is greater than 0.05.
 
-The grouped mean and standard deviation result can be used in other calculations, such as curve fitting.
+Use the dropdown to view other statistics on the data set. Other options include a histogram for each column, the correlation matrix between all columns,
+autocorrelation and lag plots of a column, and a 1-way analysis of variance where both the F-statistic and P-value are computed.
+The groups are statistically equivalent if the F-statistic is less than the critical F value (with 95% confidence), and the P-value is greater than 0.05.
+
+Once a data set is loaded, its statistics can be used in other calculations, such as curve fitting.
+
+#### Data Set Summary Mode
+
+In some cases, only a summary of the measured data is available. The summary must include the mean, standard deviation, and number of measurements for each measurement group.
+In this case, select **Enter Summarized Values** from the **Data Set** menu.
+The data table will be reduced to three rows: mean, standard deviation, and count.
+After entering the summarized values, the group statistics and analysis of variance are shown.
 
 
 ## Curve Fitting
@@ -461,8 +491,14 @@ The **Examples** folder in the source repository contains several saved projects
 ## Data sharing
 
 In many calculation functions, data from one calculation result can be loaded as the input to another calculation.
-For example, the prediction band at a specific x date of a curve fit calculation (see {*@fig:importdistribution}) can be imported into a risk analysis calculation (select **Import Process Distribution** in the menu) to determine the probability of an out-of-tolerance condition at a given date.
-Results of an uncertainty sweep or ANOVA data set can be loaded into a curve fit calculation (by selecting **Insert Data From** from the **Curve Fit** menu) or even another sweep calculation.
+For example, the prediction band at a specific x date of a curve fit calculation (see {*@fig:importdistribution}) can be imported into a risk analysis
+calculation (select **Import Distribution** in the **Risk** menu) to determine the probability of an out-of-tolerance condition at a given date.
+Results of an uncertainty sweep or ANOVA data set can be loaded into a curve fit calculation (by selecting **Insert Data From** from the **Curve Fit** menu)
+or even another sweep calculation.
+After selecting the data source, a table will be filled in with data from that source. Use the **Assigned Variable** dropdown to select which columns in the table
+should be used with which options in the calculation. If the column is based on a particular x-value (such as the confidence or prediction band of a curve fit), 
+an **X Value** option will be shown.
+Once the assignments have been made, the distribution can be imported into the calculation.
 Importing data is a one-time event. If the original calculation data changes, the data will need to be re-imported into the second calculation.
 
 ![Loading the prediction band distribution of a curve fit into a risk analysis](figs/insertdist.png){#fig:importdistribution}
@@ -674,10 +710,11 @@ What is the probability that any given circuit will fall outside the specificati
 
 To answer this question, add a Risk calculation. From the **Project** menu, select **Add Calculation** and choose **Risk Analysis**.
 The previous uncertainty propagation problem provides the Process Distribution needed for the risk calculation.
-This distribution can be automatically copied into the Process Distribution using the **Risk** menu and selecting **Import process distribution**.
+This distribution can be automatically copied into the Process Distribution using the **Risk** menu and selecting **Import distribution**.
 From the dialog box, different distributions that have already been calculated are available for loading into the Risk calculation.
-Double click on **tau (MC)** to select the time constant Monte Carlo results (see {*@fig:riskprop}).
-With sampled data results from a Monte Carlo, different distributions can be fit to the histogram by selecting different options from the **Distribution to Fit** drop-down list box.
+Double click **uncertainty** as the Data Source, then click **tau (MC)** in the table to view the Monte Carlo results of the original uncertainty calculation (see {*@fig:riskprop}).
+Next, specify that this column should be imported as the Process Distribution by selecting **Process Distribution** from the **Assigned Variable** dropdown.
+With sampled data results from a Monte Carlo, different distributions can be fit to the histogram by selecting different options from the **Distribution to Fit** dropdown list box.
 To approximate the distribution using a histogram, select **histogram** from the list of distributions to fit, then click **OK**.
 The histogram probability distribution will be loaded into the process distribution in the risk calculator.
 
@@ -771,28 +808,29 @@ A value between 175 and 185 PSI is considered in tolerance.
 As the gauge is drifting closer to the upper limit, what is the probability that it will drift out of tolerance by the next calibration due date?
 
 The gauge was calibrated five times, each with five measurements. This data is stored in the "pressure.txt" file in the Examples folder.
-Because this is two-dimensional data, start with a Data Sets and Analysis of Variance calculation.
-From the **ANOVA** menu, choose **Load Table from CSV** and select the "pressure.txt" file.
-The data is laid out in rows, where the first column is the calibration date and the remaining colunms are repeated measurements on that date.
-For the Calculator to interpret the data, select the **Rows** Group By option and check **First column is group value**.
-The plot should update to show dates along the x axis and values from 180 to 184 on the y axis (see {*@fig:groupdata}). Click **OK** to load the data.
-The plot on the Data sets and ANOVA window now display a single mean value with uncertainty bars at each date, effectively finding the mean and uncertainty of the five measurements on each date.
-Select the **Group names are dates** check box to indicate that each column can be interpreted as a date and press **Calculate**.
+Because this is a measured data set, start with a Data Sets and Analysis of Variance calculation.
+From the **Data Set** menu, choose **Load Data from CSV** and select the "pressure.txt" file.
+The data is laid out in rows, where the first column is the calibration date and the remaining colunms are repeated measurements on that date, so check the **Transpose** box.
+The plot now displays a single mean value with uncertainty bars at each date, effectively finding the mean and uncertainty of the five measurements on each date.
 
-![Loading grouped data](figs/driftrisk_data.png){#fig:groupdata}
+![Loading 2-dimensional data](figs/driftrisk_data.png){#fig:groupdata}
 
 To predict the drift over the next year to the calibration due date of July 1, 2019, select **Add Calculation** from the **Project Menu** and select **Curve Fit**.
 Import the data we just loaded into the curve fit by selecting **Insert Data From** from the **Curve Fit** menu.
-Double-click the **Grouped Statistics** under the ANOVA data source.
+Double-click **Summarized Array** to select it as the data source.
 The Calculator will predefine the first columns as x, y, and u(y).
 Click **OK** to load the data, then click **Calculate** to find the line fit.
 
 Next, use the fit line and its uncertainty to calculate the probability of the pressure gage falling outside the 185 PSI limit on the next calibration date.
 Add a new Risk Analysis to the calculator project by selecting **Add Calculation** from the **Project** menu and clicking **Risk Analysis**.
-There is no test measurement in this risk case, so deselect **Test Measurement**.
-From the **Risk** menu, select **Import Process Distribution From** and double-click the **Prediction (LSQ)** under **curvefit** in the data source.
-A window will appear prompting you to enter the prediction date. Enter the next calibration due date of **07-01-2019**. A normal distribution should be displayed, determined from the prediction band on that date.
+From the **Risk** menu, select **Import Distribution**.
+Double click **curvefit** as the data source, then select **Prediction (LSQ)** in the table.
+Select **Process Distribution** from the **Assigned Variable** dropdown to indicate this column should be imported as the Process Disitribution.
+Next, set the **X Value** field to **07-01-2019** as the date at which to predict the pressure and its uncertainty.
+A normal distribution should be displayed, determined from the prediction band on that date.
 Click **OK** to accept this distribution.
+
+There is no Test Measurement in this example, so deselect **Test Measurement**.
 Next, enter the specification limits of **175** and **185**.
 The Process Risk will calculate a 15.7% chance of the gauge being above 185 on this date based on historical drift ({*@fig:driftrisk}).
 This risk may be high enough to warrant an adjustment or repair to the gauge to prevent it from drifting out of specification during the next interval.
@@ -802,7 +840,7 @@ This risk may be high enough to warrant an adjustment or repair to the gauge to 
 
 # Copyright and License
 
-Copyright 2019 National Technology & Engineering Solutions of Sandia, LLC (NTESS).
+Copyright 2019-2020 National Technology & Engineering Solutions of Sandia, LLC (NTESS).
 Under the terms of Contract DE-NA0003525 with NTESS, the U.S. Government retains certain rights in this software.
 
 This program is free software: you can redistribute it and/or modify

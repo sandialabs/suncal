@@ -29,6 +29,7 @@ COLOR_INVALID = QtGui.QBrush(QtCore.Qt.red)
 COLOR_OK = QtGui.QBrush(QtCore.Qt.white)
 COLOR_TEXT_OK = QtGui.QBrush(QtCore.Qt.black)
 COLOR_UNUSED = QtGui.QBrush(QtCore.Qt.gray)
+COLOR_SELECTED = QtGui.QBrush(QtGui.QColor(204, 255, 204, 255))
 COLOR_HIGHLIGHT = QtGui.QBrush(QtGui.QColor(255, 0, 0, 127))
 
 settings = configmgr.Settings()
@@ -40,7 +41,7 @@ iconname = {'uncertainty': 'target',
             'sweep': 'targetlist',
             'reverse': 'calipers',
             'reversesweep': 'rulersweep',
-            'anova': 'boxplot'}
+            'data': 'boxplot'}
 
 
 # Breakpoint handler (for Python 3.7+) for breakpoint() function to disable QT problems when breaking

@@ -7,12 +7,13 @@ from scipy import stats
 
 import suncal
 from suncal import project
-from suncal import anova
+from suncal import dataset
 from suncal import sweeper
 from suncal import reverse
 from suncal import risk
 from suncal import curvefit
 from suncal import dist_explore
+from suncal import distributions
 
 
 def test_saveload_fname(tmpdir):
@@ -30,7 +31,7 @@ def test_saveload_fname(tmpdir):
     u2.set_input('m', nom=5, std=.5)
 
     rsk = risk.Risk()
-    rsk.set_procdist(stats.t(loc=.5, scale=1, df=9))
+    rsk.set_procdist(distributions.get_distribution('t', loc=.5, scale=1, df=9))
 
     swp = sweeper.UncertSweep(u)
     swp.add_sweep_nom('m', values=[.5, 1, 1.5, 2])
@@ -47,13 +48,13 @@ def test_saveload_fname(tmpdir):
     revswp.add_sweep_unc('r', values=[.01, .02, .03, .04], comp='u(r)', param='std')
 
     explore = dist_explore.DistExplore(seed=8888)
-    explore.set_dist('a', stats.norm(loc=3, scale=2))
-    explore.set_dist('b', stats.uniform(loc=0, scale=2))
-    explore.set_dist('a+b')
+    explore.dists = {'a': distributions.get_distribution('normal', loc=3, scale=2),
+                     'b': distributions.get_distribution('uniform', loc=0, scale=2),
+                     'a+b': None}
     explore.get_config()
 
-    anv = anova.ArrayGrouped()
-    anv.set_xy(np.vstack((np.repeat(np.arange(5), 5), np.random.normal(loc=10, scale=1, size=25))).transpose())
+    dset = dataset.DataSet()
+    dset.set_data(np.vstack((np.repeat(np.arange(5), 5), np.random.normal(loc=10, scale=1, size=25))).transpose())
 
     proj = project.Project()
     proj.add_item(u)
@@ -64,6 +65,7 @@ def test_saveload_fname(tmpdir):
     proj.add_item(rev)
     proj.add_item(revswp)
     proj.add_item(explore)
+    proj.add_item(dset)
     reportorig = proj.calculate()
 
     # Save_config given file NAME

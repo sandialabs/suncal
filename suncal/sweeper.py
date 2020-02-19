@@ -8,7 +8,7 @@ import numpy as np
 import sympy
 import yaml
 
-from . import uarray
+from . import dataset
 from . import reverse
 from . import uncertainty
 from . import output
@@ -314,9 +314,9 @@ class SweepOutput(output.Output):
             elif param == 'df':
                 self.inpthdr.append(output.format_math(inptname) + ' deg.f')
             elif param in ['unc', 'std']:
-                self.inpthdr.append(output.format_math(comp.replace('(','_').replace(')','')))
+                self.inpthdr.append(output.format_math(comp.replace('(', '_').replace(')', '')))
             else:
-                self.inpthdr.append(output.format_math(comp.replace('(','_').replace(')','')) + ', ' + param)
+                self.inpthdr.append(output.format_math(comp.replace('(', '_').replace(')', '')) + ', ' + param)
 
         self.inptvals = [v['values']*uncertainty.get_units(v.get('units', '')) for v in sweeplist]
         self.N = len(self.inptvals[0])
@@ -340,11 +340,9 @@ class SweepOutput(output.Output):
             self.outpvalsmc = None
             self.outpuncsmc = None
 
-    def get_array(self, name=None):
-        ''' Get Array object from sweep output with the given name. If name==None, return a list
+    def get_dataset(self, name=None):
+        ''' Get DataSet object from sweep output with the given name. If name is None, return a list
             of array names available.
-
-            See Also: to_array for getting array by function index
         '''
         names = []
         for n in self.funcnames:
@@ -359,11 +357,10 @@ class SweepOutput(output.Output):
         elif name in names:
             name, method = name.split(' ')
             funcidx = self.funcnames.index(name)
-            # NOTE: always returning FIRST sweep column as x value here
-            arr = self.to_array(gum=(method == '(GUM)'), funcidx=funcidx, inptidx=0)
+            dset = self.to_array(gum=(method == '(GUM)'), funcidx=funcidx)
         else:
             raise ValueError('{} not found in output'.format(name))
-        return arr
+        return dset
 
     def get_single_desc(self, idx):
         ''' Get description for a single index in the sweep '''
@@ -419,7 +416,7 @@ class SweepOutput(output.Output):
             Parameters
             ----------
             cov: float
-                Coverage interval for uncertainties (0-1 range)
+                Coverage probability for uncertainties (0-1 range)
             fidx: int
                 Index of function in calculator
             normal: bool
@@ -454,7 +451,7 @@ class SweepOutput(output.Output):
             Parameters
             ----------
             cov: float
-                Coverage interval for uncertainties (0-1 range)
+                Coverage probability for uncertainties (0-1 range)
             fidx: int
                 Index of function in calculator
             normal: bool
@@ -488,12 +485,12 @@ class SweepOutput(output.Output):
             rpt += output.md_table(rows, hdr)
         return rpt
 
-    def plot(self, ax=None, inptidx=0, funcidx=0, uy='errorbar', expanded=False, cov=.95, gum=True, mc=True):
+    def plot(self, plot=None, inptidx=0, funcidx=0, uy='errorbar', expanded=False, cov=.95, gum=True, mc=True):
         ''' Show plot of output value vs. input[inptidx] (for ONE function)
 
             Parameters
             ----------
-            ax: matplotlib axis
+            plot: matplotlib figure or axis
                 If omitted, a new axis will be created. If both gum and mc are True,
                 two axes in figure will be created.
             inptidx: int
@@ -506,25 +503,20 @@ class SweepOutput(output.Output):
             expanded: bool
                 Show uncertainty lines as expanded values
             cov: float
-                Coverage interval for expanded uncertainties (0-1 range)
+                Coverage probability for expanded uncertainties (0-1 range)
             gum: bool
                 Plot GUM results
             mc: bool
                 Plot MC results
         '''
-        try:
-            axgum, axmc = ax
-        except TypeError:
-            if ax is None:
-                if gum and mc:
-                    fig, (axgum, axmc) = plt.subplots(ncols=2)
-                else:
-                    fig, ax = plt.subplots()
-                    axgum = ax
-                    axmc = ax
-            else:
-                axgum = ax
-                axmc = ax
+        fig, ax = output.initplot(plot)
+        fig.clf()
+        if gum and mc:
+            axgum = fig.add_subplot(1, 2, 1)
+            axmc = fig.add_subplot(1, 2, 2)
+        else:
+            ax = fig.add_subplot(1, 1, 1)
+            axgum = axmc = ax
 
         def doplot(ax, xvals, yvals, uyvals, label, xunits=None, yunits=None):
             ''' Function for plotting '''
@@ -581,8 +573,8 @@ class SweepOutput(output.Output):
                 plt.ioff()
 
                 for i in range(len(self.funcnames)):
-                    fig, axs = plt.subplots(ncols=2)
-                    self.plot(ax=axs, inptidx=0, funcidx=i)
+                    fig = plt.figure()
+                    self.plot(plot=fig, inptidx=0, funcidx=i)
                     r.add_fig(fig)
         return r
 
@@ -597,33 +589,33 @@ class SweepOutput(output.Output):
         ''' Get output object from single run in sweep '''
         return self.outputlist[idx]
 
-    def to_array(self, gum=True, inptidx=0, funcidx=0):
-        ''' Return Array object of swept data and uncertainties
+    def to_array(self, gum=True, funcidx=0):
+        ''' Return DataSet object of swept data and uncertainties
 
             Parameters
             ----------
             gum: bool
                 Use gum (True) or monte carlo (False) values
-            inptidx: int
-                Index of input variable to use as x values
             funcidx: int
                 Index of function in calculator as y values
 
             Returns
             -------
-            arr: Array object
-                Array of x, y, and uy values
-
-            See Also: get_array for getting an array by name (used in GUI)
+            dset: DataSet object
+                DataSet containing mean and uncertainties of each sweep point
         '''
-        xvals = self.inptvals[inptidx].magnitude
+        xvals = [x.magnitude for x in self.inptvals]
+        names = self.inpthdr.copy()
+
         if gum:
             yvals = self.outpvalsgum[funcidx].magnitude
             uyvals = self.outpuncsgum[funcidx].magnitude
         else:
             yvals = self.outpvalsmc[funcidx].magnitude
             uyvals = self.outpuncsmc[funcidx].magnitude
-        return uarray.Array(xvals, yvals, uy=uyvals)
+        names.append(self.outnames[funcidx])
+        names.append(f'u({self.outnames[funcidx]})')
+        return dataset.DataSet(np.vstack((xvals, yvals, uyvals)), colnames=names)
 
 
 class SweepOutputReverse(output.Output):
@@ -640,7 +632,6 @@ class SweepOutputReverse(output.Output):
     '''
     def __init__(self, outputlist, sweeplist, varname, funcname):
         self.outputlist = outputlist
-        self.outnames = [out.name for out in outputlist]
         self.varname = varname
         self.name = funcname
 
@@ -655,9 +646,9 @@ class SweepOutputReverse(output.Output):
             elif param == 'df':
                 self.inpthdr.append(output.format_math(inptname) + ' deg.f')
             elif param in ['unc', 'std']:
-                self.inpthdr.append(output.format_math(comp.replace('(','_').replace(')','')))
+                self.inpthdr.append(output.format_math(comp.replace('(', '_').replace(')', '')))
             else:
-                self.inpthdr.append(output.format_math(comp.replace('(','_').replace(')','') + '\n' + param))
+                self.inpthdr.append(output.format_math(comp.replace('(', '_').replace(')', '') + '\n' + param))
 
         self.inptvals = [v['values']*uncertainty.get_units(v.get('units', '')) for v in sweeplist]
         self.N = len(self.inptvals[0])
@@ -674,12 +665,9 @@ class SweepOutputReverse(output.Output):
         else:
             self.gumoutvals = self.gumoutuncs = None
 
-    def get_array(self, name=None):
-        ''' Get array from sweep output with the given name. If name==None, return a list
+    def get_dataset(self, name=None):
+        ''' Get DataSet object from sweep output with the given name. If name is None, return a list
             of array names available.
-
-            Returned array is 3-columns. X column (currently) is np.arange(len(y)), Y column
-            is sweep value, and UY column standard uncertainty.
         '''
         names = []
         if self.gumoutvals is not None:
@@ -692,55 +680,58 @@ class SweepOutputReverse(output.Output):
 
         elif name in names:
             name, method = name.split(' ')
-            arr = self.to_array(gum=(method == '(GUM)'), inptidx=0)  # NOTE: always returning first sweep column as x
+            dset = self.to_array(gum=(method == '(GUM)'))
         else:
             raise ValueError('{} not found in output'.format(name))
-        return arr
+        return dset
 
     def report(self, **kwargs):
         ''' Report table of results of reverse-sweep '''
         r = output.MDstring()
         inptvalstrs = [output.formatter.f_array(a) for a in self.inptvals]
-        rows = []
-        if self.gumoutvals is not None and self.mcoutvals is not None:
-            hdr = self.inpthdr + ['GUM Uncertainty (k=1)', 'MC Uncertainty (k=1)']
-            for inpts, uncgum, uncmc in zip(list(zip(*inptvalstrs)), self.gumoutuncs, self.mcoutuncs):
-                row = list(inpts) + [output.formatter.f(uncgum, **kwargs), output.formatter.f(uncmc, **kwargs)]
+        varname = output.format_math(self.varname)
+        uvarname = output.format_math(f'u_{self.varname}')
+        if self.gumoutvals is not None:
+            rows = []
+            r += '### GUM\n\n'
+            hdr = self.inpthdr + [varname, uvarname]
+            for inpts, val, unc in zip(list(zip(*inptvalstrs)), self.gumoutvals, self.gumoutuncs):
+                row = list(inpts) + [output.formatter.f(val, **kwargs), output.formatter.f(unc, **kwargs)]
                 rows.append(row)
-        elif self.gumoutvals is not None:
-            hdr = self.inpthdr + ['Uncertainty']
-            for inpts, unc in zip(list(zip(*inptvalstrs)), self.gumoutuncs):
-                row = list(inpts) + [output.formatter.f(unc, **kwargs)]
+            r += output.md_table(rows, hdr)
+
+        if self.mcoutvals is not None:
+            rows = []
+            r += '### Monte Carlo\n\n'
+            hdr = self.inpthdr + [varname, uvarname]
+            for inpts, val, unc in zip(list(zip(*inptvalstrs)), self.mcoutvals, self.mcoutuncs):
+                row = list(inpts) + [output.formatter.f(val, **kwargs), output.formatter.f(unc, **kwargs)]
                 rows.append(row)
-        elif self.mcoutvals is not None:
-            hdr = self.inpthdr + ['Uncertainty']
-            for inpts, unc in zip(list(zip(*inptvalstrs)), self.mcoutuncs):
-                row = list(inpts) + [output.formatter.f(unc, **kwargs)]
-                rows.append(row)
-        r += output.md_table(rows, hdr)
+            r += output.md_table(rows, hdr)
         return r
 
     def report_summary(self, **kwargs):
         f_req = self.outputlist[0].gumdata['f_required']
         uf_req = self.outputlist[0].gumdata['uf_required']
-        eqn = sympy.Eq(self.outputlist[0].gumdata['fname'], self.outputlist[0].gumdata['f'])
+        fname = self.outputlist[0].gumdata['fname']
+        eqn = sympy.Eq(fname, self.outputlist[0].gumdata['f'])
         r = output.MDstring('## Reverse Sweep Results\n\n')
         r += output.sympyeqn(eqn) + '\n\n'
-        r += 'Target: {} = {} ± {}'.format(output.format_math(self.varname), output.formatter.f(f_req, matchto=uf_req, **kwargs), output.formatter.f(uf_req, **kwargs)) + '\n\n'
+        r += 'Target: ${} = {} ± {}$'.format(fname, output.formatter.f(f_req, matchto=uf_req, **kwargs), output.formatter.f(uf_req, **kwargs)) + '\n\n'
         r += self.report(**kwargs)
         with mpl.style.context(output.mplcontext):
             plt.ioff()
             fig, ax = plt.subplots()
-            self.plot(ax=ax)
+            self.plot(plot=ax)
             r.add_fig(fig)
         return r
 
-    def plot(self, ax=None, xidx=0, GUM=True, MC=True):
+    def plot(self, plot=None, xidx=0, GUM=True, MC=True):
         ''' Plot results of reverse-sweep.
 
             Parameters
             ----------
-            ax: matplotlib axis
+            plot: matplotlib axis or figure
                 If omitted, a new axis will be created
             xidx: int
                 Index of input sweep variable to use as x-axis
@@ -749,9 +740,7 @@ class SweepOutputReverse(output.Output):
             MC: bool
                 Show MC calculation result
         '''
-        if ax is None:
-            fig, ax = plt.subplots()
-
+        fig, ax = output.initplot(plot)
         xunits = self.inptvals[xidx].units
         if GUM and self.gumoutuncs is not None:
             ax.plot(self.inptvals[xidx].magnitude, self.gumoutuncs.magnitude, marker='o', label='GUM')
@@ -766,28 +755,27 @@ class SweepOutputReverse(output.Output):
         if GUM and MC and self.gumoutuncs is not None and self.mcoutuncs is not None:
             ax.legend(loc='best')
 
-    def to_array(self, gum=True, inptidx=0):
+    def to_array(self, gum=True):
         ''' Return Array object of swept data and uncertainties
 
             Parameters
             ----------
             gum: bool
                 Use GUM values (True) or MC values (False)
-            inptidx: int
-                Index of input variable to use as x values
-            funcidx: int
-                Index of function in calculator as y values
 
             Returns
             -------
-            arr: Array object
-                Array of x, y, and uy values
+            dset: DataSet object
+                DataSet containing x, y, ux, and uy values
         '''
-        xvals = self.inptvals[inptidx].magnitude
+        xvals = [x.magnitude for x in self.inptvals]
+        names = self.inpthdr.copy()
+
         if gum:
-            yvals = np.array(self.gumoutvals.magnitude)
-            uyvals = np.array(self.gumoutuncs.magnitude)
+            yvals = self.gumoutvals.magnitude
+            uyvals = self.gumoutuncs.magnitude
         else:
-            yvals = np.array(self.mcoutvals.magnitude)
-            uyvals = np.array(self.mcoutuncs.magnitude)
-        return uarray.Array(xvals, yvals, uy=uyvals)
+            yvals = self.mcoutvals.magnitude
+            uyvals = self.mcoutuncs.magnitude
+        names.extend([self.varname, f'u({self.varname})'])
+        return dataset.DataSet(np.vstack((xvals, yvals, uyvals)), colnames=names)

@@ -11,7 +11,7 @@ def t_factor(conf, degf):
         Parameters
         ----------
         conf: float
-            Confidence value in the range (0-1).
+            Level of confidence (0-1).
         degf: float
             Degrees of freedom
 
@@ -53,7 +53,7 @@ def degf(tp, conf):
         tp: float
             Value of tp(v)
         conf: float
-            Confidence value in the range (0-1).
+            Level of confidence (0-1).
 
         Returns
         -------

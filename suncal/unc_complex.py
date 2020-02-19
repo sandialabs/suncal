@@ -82,7 +82,7 @@ class UncertComplex(object):
             unc: complex
                 Uncertainty of input. Assumes normal distribution.
             k: float
-                Coverage factor of entered uncertainty. k=2 specifies ~95% confidence value.
+                Coverage factor of entered uncertainty. k=2 specifies ~95% coverage probability.
             corr: float
                 Correlation between real and imaginary components of uncertainty.
                 Must be between 0 and 1.
@@ -110,7 +110,7 @@ class UncertComplex(object):
             u_phase: float
                 Uncertainty of phase
             k: float
-                Coverage factor of entered uncertainty. k=2 specifies ~95% confidence value.
+                Coverage factor of entered uncertainty. k=2 specifies ~95% coverage probability.
             degrees: bool
                 Whether the phase and u_phase parameters are entered in degrees
             corr: float

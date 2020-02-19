@@ -27,7 +27,7 @@ import matplotlib.pyplot as plt
 from . import ureg
 from . import css
 from . import uparser
-from . import customdists
+from . import distributions
 from . import latexchars
 
 
@@ -217,6 +217,27 @@ def tex_to_html(expr):
     return markdown.markdown(md)
 
 
+def initplot(plot):
+    ''' Initialize figure and axis to plot on.
+
+        If plot is None, new figure and axis will be created.
+        If plot is Figure, the current axis will be used (or possibly cleared depending on function)
+        If plot is Axis, it will be plotted on
+
+        fig, ax tuple is always returned.
+    '''
+    if plot is None:
+        fig = plt.gcf()
+        ax = plt.gca()
+    elif hasattr(plot, 'gca'):
+        fig, ax = plot, plot.gca()
+    elif hasattr(plot, 'figure'):
+        fig, ax = plot.figure, plot
+    else:
+        raise ValueError('Undefined plot type')
+    return fig, ax
+
+
 def axes_grid(n, fig, maxcols=4):
     ''' Make a grid of n matplotlib axes in the figure with at most maxcols columns. '''
     rows = int(np.ceil(n/maxcols))
@@ -248,7 +269,7 @@ def setup_mplparams():
 setup_mplparams()
 
 
-def probplot(y, ax, sparams=(), dist='norm'):
+def probplot(y, ax, sparams=(), dist='norm', conf=.95):
     ''' Plot quantile probability plot. If data falls on straight line,
         data is normally distributed.
 
@@ -258,21 +279,36 @@ def probplot(y, ax, sparams=(), dist='norm'):
             Sampled data to fit
         ax: matplotlib axis
             Axis to plot on
-        sparams: tuple
-            Shape parameters for distribution. Omit for normal.
+        sparams: dictionary
+            Shape parameters for distribution.
         dist: string
             Name of distribution to fit.
+        conf: float
+            Level of confidence for confidence bands
     '''
-    (osm, osr), (slope, intercept, r) = stats.probplot(y, sparams=sparams, dist=dist)
-    ax.plot(osm, osr, marker='o', ls='', label='Samples')
-    xx = np.linspace(osm.min(), osm.max())
-    ax.plot(xx, np.poly1d((slope, intercept))(xx), color='C1', label='Line Fit')
+    _dist = distributions.get_distribution(dist, **sparams)
+    y = y.copy()
+    y.sort()
+    n = len(y)
+    p = (np.arange(n) + 0.5)/n   # like R's ppoints function assuming n > 10
+    z = _dist.ppf(p)
+    try:
+        coef = np.polyfit(z, y, deg=1)  # Find fit line
+    except np.linalg.LinAlgError:
+        coef = (0, 0)
+    fitval = np.poly1d(coef)(z)
+
+    zz = stats.norm.ppf(1-(1-conf)/2)
+    SE = (coef[0]/_dist.pdf(z)) * np.sqrt(p*(1-p)/n)
+
+    ax.plot(z, y, marker='o', ls='', color='C0')
+    ax.plot(z, fitval, ls='-', color='C1')
+    ax.fill_between(z, fitval-zz*SE, fitval+zz*SE, alpha=.4, color='C2')
     ax.set_xlabel('Theoretical Quantiles ({})'.format(dist))
     ax.set_ylabel('Ordered Sample Values')
-    ax.legend(loc='upper left')
 
 
-def fitdist(y, dist='norm', fig=None, qqplot=False, bins='sqrt', points=None, conf=None):
+def fitdist(y, distname='norm', plot=None, qqplot=False, bins='sqrt', points=None, coverage=None, xlabel='Parameter'):
     ''' Fit a distribution to the data and plot comparison.
 
         Parameters
@@ -281,8 +317,8 @@ def fitdist(y, dist='norm', fig=None, qqplot=False, bins='sqrt', points=None, co
             1D Data to fit
         dist: string to rv_continuous
             Distribution to fit to
-        fig: matplotlib figure
-            Figure to plot comparison
+        plot: matplotlib figure or axis
+            Figure or axis to plot comparison. Will be cleared.
         qqplot: boolean
             Plot a Q-Q normal probability plot
         bins: int
@@ -290,52 +326,50 @@ def fitdist(y, dist='norm', fig=None, qqplot=False, bins='sqrt', points=None, co
             Defaults to square root of data size.
         points: int
             Number of points to show in Q-Q plot
-        conf: array
-            List of x-values to draw confidence intervals as vertical lines
+        coverage: array
+            List of coverage probabilities to plot as vertical lines
     '''
-    if fig is None:
-        fig = plt.gcf()
+    fig, ax = initplot(plot)
     fig.clf()
 
-    if dist:
-        rv = customdists.get_dist(dist)
-        fitparams = rv.fit(y)
+    # Takes a long time with all 1E6 points.. thin them out
+    if points is not None:
+        ythin = y[::len(y)//points]
+    else:
+        ythin = y
+
+    if distname:
+        dist = distributions.get_distribution(distname)
+        fitparams = dist.fit(ythin)
 
     ax = fig.add_subplot(1, qqplot+1, 1)
     if not np.isfinite(y).any():
         return
     y = y[np.isfinite(y)]
 
-    ax.hist(y, density=True, bins=bins, label='Samples')
+    ax.hist(y, density=True, bins=bins)
 
-    if dist:
+    if distname:
         xx = np.linspace(y.min(), y.max(), num=100)
-        yy = rv.pdf(xx, *fitparams)
-        ax.plot(xx, yy, color='C1', label='{} Fit'.format(dist.title()))
+        yy = dist.pdf(xx)
+        ax.plot(xx, yy, color='C1', label='{} Fit'.format(distname))
 
-    if conf is not None:
-        for c in conf:
+    if coverage is not None:
+        for c in coverage:
             ax.axvline(c, ls='--', color='C2')
 
-    ax.set_xlabel('Parameter')
+    ax.set_xlabel(xlabel)
     ax.set_ylabel('Probability Density')
-    ax.legend(loc='best')
 
-    if dist:
+    if distname:
+        ax.legend(loc='best')
         if qqplot:
             ax2 = fig.add_subplot(1, 2, 2)
-            if points is None:
-                points = min(100, len(y))
-            thin = len(y)//points
-            probplot(y[::thin], ax2, sparams=fitparams[:-2], dist=rv.name)  # Omit loc/scale to get quantiles
-
-        paramnames = rv.shapes
-        if paramnames is not None:
-            paramnames = [r.strip() for r in paramnames.split(',')]  # .shapes returns a comma-sep string
-            paramnames += ['loc', 'scale']
-        else:
-            paramnames = ['loc', 'scale']
-        return dict(zip(paramnames, fitparams))
+            params = fitparams.copy()
+            params.pop('loc', 0)     # Omit loc/scale to get quantiles
+            params.pop('scale', 0)
+            probplot(ythin, ax2, sparams=params, dist=distname)
+        return fitparams
 
 
 class NumFormatter(object):
@@ -999,7 +1033,7 @@ def md_table(rows, hdr=None, **kwargs):
 class Output(object):
     ''' Generic output object. Each calculation type (uncertainty, reverse, curvefit, etc)
         subclasses this and must implement the report() method. Subclasses may also implement
-        get_distribution() and get_array() to provide raw output data.
+        get_dists() and get_dataset() to provide raw output data.
     '''
     def __str__(self):
         ''' String representation of output '''
@@ -1046,6 +1080,6 @@ class Output(object):
         ''' Return a distribution from the output '''
         return None
 
-    def get_array(self, name=None, **kwargs):
-        ''' Return an array from the output '''
+    def get_dataset(self, name=None, **kwargs):
+        ''' Return a DataSet from the output '''
         return None

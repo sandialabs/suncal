@@ -30,5 +30,5 @@ pint.set_application_registry(ureg)  # Allows loading pickles containing pint un
 from .uncertainty import UncertCalc, UncertaintyCalc, InputUncert, InputVar
 from .unc_complex import UncertComplex
 from .version import __version__, __date__
-from . import risk, curvefit, anova, reverse, sweeper, ttable
+from . import risk, curvefit, dataset, reverse, sweeper, ttable
 

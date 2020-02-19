@@ -10,7 +10,7 @@ from suncal import reverse
 from suncal import risk
 from suncal import curvefit
 from suncal import output
-from suncal import customdists
+from suncal import distributions
 from suncal import __main__ as cli
 
 def test_file(capsys):
@@ -95,8 +95,8 @@ def test_risk(capsys):
     ''' Test risk analysis command line '''
     # Normal risk report with test distribution and guardband
     u = risk.Risk()
-    u.set_procdist(stats.norm(loc=0, scale=4))
-    u.set_testdist(stats.norm(loc=0, scale=1))
+    u.set_procdist(distributions.get_distribution('normal', loc=0, scale=4))
+    u.set_testdist(distributions.get_distribution('normal', loc=0, scale=1))
     u.set_guardband(.2, .2)
     u.calculate()
     with output.report_format('text', 'text'):
@@ -107,7 +107,7 @@ def test_risk(capsys):
 
     # Without test distribution
     u = risk.Risk()
-    u.set_procdist(stats.norm(loc=0, scale=4))
+    u.set_procdist(distributions.get_distribution('normal', loc=0, scale=4))
     u.set_testdist(None)
     u.calculate()
     with output.report_format('text', 'text'):
@@ -118,8 +118,8 @@ def test_risk(capsys):
 
     # With non-normal distribution
     u = risk.Risk()
-    u.set_procdist(customdists.uniform(a=2))
-    u.set_testdist(stats.norm(loc=0, scale=.5))
+    u.set_procdist(distributions.get_distribution('uniform', a=2))
+    u.set_testdist(distributions.get_distribution('normal', loc=0, scale=0.5))
     u.calculate()
     with output.report_format('text', 'text'):
         report = str(u.out.report())
@@ -129,8 +129,8 @@ def test_risk(capsys):
 
     # With plots/verbose
     u = risk.Risk()
-    u.set_procdist(stats.norm(loc=0, scale=4))
-    u.set_testdist(stats.norm(loc=0, scale=1))
+    u.set_procdist(distributions.get_distribution('normal', loc=0, scale=4))
+    u.set_testdist(distributions.get_distribution('normal', loc=0, scale=1))
     u.calculate()
     with output.report_format('text', 'text'):
         report = str(u.out.report_all())

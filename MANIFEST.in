@@ -1,0 +1,4 @@
+include LICENSE changes.md
+recursive-include test *.csv *.yaml *.txt
+recursive-include doc *
+global-exclude *.pyc *.pyo

@@ -1,7 +1,7 @@
 ''' Page for propagating uncertainty calculations '''
 
-import os
 import re
+import numpy as np
 import sympy
 from pint import DimensionalityError, UndefinedUnitError, OffsetUnitCalculusError
 
@@ -13,11 +13,11 @@ from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as Navigatio
 from .. import uncertainty as uc
 from .. import uparser
 from .. import output
-from .. import customdists
+from .. import distributions
 from .. import ttable
 from . import gui_common
 from . import gui_widgets
-from . import page_data
+from . import page_dataimport
 
 
 TREESTYLE = """
@@ -115,7 +115,7 @@ class FunctionTableWidget(QtWidgets.QTableWidget):
 
     def __init__(self, parent=None):
         super(FunctionTableWidget, self).__init__(parent)
-        self.setColumnCount(4)
+        self.setColumnCount(5)
         self.setDragEnabled(True)
         self.setAcceptDrops(True)
         self.viewport().setAcceptDrops(True)
@@ -294,7 +294,7 @@ class FunctionTableWidget(QtWidgets.QTableWidget):
 
             # Remove blank rows to maintain consistency with uncCalc.functions list
             for row_idx in range(self.rowCount())[::-1]:
-                if (self.item(row_idx, 1) is None or self.item(row_idx, 1).text() == ''):
+                if (self.item(row_idx, self.COL_EXPR) is None or self.item(row_idx, self.COL_EXPR).data(gui_widgets.ROLE_ORIGDATA) == ''):
                     self.removeRow(row_idx)
 
         super().dropEvent(event)
@@ -505,7 +505,7 @@ class InputTreeWidget(QtWidgets.QTreeWidget):
         # Signals should already be blocked
         compitem.takeChildren()  # clear
         distitem = TreeRow(compitem, uncobj, 'Distribution')
-        cmbdist = QtWidgets.QComboBox()
+        cmbdist = gui_widgets.ComboNoWheel()
         cmbdist.addItems(gui_common.settings.getDistributions())
         cmbdist.setCurrentIndex(cmbdist.findText(uncobj.distname))
         if cmbdist.currentText() == '':
@@ -514,30 +514,34 @@ class InputTreeWidget(QtWidgets.QTreeWidget):
         compitem.treeWidget().setItemWidget(distitem, self.COL_VALUE, cmbdist)
         TreeRow(compitem, uncobj, 'units', format(uncobj.units, '~P'))
         degf = uncobj.degf
-        TreeRow(compitem, uncobj, 'deg. freedom', 'inf')
+        TreeRow(compitem, uncobj, 'deg. freedom', 'inf' if not np.isfinite(degf) else format(degf, '.2f'))
         if uncobj.distname in ['normal', 't']:
-            if 'conf' in uncobj.userargs:
-                conf = float(uncobj.userargs['conf'])
+            if 'conf' in uncobj.args:
+                conf = float(uncobj.args['conf'])
                 k = ttable.t_factor(conf, degf)
             else:
-                k = float(uncobj.userargs.get('k', 2))
+                k = float(uncobj.args.get('k', 2))
                 conf = ttable.confidence(k, degf)
             TreeRow(compitem, uncobj, 'k', '{:.2f}'.format(k))
             TreeRow(compitem, uncobj, 'confidence', '{:.2f}%'.format(conf*100))
-            TreeRow(compitem, uncobj, 'uncertainty', '{}'.format(uncobj.userargs.get('unc', k*uncobj.args.get('std', 1))))
+            TreeRow(compitem, uncobj, 'uncertainty', '{}'.format(uncobj.args.get('unc', k*uncobj.args.get('std', 1))))
         elif uncobj.distname == 'histogram':
             pass  # No extra widgets
         else:
-            for row, arg in enumerate(sorted(uncobj.userargs.keys())):
-                TreeRow(compitem, uncobj, arg, format(uncobj.userargs[arg]))
+            for row, arg in enumerate(sorted(uncobj.distribution.argnames)):
+                TreeRow(compitem, uncobj, arg, format(uncobj.args.get(arg, 1)))
         cmbdist.currentIndexChanged.connect(lambda y, item=compitem, obj=uncobj: self.change_dist(item, obj))
 
     def import_dist(self):
         ''' Import a distribution from somewhere else in the project '''
-        dlg = page_data.DistributionSelectWidget(project=self.parent().unccalc.project)
+        dlg = page_dataimport.DistributionSelectWidget(singlecol=True, project=self.parent().unccalc.project)
         ok = dlg.exec_()
         if ok:
-            distname, distargs, mean = dlg.get_dist()
+            distargs = dlg.get_dist()
+            distname = distargs.pop('dist', 'normal')
+            nominal = distargs.pop('expected', distargs.pop('median', distargs.pop('mean', 0)))
+            if distname == 'histogram':
+                distargs['histogram'] = (distargs['histogram'][0], np.array(distargs['histogram'][1])-nominal)
 
             selitem = self.currentItem()
             uncobj = selitem.obj
@@ -549,15 +553,15 @@ class InputTreeWidget(QtWidgets.QTreeWidget):
                 topitem = selitem.parent()
 
             inpt = topitem.parent().obj  # Up to "Uncertainties" treerow
-            inpt.set_nom(mean)
-            uncobj.nom = mean
-            uncobj.userargs = distargs
+            inpt.set_nom(nominal)
+            uncobj.nom = nominal
+            uncobj.args = distargs
             uncobj.set_dist(distname)
-            uncobj.userargs = distargs
             uncobj.updateparams()
 
             self.blockSignals(True)
             self.fill_uncertparams(topitem, uncobj)
+            self.update_text()
             nomitem = topitem.parent().parent().child(0)   # Get 'Nominal' tree item
             assert nomitem.text(self.COL_NAME) == 'Nominal'  # Make sure previous line works and things don't change
             nomitem.setText(self.COL_VALUE, format(inpt.nom, '.5g'))
@@ -607,7 +611,7 @@ class InputTreeWidget(QtWidgets.QTreeWidget):
 
         obj = item.obj  # Either InputVar or InputUncert
         param = item.text(self.COL_NAME)
-        value = item.text(self.COL_VALUE)
+        value = item.text(self.COL_VALUE).strip()
         status = True
         if param == 'Nominal' and isinstance(obj, uc.InputVar):
             status = obj.set_nom(value)
@@ -626,15 +630,15 @@ class InputTreeWidget(QtWidgets.QTreeWidget):
             obj.name = item.data(self.COL_NAME, gui_widgets.ROLE_ORIGDATA)
 
         elif param == 'uncertainty':
-            obj.userargs['unc'] = value
-            obj.userargs.pop('std', None)
-            if 'k' not in obj.userargs:
+            obj.args['unc'] = value
+            obj.args.pop('std', None)
+            if 'k' not in obj.args:
                 kitem = [item.parent().child(i) for i in range(item.parent().childCount()) if item.parent().child(i).text(self.COL_NAME) == 'k'][0]
-                obj.userargs['k'] = kitem.text(self.COL_VALUE)
+                obj.args['k'] = kitem.text(self.COL_VALUE)
 
         elif param in ['k', 'confidence', 'deg. freedom']:
             # Must be floating points
-            value =value.strip('%')  # In case conf was entered with percent symbol
+            value = value.strip('%')  # In case conf was entered with percent symbol
             try:
                 value = float(value)
             except ValueError:
@@ -645,27 +649,27 @@ class InputTreeWidget(QtWidgets.QTreeWidget):
                     status = obj.updateparams()
                     kitems = [item.parent().child(i) for i in range(item.parent().childCount()) if item.parent().child(i).text(self.COL_NAME) == 'k']
                     if len(kitems) > 0:
-                        if 'k' in obj.userargs:
+                        if 'k' in obj.args:
                             confitem = [item.parent().child(i) for i in range(item.parent().childCount()) if item.parent().child(i).text(self.COL_NAME) == 'confidence'][0]
-                            confitem.setText(self.COL_VALUE, '{:.2f}%'.format(ttable.confidence(obj.userargs['k'], obj.degf)*100))
-                        elif 'conf' in obj.userargs:
+                            confitem.setText(self.COL_VALUE, '{:.2f}%'.format(ttable.confidence(float(obj.args['k']), obj.degf)*100))
+                        elif 'conf' in obj.args:
                             kitem = [item.parent().child(i) for i in range(item.parent().childCount()) if item.parent().child(i).text(self.COL_NAME) == 'k'][0]
-                            kitem.setText(self.COL_VALUE, '{:.2f}'.format(ttable.t_factor(obj.userargs['conf'], obj.degf)))
+                            kitem.setText(self.COL_VALUE, '{:.2f}'.format(ttable.t_factor(float(obj.args['conf']), obj.degf)))
 
                 elif param == 'k':
-                    obj.userargs['k'] = value
-                    obj.userargs.pop('conf', None)
+                    obj.args['k'] = value
+                    obj.args.pop('conf', None)
                     confitem = [item.parent().child(i) for i in range(item.parent().childCount()) if item.parent().child(i).text(self.COL_NAME) == 'confidence'][0]
                     confitem.setText(self.COL_VALUE, '{:.2f}%'.format(ttable.confidence(value, obj.degf)*100))
 
                 elif param == 'confidence':
-                    obj.userargs['conf'] = value/100   # Assume entry in percent
-                    obj.userargs.pop('k', None)
+                    obj.args['conf'] = value/100   # Assume entry in percent
+                    obj.args.pop('k', None)
                     kitem = [item.parent().child(i) for i in range(item.parent().childCount()) if item.parent().child(i).text(self.COL_NAME) == 'k'][0]
                     kitem.setText(self.COL_VALUE, '{:.2f}'.format(ttable.t_factor(value/100, obj.degf)))
                     item.setText(self.COL_VALUE, '{:.2f}%'.format(value))
         else:
-            obj.userargs[param] = value
+            obj.args[param] = value
 
         try:
             status = status and obj.updateparams()
@@ -718,7 +722,7 @@ class PopupHelp(QtWidgets.QDialog):
     ''' Show a floating dialog window with a text message '''
     def __init__(self, text):
         super(PopupHelp, self).__init__()
-        self.setGeometry(600, 200, 600, 400)
+        gui_widgets.centerWindow(self, 600, 400)
         self.setModal(False)
         self.text = QtWidgets.QTextEdit()
         self.text.setReadOnly(True)
@@ -877,15 +881,14 @@ class DistInfo(QtWidgets.QWidget):
         ax = self.distfig.add_subplot(1, 1, 1)
         x, y = comp.pdf()
         ax.plot(x, y)
-        ax.set_xlabel('{}{}'.format(comp.name, output.formatunittex(comp.units, bracket=True)))
+        ax.set_xlabel('{}{}'.format(comp.name, output.formatunittex(comp.parentunits, bracket=True)))
         self.distfig.tight_layout()
         self.distcanvas.draw_idle()
         self.distname.setText('Probability Distribution for {}'.format(comp.get_nameunicode()))
-        self.helpstr = comp.helpstr
 
     def showhelp(self):
         ''' Show description of distribution parameters '''
-        dlg = PopupHelp(self.comp.helpstr)
+        dlg = PopupHelp(self.comp.distribution.helpstr())
         dlg.exec_()
 
 
@@ -1170,7 +1173,7 @@ class OutputMCDistributionWidget(QtWidgets.QWidget):
         super(OutputMCDistributionWidget, self).__init__()
         self.cmbdist = QtWidgets.QComboBox()
         dists = gui_common.settings.getDistributions()
-        dists = [d for d in dists if hasattr(customdists.get_dist(d), 'fit')]
+        dists = [d for d in dists if distributions.fittable(d)]
         self.cmbdist.addItems(dists)
         self.cmbdist.currentIndexChanged.connect(self.changed)
         self.cmbfunc = QtWidgets.QComboBox()
@@ -1477,7 +1480,7 @@ class PageOutput(QtWidgets.QWidget):
             self.txtOutput.setMarkdown(self.outdata.report_derivation(solve=solve, **gui_common.get_rptargs()))
 
         elif option == 'Monte Carlo Convergence':
-            self.outdata.plot_converge(fig=self.fig, relative=self.outputMCconv.relative.isChecked())
+            self.outdata.plot_converge(plot=self.fig, relative=self.outputMCconv.relative.isChecked())
             self.canvas.draw_idle()
             self.fig.tight_layout()
 
@@ -1504,9 +1507,9 @@ class PageOutput(QtWidgets.QWidget):
             assert self.outputPlot.GUMexpanded.GUMtype.findText('Student-t') != -1   # In case name changes from 'Student-t' it needs to be updated here
 
             if self.outputPlot.joint():
-                self.outdata.plot_outputscatter(fig=self.fig, **plotargs)
+                self.outdata.plot_outputscatter(plot=self.fig, **plotargs)
             else:
-                self.outdata.plot_pdf(fig=self.fig, **plotargs)
+                self.outdata.plot_pdf(plot=self.fig, **plotargs)
             self.canvas.draw_idle()
 
         elif option == 'Monte Carlo Input Plots':
@@ -1521,9 +1524,9 @@ class PageOutput(QtWidgets.QWidget):
                         'inpts': self.outputMCsample.ilist.getSelectedIndexes(),
                         'cmap': gui_common.settings.getColormap('cmapcontour')}
             if joint:
-                self.outdata.plot_xscatter(fig=self.fig, **plotargs)
+                self.outdata.plot_xscatter(plot=self.fig, **plotargs)
             else:
-                self.outdata.plot_xhists(fig=self.fig, **plotargs)
+                self.outdata.plot_xhists(plot=self.fig, **plotargs)
             self.canvas.draw_idle()
 
         elif option == 'GUM Validity':
@@ -1535,7 +1538,7 @@ class PageOutput(QtWidgets.QWidget):
             fidx = self.outputMCdist.cmbfunc.currentIndex()
             dist = self.outputMCdist.cmbdist.currentText()
             y = self.outdata.foutputs[fidx].mc.samples.magnitude
-            fitparams = output.fitdist(y, dist=dist, fig=self.fig, qqplot=True, bins=100, points=200)
+            fitparams = output.fitdist(y, distname=dist, plot=self.fig, qqplot=True, bins=100, points=200)
             try:
                 self.fig.axes[0].set_title('Distribution Fit')
                 self.fig.axes[1].set_title('Probability Plot')
@@ -1598,7 +1601,7 @@ class UncertPropWidget(QtWidgets.QWidget):
         self.actChkUnits = QtWidgets.QAction('Check Units...', self)
         self.actSweep = QtWidgets.QAction('New uncertainty sweep from model', self)
         self.actReverse = QtWidgets.QAction('New reverse calculation from model', self)
-        self.actLoadCSV = QtWidgets.QAction('Load uncertainties from file...', self)
+        self.actImportDists = QtWidgets.QAction('Import uncertainty distributions...', self)
         self.actClear = QtWidgets.QAction('Clear inputs', self)
         self.actSaveReport = QtWidgets.QAction('Save Report...', self)
         self.actSaveSamplesCSV = QtWidgets.QAction('Text (CSV)...', self)
@@ -1606,11 +1609,11 @@ class UncertPropWidget(QtWidgets.QWidget):
 
         self.menu.addAction(self.actChkUnits)
         self.menu.addSeparator()
+        self.menu.addAction(self.actImportDists)
+        self.menu.addAction(self.actClear)
+        self.menu.addSeparator()
         self.menu.addAction(self.actSweep)
         self.menu.addAction(self.actReverse)
-        self.menu.addSeparator()
-        self.menu.addAction(self.actLoadCSV)
-        self.menu.addAction(self.actClear)
         self.menu.addSeparator()
         self.menu.addAction(self.actSaveReport)
         self.mnuSaveSamples = QtWidgets.QMenu('Save Monte Carlo Samples')
@@ -1620,7 +1623,7 @@ class UncertPropWidget(QtWidgets.QWidget):
         self.actSaveReport.setEnabled(False)
         self.mnuSaveSamples.setEnabled(False)
 
-        self.actLoadCSV.triggered.connect(self.loadfromcsv)
+        self.actImportDists.triggered.connect(self.importdistributions)
         self.actClear.triggered.connect(self.clearinput)
         self.actSweep.triggered.connect(lambda event, x=item: self.newtype.emit(x.get_config(), 'sweep'))
         self.actReverse.triggered.connect(lambda event, x=item: self.newtype.emit(x.get_config(), 'reverse'))
@@ -1648,6 +1651,8 @@ class UncertPropWidget(QtWidgets.QWidget):
     def backbutton(self):
         ''' Back button pressed. '''
         self.stack.setCurrentIndex(0)
+        self.actSaveReport.setEnabled(False)
+        self.mnuSaveSamples.setEnabled(False)
 
     def clearinput(self):
         ''' Clear all the input/output values '''
@@ -1659,9 +1664,7 @@ class UncertPropWidget(QtWidgets.QWidget):
         self.pginput.MCsettings.txtSeed.setText(str(gui_common.settings.getRandomSeed()))
         self.setSamples()
         self.setSeed()
-        self.uncCalc = uc.UncertCalc(seed=gui_common.settings.getRandomSeed())
-        self.pgoutput.set_unccalc(self.uncCalc)
-        self.pginput.set_unccalc(self.uncCalc)
+        self.uncCalc.clearall()
         self.actSweep.setEnabled(False)
         self.stack.setCurrentIndex(0)
 
@@ -1689,7 +1692,7 @@ class UncertPropWidget(QtWidgets.QWidget):
 
     def funcorderchanged(self):
         ''' Functions were reordered by drag/drop '''
-        names = [self.pginput.funclist.item(r, self.pginput.funclist.COL_NAME).text() for r in range(self.pginput.funclist.rowCount())]
+        names = [self.pginput.funclist.item(r, self.pginput.funclist.COL_NAME).data(gui_widgets.ROLE_ORIGDATA) for r in range(self.pginput.funclist.rowCount())]
         self.uncCalc.reorder(names)
 
     def setDesc(self):
@@ -1733,23 +1736,26 @@ class UncertPropWidget(QtWidgets.QWidget):
             else:
                 self.pginput.corrtable.table.item(row, 2).setBackground(QtGui.QBrush(gui_common.COLOR_OK))
 
-    def loadfromcsv(self):
-        ''' Load type-A uncertainties from data in a CSV file. '''
-        fname, self.opencsvfolder = QtWidgets.QFileDialog.getOpenFileName(caption='Select CSV file to load', directory=self.opencsvfolder)
-        if fname:
-            _, fnamebase = os.path.split(fname)
-            dlg = page_data.UncertsFromCSV(fname, colnames=self.uncCalc.get_baseinputnames())
-            ok = dlg.exec_()
-            if ok:
-                for item in dlg.get_statistics():
-                    if 'corr' in item:
-                        self.uncCalc.correlate_vars(item['corr'][0], item['corr'][1], item['coef'])
-                        self.pginput.corrtable.addRow()
-                        self.pginput.corrtable.setRow(self.pginput.corrtable.table.rowCount()-1, item['corr'][0], item['corr'][1], item['coef'])
-                    else:
-                        self.uncCalc.set_input(item['var'], nom=item['mean'])
-                        self.uncCalc.set_uncert(item['var'], name='u({})'.format(item['var']), degf=item['degf'],
-                                                unc=item['stdu'], desc='Type A uncertainty from {}'.format(fnamebase))
+    def importdistributions(self):
+        ''' Load uncertainty components from data for multiple input variables '''
+        varnames = self.uncCalc.get_baseinputnames()
+        dlg = page_dataimport.DistributionSelectWidget(singlecol=False, project=self.uncCalc.project, coloptions=varnames)
+        if dlg.exec_():
+            dists = dlg.get_dist()
+
+            for varname, params in dists.items():
+                if varname == '_correlation_':
+                    for (v1, v2), corr in params.items():
+                        if corr != 0.:
+                            self.pginput.corrtable.addRow()
+                            self.pginput.corrtable.setRow(self.pginput.corrtable.table.rowCount()-1, v1, v2, corr)
+
+                else:
+                    nom = params.pop('expected', params.pop('median', params.pop('mean', None)))  # Don't pass along median, it's handled by Variable
+                    if nom is not None:
+                        self.uncCalc.set_input(varname, nom=nom)
+                    self.uncCalc.set_uncert(varname, name=f'u({varname})', degf=params.get('df', np.inf),
+                                            **params)
                 self.pginput.inputtable.filltable()
                 self.backbutton()
 
@@ -1759,16 +1765,22 @@ class UncertPropWidget(QtWidgets.QWidget):
         if not (self.pginput.funclist.isValid() and self.pginput.inputtable.isValid()):
             msg = 'Invalid input parameter!'
 
-        if len(self.uncCalc.functions) < 1:
+        elif len(self.uncCalc.functions) < 1:
             msg = 'No functions to compute!'
 
-        try:
-            self.uncCalc.check_dimensionality()
-        except (DimensionalityError, UndefinedUnitError) as e:
-            msg = 'Units Error: {}'.format(e)
-        except OffsetUnitCalculusError as e:
-            badunit = re.findall(r'\((.+ )', str(e))[0].split()[0].strip(', ')
-            msg = 'Ambiguous unit {}. Try "{}".'.format(badunit, 'delta_{}'.format(badunit))
+        elif self.uncCalc.check_circular():
+            msg = 'Circular reference in function definitions'
+
+        else:
+            try:
+                self.uncCalc.check_dimensionality()
+            except (DimensionalityError, UndefinedUnitError) as e:
+                msg = 'Units Error: {}'.format(e)
+            except OffsetUnitCalculusError as e:
+                badunit = re.findall(r'\((.+ )', str(e))[0].split()[0].strip(', ')
+                msg = 'Ambiguous unit {}. Try "{}".'.format(badunit, 'delta_{}'.format(badunit))
+            except RecursionError:
+                msg = 'Error - possible circular reference in function definitions'
 
         if msg is None:
             try:
@@ -1776,7 +1788,9 @@ class UncertPropWidget(QtWidgets.QWidget):
             except OffsetUnitCalculusError as e:
                 badunit = re.findall(r'\((.+ )', str(e))[0].split()[0].strip(', ')
                 msg = 'Ambiguous unit {}. Try "{}".'.format(badunit, 'delta_{}'.format(badunit))
-            except (ValueError, RecursionError):
+            except RecursionError:
+                msg = 'Error - possible circular reference in function definitions'
+            except ValueError:
                 msg = 'Error computing solution!'
 
         if msg is None:

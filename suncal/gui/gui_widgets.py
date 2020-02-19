@@ -1,8 +1,6 @@
 ''' Common widgets for user interface '''
 
-import inspect
 import numpy as np
-from scipy import stats
 from dateutil.parser import parse
 import matplotlib.dates as mdates
 
@@ -10,18 +8,23 @@ from PyQt5 import QtWidgets, QtCore, QtGui
 
 from . import gui_common
 from .. import output
-from .. import customdists
+from .. import distributions
 
 
 # Custom data roles for tree/table widgets
-ROLE_ORIGDATA =  QtCore.Qt.UserRole + 1   # Original, user-entered data
+ROLE_ORIGDATA = QtCore.Qt.UserRole + 1    # Original, user-entered data
 ROLE_HISTDATA = ROLE_ORIGDATA + 1         # Data for histogram distribution (tuple of (hist, edges))
 ROLE_VALID = ROLE_HISTDATA + 1            # Histogram data
 
 
-class histdistclass(object):
-    ''' Empty class for faking rv_histogram distribution to look like stats distributions '''
-    name = 'hist'
+def centerWindow(window, w, h):
+    ''' Set window geometry so it appears centered in the window
+        If window size is too big, maximize it
+    '''
+    desktopsize = QtWidgets.QDesktopWidget().availableGeometry()
+    window.setGeometry(desktopsize.width()//2 - w//2, desktopsize.height()//2 - h//2, w, h)  # Center window on screen
+    if h >= desktopsize.height() or w >= desktopsize.width():
+        window.showMaximized()
 
 
 class ReadOnlyTableItem(QtWidgets.QTableWidgetItem):
@@ -156,6 +159,8 @@ class FloatTableWidget(QtWidgets.QTableWidget):
 
     def _paste(self):
         ''' Handle pasting data into table '''
+        signalstate = self.signalsBlocked()
+        self.blockSignals(True)
         clipboard = QtWidgets.QApplication.instance().clipboard().text()
         rowlist = clipboard.split('\n')
         startrow = self.currentRow()
@@ -201,6 +206,8 @@ class FloatTableWidget(QtWidgets.QTableWidget):
                 self.setItem(startrow+i, startcol, QtWidgets.QTableWidgetItem(str(val)))
         self.clearSelection()
         self.setCurrentCell(startrow+i, startcol+j)
+        self.insertRow(startrow+i+1)  # Blank row at end
+        self.blockSignals(signalstate)
         self.valueChanged.emit()
 
     def _copy(self):
@@ -240,10 +247,11 @@ class FloatTableWidget(QtWidgets.QTableWidget):
         ''' Key was pressed. Capture delete key to clear selected items '''
         items = self.selectedItems()
         if event.key() == QtCore.Qt.Key_Delete and len(items) > 0:
+            signalstate = self.signalsBlocked()
             self.blockSignals(True)
             for item in items:
                 item.setText('')
-            self.blockSignals(False)
+            self.blockSignals(signalstate)
             self.valueChanged.emit()
         else:
             super(FloatTableWidget, self).keyPressEvent(event)
@@ -271,6 +279,7 @@ class FloatTableWidget(QtWidgets.QTableWidget):
         if self.xdates == xdates:
             return   # Nothing is changing
 
+        signalstate = self.signalsBlocked()
         self.blockSignals(True)
         self.xdates = xdates
         if self.xdates:
@@ -295,7 +304,7 @@ class FloatTableWidget(QtWidgets.QTableWidget):
                 except (AttributeError, ValueError):
                     val = '-'
                 self.item(row, 0).setText(val)
-        self.blockSignals(False)
+        self.blockSignals(signalstate)
 
     def _itemchanged(self, row, col):
         ''' Item was changed. Add new row and move selected cell as appropriate. '''
@@ -364,7 +373,11 @@ class FloatTableWidget(QtWidgets.QTableWidget):
         vals = []
         for col in range(self.columnCount()):
             vals.append(self.get_column(col))
-        return np.vstack(vals)
+        tbl = np.vstack(vals)
+        while tbl.shape[1] > 0 and all(~np.isfinite(tbl[:, -1])):
+            # Strip blank rows
+            tbl = tbl[:, :-1]
+        return tbl
 
 
 class MarkdownTextEdit(QtWidgets.QTextEdit):
@@ -458,7 +471,7 @@ def savemarkdown(md):
                 assert False
 
             if err:
-                msgbox = QtWidgets.QMessageBox.warning(None, 'Error saving report', 'Error saving report:\n\n{}'.format(err))
+                QtWidgets.QMessageBox.warning(None, 'Error saving report', 'Error saving report:\n\n{}'.format(err))
 
 
 class SaveReportOptions(QtWidgets.QDialog):
@@ -572,23 +585,26 @@ class ListSelectWidget(QtWidgets.QListWidget):
 
     def selectAll(self):
         ''' Select all items '''
+        signalstate = self.signalsBlocked()
         self.blockSignals(True)
         for i in range(self.count()):
             self.item(i).setCheckState(QtCore.Qt.Checked)
-        self.blockSignals(False)
+        self.blockSignals(signalstate)
 
     def selectIndex(self, idxs):
         ''' Select items with index in idxs '''
+        signalstate = self.signalsBlocked()
         self.blockSignals(True)
         for i in range(self.count()):
             self.item(i).setCheckState(QtCore.Qt.Checked if i in idxs else QtCore.Qt.Unchecked)
-        self.blockSignals(False)
+        self.blockSignals(signalstate)
 
     def selectNone(self):
+        signalstate = self.signalsBlocked()
         self.blockSignals(True)
         for i in range(self.count()):
             self.item(i).setCheckState(QtCore.Qt.Unchecked)
-        self.blockSignals(False)
+        self.blockSignals(signalstate)
 
 
 class SpinWidget(QtWidgets.QWidget):
@@ -756,7 +772,15 @@ class MCExpandedWidget(QtWidgets.QWidget):
 
 
 class DistributionEditTable(QtWidgets.QTableWidget):
-    ''' Table for editing parameters of an uncertainty distribution '''
+    ''' Table for editing parameters of an uncertainty distribution
+
+        Parameters
+        ----------
+        initargs: dict
+            Initial arguments for distribution
+        locslider: bool
+            Show slider for median location of distribution
+    '''
     changed = QtCore.pyqtSignal()
 
     def __init__(self, initargs=None, locslider=False):
@@ -793,52 +817,55 @@ class DistributionEditTable(QtWidgets.QTableWidget):
         ''' Change distribution type, fill in required params '''
         if initargs is None:
             initargs = {}
-        distname = initargs.pop('dist', 'normal')
+        distname = initargs.pop('name', initargs.pop('dist', 'normal'))
 
         # Want control to enter median value, not loc. Shift appropriately.
-        if hasattr(customdists, distname):
-            stats_dist = getattr(customdists, distname)
-            args = ['median'] + sorted(list(inspect.signature(stats_dist).parameters.keys()))
-        elif distname == 'histogram':
-            stats_dist = customdists.hist
-            args = ['data']
-        else:
-            stats_dist = getattr(stats, distname)
-            try:
-                median = stats_dist(**initargs).median()
-            except TypeError:
-                median = 0
-            initargs['median'] = median
-            args = ['median', 'scale']
+        stats_dist = distributions.get_distribution(distname, **initargs)
+        argnames = stats_dist.argnames
 
-            try:
-                args.extend(sorted([s.strip() for s in stats_dist.shapes.split(',')]))
-            except AttributeError:  # shapes is None
-                pass
+        if 'loc' in argnames:
+            argnames.remove('loc')
+        argnames = ['median'] + argnames
+
+        try:
+            median = stats_dist.median()
+        except TypeError:
+            median = 0
+        else:
+            median = median if np.isfinite(median) else 0
+        initargs['median'] = median
+
+        signalstate = self.signalsBlocked()
         self.blockSignals(True)
         self.clear()
-
         dists = gui_common.settings.getDistributions()
         self.cmbdist = QtWidgets.QComboBox()
         self.cmbdist.addItems(dists)
         if distname not in dists:
             self.cmbdist.addItem(distname)
         self.cmbdist.setCurrentIndex(self.cmbdist.findText(distname))
-        self.setRowCount(1)
+        self.setRowCount(len(argnames) + 1 + self.showlocslider)  # header + argnames
         self.setItem(0, 0, ReadOnlyTableItem('Distribution'))
         self.setCellWidget(0, 1, self.cmbdist)
-        self.setRowCount(len(args) + 1)  # header + args
 
         if distname == 'histogram':
-            self.setItem(1, 0, ReadOnlyTableItem('data'))
-            hist, edges = initargs.get('hist'), initargs.get('edges')
-            median = stats.rv_histogram((hist, edges)).median()
-            self.setItem(1, 1, QtWidgets.QTableWidgetItem(str(median)))
-            self.item(1, 1).setData(ROLE_HISTDATA, (hist, edges))
+            self.setRowCount(1)
+            if self.showlocslider:
+                self.setRowCount(3)
+                self.setItem(1, 0, ReadOnlyTableItem('measurement'))
+                self.setItem(1, 1, QtWidgets.QTableWidgetItem(str(initargs.get('median', 0))))
+                self.setItem(2, 0, ReadOnlyTableItem('bias'))
+                self.setItem(2, 1, QtWidgets.QTableWidgetItem(str(initargs.get('bias', 0))))
+            self.item(0, 0).setData(ROLE_HISTDATA, stats_dist.distargs)
+
         else:
-            for row, arg in enumerate(args):
+            for row, arg in enumerate(argnames):
                 self.setItem(row+1, 0, ReadOnlyTableItem(arg))
                 self.setItem(row+1, 1, QtWidgets.QTableWidgetItem(str(initargs.get(arg, '1' if row > 0 else '0'))))
+
+            if self.showlocslider:
+                self.setItem(row+2, 0, ReadOnlyTableItem('bias'))
+                self.setItem(row+2, 1, QtWidgets.QTableWidgetItem(str(initargs.get('bias', 0))))
 
         if self.showlocslider:
             self.locslidewidget = QtWidgets.QWidget()
@@ -846,7 +873,7 @@ class DistributionEditTable(QtWidgets.QTableWidget):
             self.locslide.setRange(0, 200)  # Sliders always use ints.
             self.locslide.setValue(100)
             layout = QtWidgets.QHBoxLayout()
-            layout.addWidget(QtWidgets.QLabel('median'))
+            layout.addWidget(QtWidgets.QLabel('measurement'))
             layout.addWidget(self.locslide)
             self.locslidewidget.setLayout(layout)
             self.setCellWidget(1, 0, self.locslidewidget)
@@ -857,7 +884,7 @@ class DistributionEditTable(QtWidgets.QTableWidget):
             self.setRowHeight(row, 40)
 
         self.cmbdist.currentIndexChanged.connect(self.distchanged)
-        self.blockSignals(False)
+        self.blockSignals(signalstate)
 
     def distchanged(self):
         ''' Distribution combobox change '''
@@ -866,48 +893,62 @@ class DistributionEditTable(QtWidgets.QTableWidget):
 
     def valuechanged(self):
         ''' Table value has changed, update stats distribution. '''
+        signalstate = self.signalsBlocked()
+        self.blockSignals(True)
         argvals = []
         distname = self.cmbdist.currentText()
 
-        if distname != 'histogram':
-            for r in range(self.rowCount()-1):
-                try:
-                    argvals.append(float(self.item(r+1, 1).text()))
-                except ValueError:
-                    argvals.append(None)
-                    self.item(r+1, 1).setBackground(gui_common.COLOR_INVALID)
-                    self.clearSelection()
-                else:
-                    self.item(r+1, 1).setBackground(gui_common.COLOR_OK)
+        for r in range(self.rowCount()-1):
+            try:
+                argvals.append(float(self.item(r+1, 1).text()))
+            except ValueError:
+                argvals.append(None)
+                self.item(r+1, 1).setBackground(gui_common.COLOR_INVALID)
+                self.clearSelection()
+            else:
+                self.item(r+1, 1).setBackground(gui_common.COLOR_OK)
 
         argnames = [self.item(r+1, 0).text() for r in range(self.rowCount()-1)]
         args = dict(zip(argnames, argvals))
+        if '' in args:
+            args['median'] = args.pop('')  # 'median' label is hidden when slider is used
 
+        changed = False
         if distname == 'histogram':
-            hist, edges = self.item(1, 1).data(ROLE_HISTDATA)
-            orgmedian = stats.rv_histogram((hist, edges)).median()
-            usermedian = float(self.item(1, 1).text())
-            edges = [e+(usermedian-orgmedian) for e in edges]
-            self.statsdist = stats.rv_histogram((hist, edges))
-            self.statsdist.dist = histdistclass()  # Make it look like other stats dists
-            self.changed.emit()
+            distargs = self.item(0, 0).data(ROLE_HISTDATA)
+            self.statsdist = distributions.get_distribution(distname, **distargs)
+            self.distbias = args.pop('bias', 0)
+            if 'median' in args or '' in args:
+                median = args.pop('median', args.pop('', 0))
+                self.statsdist.set_median(median - self.distbias)
+                changed = True
 
         elif None not in argvals:
-            if hasattr(customdists, distname):
-                stats_dist = getattr(customdists, distname)
-            else:
-                stats_dist = getattr(stats, distname)
-
-            median = args.pop('median', args.pop('', 0))  # Blank label under slider is median
+            median = args.pop('median', args.pop('', 0))
+            self.distbias = args.pop('bias', 0)
             try:
-                self.statsdist = stats_dist(**args)   # customdists distributions are centered about 0. Shift it here.
-                self.statsdist.kwds['loc'] = median - (self.statsdist.median() - self.statsdist.kwds.get('loc', 0))
+                self.statsdist = distributions.get_distribution(distname, **args)
+                self.statsdist.set_median(median - self.distbias)
             except ZeroDivisionError:
                 self.statsdist = None
-                return   # Invalid scale parameter probably. Don't change anything
+            else:
+                changed = True
+
+        self.blockSignals(signalstate)
+        if changed:
             self.changed.emit()
 
 
+class ComboNoWheel(QtWidgets.QComboBox):
+    ''' ComboBox with scroll wheel disabled '''
+    def __init__(self):
+        super(ComboNoWheel, self).__init__()
+        self.setFocusPolicy(QtCore.Qt.StrongFocus)
+
+    def wheelEvent(self, event):
+        ''' Only pass on the event if we have focus '''
+        if self.hasFocus():
+            super(ComboNoWheel, self).wheelEvent(event)
 
 
 class QHLine(QtWidgets.QFrame):
@@ -934,6 +975,27 @@ class LineEditLabelWidget(QtWidgets.QWidget):
     def __getattr__(self, name):
         ''' Get all other attributes from the lineedit widget '''
         return getattr(self._text, name)
+
+
+class SpinBoxLabelWidget(QtWidgets.QWidget):
+    ''' Class for a DoubleSpinBox and label '''
+    def __init__(self, label='', value=0, rng=None):
+        super(SpinBoxLabelWidget, self).__init__()
+        self._label = QtWidgets.QLabel(label)
+        self._spinbox = QtWidgets.QDoubleSpinBox()
+        self._spinbox.setValue(value)
+        if rng is not None:
+            self._spinbox.setRange(*rng)
+        layout = QtWidgets.QHBoxLayout()
+        layout.addWidget(self._label)
+        layout.addWidget(self._spinbox)
+        layout.addStretch()
+        layout.setContentsMargins(0, 0, 0, 0)
+        self.setLayout(layout)
+
+    def __getattr__(self, name):
+        ''' Get all other attributes from the spinbox widget '''
+        return getattr(self._spinbox, name)
 
 
 class DateDialog(QtWidgets.QDialog):

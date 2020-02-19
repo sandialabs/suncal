@@ -125,21 +125,21 @@ def test_cpk():
     UL = 11
 
     d = stats.norm(loc=10, scale=.4)
-    cpk, r, rLL, rUL = risk.process_risk(d, LL, UL)
+    cpk, r, rLL, rUL = risk.specific_risk(d, LL, UL)
     assert np.isclose(cpk, 0.833333, rtol=.001)   # Compared against Dilip's risk spreadsheet
     assert np.isclose(r, .01242, rtol=.01)
     assert np.isclose(rLL, .00621, rtol=.01)
     assert np.isclose(rUL, .00621, rtol=.01)
 
     d = stats.norm(loc=10.5, scale=.4)
-    cpk, r, rLL, rUL = risk.process_risk(d, LL, UL)
+    cpk, r, rLL, rUL = risk.specific_risk(d, LL, UL)
     assert np.isclose(cpk, 0.416667, rtol=.001)
     assert np.isclose(r, .10574, rtol=.01)
     assert np.isclose(rLL, .00009, atol=.0001)
     assert np.isclose(rUL, .10565, atol=.0001)
 
     d = stats.norm(loc=12.0, scale=.4)
-    cpk, r, rLL, rUL = risk.process_risk(d, LL, UL)
+    cpk, r, rLL, rUL = risk.specific_risk(d, LL, UL)
     assert np.isclose(cpk, -.833333, rtol=.001)
     assert np.isclose(r, .99379, rtol=.01)
 
@@ -147,10 +147,10 @@ def test_cpk():
     LL = 50
     UL = 55
     d = stats.norm(loc=51, scale=.5)
-    cpk, r, rLL, rUL = risk.process_risk(d, LL, UL)
+    cpk, r, rLL, rUL = risk.specific_risk(d, LL, UL)
 
     d.name = 'nonnormal'  # Fake a non-normal distribution! Will use ppf functions for cpk
-    cpk2, r2, rLL2, rUL2 = risk.process_risk(d, LL, UL)
+    cpk2, r2, rLL2, rUL2 = risk.specific_risk(d, LL, UL)
     assert np.isclose(cpk, cpk2)
     assert np.isclose(r, r2)
     assert np.isclose(rLL, rLL2)

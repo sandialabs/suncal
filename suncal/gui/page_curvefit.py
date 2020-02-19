@@ -10,7 +10,7 @@ import matplotlib.dates as mdates
 from .. import output
 from . import gui_common
 from . import gui_widgets
-from . import page_data
+from . import page_dataimport
 
 
 class OrderWidget(QtWidgets.QWidget):
@@ -405,44 +405,42 @@ class PageInputCurveFit(QtWidgets.QWidget):
 
     def load_data(self):
         ''' Load data from a data set or a file '''
-        dlg = page_data.ArraySelectWidget(project=self.fitcalc.project)
+        dlg = page_dataimport.ArraySelectWidget(project=self.fitcalc.project)
         ok = dlg.exec_()
         if ok:
-            x = dlg.get_column_data('x')
-            y = dlg.get_column_data('y')
-            ux = dlg.get_column_data('u(x)')
-            uy = dlg.get_column_data('u(y)')
-            rowcnt = max(len(x), len(y))
-            if ux is not None:
-                rowcnt = max(rowcnt, len(ux))
-            if uy is not None:
-                rowcnt = max(rowcnt, len(uy))
-
+            arrvals = dlg.get_array()
             self.settings.chkDates.blockSignals(True)
             self.settings.chkDates.setChecked(dlg.is_datecol('x'))
             self.settings.chkDates.blockSignals(False)
             self.table.blockSignals(True)
             self.table.xdates = dlg.is_datecol('x')
-            self.table.setRowCount(rowcnt+1)
 
-            if x is not None:
-                for i in range(len(x)):
-                    self.table.setItem(i, 0, QtWidgets.QTableWidgetItem(str(x[i])))
+            def checkrow(i):
+                if i >= self.table.rowCount():
+                    self.table.setRowCount(i+1)
 
-            if y is not None:
-                for i in range(len(y)):
-                    self.table.setItem(i, 1, QtWidgets.QTableWidgetItem(str(y[i])))
+            if arrvals.x is not None:
+                for i in range(len(arrvals.x)):
+                    checkrow(i)
+                    self.table.setItem(i, 0, QtWidgets.QTableWidgetItem(str(arrvals.x[i])))
 
-            if uy is not None and len(uy) > 0:
-                for i in range(len(uy)):
-                    self.table.setItem(i, 2, QtWidgets.QTableWidgetItem(str(uy[i])))
+            if arrvals.y is not None:
+                for i in range(len(arrvals.y)):
+                    checkrow(i)
+                    self.table.setItem(i, 1, QtWidgets.QTableWidgetItem(str(arrvals.y[i])))
 
-            if ux is not None and len(ux) > 0:
+            if arrvals.uy is not None and len(arrvals.uy) > 0:
+                for i in range(len(arrvals.uy)):
+                    checkrow(i)
+                    self.table.setItem(i, 2, QtWidgets.QTableWidgetItem(str(arrvals.uy[i])))
+
+            if arrvals.ux is not None and len(arrvals.ux) > 0:
                 self.useUX = True
                 self.table.setColumnCount(4)
                 self.table.setHorizontalHeaderItem(3, QtWidgets.QTableWidgetItem('u(x)'))
-                for i in range(len(ux)):
-                    self.table.setItem(i, 3, QtWidgets.QTableWidgetItem(str(ux[i])))
+                for i in range(len(arrvals.ux)):
+                    checkrow(i)
+                    self.table.setItem(i, 3, QtWidgets.QTableWidgetItem(str(arrvals.ux[i])))
             self.table.blockSignals(False)
             self.table.resizeColumnsToContents()
             self.update_arr()

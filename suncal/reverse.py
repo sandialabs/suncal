@@ -212,7 +212,7 @@ class UncertReverse(uncertainty.UncertCalc):
                 reverse_MC['u_i'] = None
                 reverse_MC['i'] = None
 
-        self.out = ReverseOutput(reverse_GUM, reverse_MC)
+        self.out = ReverseOutput(reverse_GUM, reverse_MC, function.name)
         return self.out
 
     @classmethod
@@ -241,8 +241,8 @@ class ReverseOutput(output.Output):
         mcdata: dict
             Dictionary of values from MC calculation
     '''
-    def __init__(self, gumdata, mcdata):
-        self.name = None
+    def __init__(self, gumdata, mcdata, funcname=None):
+        self.name = funcname
         self.gumdata = gumdata
         self.mcdata = mcdata
 
@@ -298,11 +298,9 @@ class ReverseOutput(output.Output):
             r.add_fig(fig)
         return r
 
-    def plot_pdf(self, fig=None, **kwargs):
+    def plot_pdf(self, plot=None, **kwargs):
         ''' Plot PDF/Histogram of the reverse calculation '''
-        if fig is None:
-            fig = plt.gcf()
-
+        fig, ax = output.initplot(plot)
         mccolor = kwargs.pop('mccolor', 'C0')
         gumcolor = kwargs.pop('gumcolor', 'C1')
 
@@ -320,4 +318,4 @@ class ReverseOutput(output.Output):
         if self.mcdata:
             kwargs['color'] = mccolor
             kwargs['label'] = 'Monte Carlo'
-            self.mcdata['rev_ucalc'].out.foutputs[0].plot_pdf(ax=ax, **kwargs)
+            self.mcdata['rev_ucalc'].out.foutputs[0].plot_pdf(plot=ax, **kwargs)

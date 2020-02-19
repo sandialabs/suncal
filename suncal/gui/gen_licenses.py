@@ -14,7 +14,7 @@ import pkg_resources
 from urllib.request import urlopen
 from PyQt5.QtCore import QT_VERSION_STR
 
-contributers = 'Collin Delker, Otis Solomon, Ricky Sandoval, Renee Jerome, Nick Haythorn, Katherine Sanchez, Megan McBride, Sam Maldonado, Faith Tinnin, Roger Burton, and Meaghan Carpenter'
+contributers = 'Collin Delker, Otis Solomon, Ricky Sandoval, Renee Jerome, Nick Haythorn, Katherine Sanchez, Megan McBride, Sam Maldonado, Nevin Martin, Faith Tinnin, Roger Burton, and Meaghan Carpenter'
 
 
 # Check that conda is installed
@@ -30,6 +30,7 @@ else:
 def get_license_text(modulename):
     ''' Pull the license text from license.txt in the conda package location for the installed version '''
     pkgpath = None
+    licfile = None
     try:
         pkgpath = subprocess.check_output(['conda', 'list', modulename, '-c', '-f']).decode('utf-8').split('::')[1].strip()
     except IndexError:
@@ -39,17 +40,14 @@ def get_license_text(modulename):
         except IndexError:
             # May be pip-installed. Without -c parameter, get name  ver  <pip>
             ver = subprocess.check_output(['conda', 'list', modulename, '-f']).decode('utf-8').splitlines()[-1].split()[1]
-            licfile = None
 
     if pkgpath:
         ver = pkgpath.split('-')[-2]  # name-ver-build
         pkgpath = os.path.join(basepath, 'pkgs', pkgpath)
-        licfile = os.path.join(pkgpath, 'info', 'license.txt')
-        if os.path.exists(licfile):
-            with open(licfile, 'r') as f:
+        testfile = os.path.join(pkgpath, 'info', 'license.txt')
+        if os.path.exists(testfile):
+            with open(testfile, 'r') as f:
                 licfile = f.read()
-        else:
-            licfile = None
 
     if licfile is None:
         pkg = pkg_resources.require(modulename)[0]
@@ -58,6 +56,16 @@ def get_license_text(modulename):
             if os.path.exists(testfile):
                 with open(testfile, 'r') as f:
                     licfile = f.read()
+                    break
+
+    if licfile is None:
+        pkg = pkg_resources.require(modulename)[0]
+        testlic = glob.glob(os.path.join(pkgpath, 'info', '**', 'license*'), recursive=True)
+        for testfile in testlic:
+            if os.path.isfile(testfile):
+                with open(testfile, 'r') as f:
+                    licfile = f.read()
+                    break
 
     return ver, licfile
 

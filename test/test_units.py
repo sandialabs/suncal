@@ -119,3 +119,22 @@ def test_print():
     assert output.formatunittex(ureg.cm**2, bracket=True) == r' $\left[ \mathrm{cm}^{2} \right]$'
     assert output.formatter.f(1*ureg.cm) == '1.0  cm'
     assert output.formatter.f(1*ureg.cm, fullunit=True) == '1.0  centimeter'
+
+
+def test_power():
+    ''' Test case for powers of dimensionless quantities '''
+    # See https://github.com/hgrecco/pint/issues/670
+    # Make sure we have a workaround since this inconsistency was closed without a fix
+        #   with x = np.arange(5) * ureg.dimensionless
+        #   np.exp(x) --> returns dimensionless array
+        #   2**x --> raises DimensionalityError
+    u = uc.UncertCalc('f = 2**x')
+    u.seed = 8833293
+    u.set_input('x', nom=4, std=.1)  # No units / dimensionless
+    u.calculate()
+    
+    mc = u.out.get_output(method='mc')
+    gum = u.out.get_output(method='gum')
+    assert mc.uncert.units == ureg.dimensionless
+    assert np.isclose(mc.mean.magnitude, 16.0, rtol=.01)
+    assert np.isclose(mc.uncert.magnitude, gum.uncert.magnitude, rtol=.02)

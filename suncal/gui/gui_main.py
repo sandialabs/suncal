@@ -9,7 +9,7 @@ from .. import output
 from .. import project
 from .. import version
 from .. import uncertainty as uc
-from .. import anova
+from .. import dataset
 from .. import dist_explore
 from .. import sweeper
 from .. import reverse
@@ -19,7 +19,7 @@ from . import gui_common
 from . import gui_widgets
 from . import configmgr
 from . import page_about
-from . import page_anova
+from . import page_dataset
 from . import page_curvefit
 from . import page_reverse
 from . import page_risk
@@ -63,7 +63,7 @@ class CalculationsListWidget(QtWidgets.QListWidget):
                    'sweep': 'targetlist',
                    'reverse': 'calipers',
                    'reversesweep': 'rulersweep',
-                   'anova': 'boxplot',
+                   'data': 'boxplot',
                    'distributions': 'dists'}[mode]
         self.setIconSize(QtCore.QSize(32, 32))
         item.setIcon(gui_common.load_icon(iconame))
@@ -135,7 +135,7 @@ class InsertCalcWidget(QtWidgets.QWidget):
         self.btnSweep = ToolButton('Uncertainty\nSweep', gui_common.load_icon('targetlist'))
         self.btnReverse = ToolButton('Reverse\nPropagation', gui_common.load_icon('calipers'))
         self.btnReverseSweep = ToolButton('Reverse\nSweep', gui_common.load_icon('rulersweep'))
-        self.btnAnova = ToolButton('Data Sets and\nAnalysis of\nVariance', gui_common.load_icon('boxplot'))
+        self.btnDataset = ToolButton('Data Sets and\nAnalysis of\nVariance', gui_common.load_icon('boxplot'))
         self.btnDist = ToolButton('Distribution\nExplorer', gui_common.load_icon('dists'))
         self.btnHelp = ToolButton('Help', gui_common.load_icon('help'))
 
@@ -145,14 +145,14 @@ class InsertCalcWidget(QtWidgets.QWidget):
         self.btnSweep.clicked.connect(lambda x: self.newcomp.emit('sweep'))
         self.btnReverse.clicked.connect(lambda x: self.newcomp.emit('reverse'))
         self.btnReverseSweep.clicked.connect(lambda x: self.newcomp.emit('reversesweep'))
-        self.btnAnova.clicked.connect(lambda x: self.newcomp.emit('anova'))
+        self.btnDataset.clicked.connect(lambda x: self.newcomp.emit('data'))
         self.btnDist.clicked.connect(lambda x: self.newcomp.emit('distributions'))
         self.btnHelp.clicked.connect(self.showhelp)
 
         glayout = QtWidgets.QGridLayout()
         glayout.addWidget(self.btnUnc, 0, 0)
         glayout.addWidget(self.btnReverse, 0, 1)
-        glayout.addWidget(self.btnAnova, 0, 2)
+        glayout.addWidget(self.btnDataset, 0, 2)
         glayout.addWidget(self.btnSweep, 1, 0)
         glayout.addWidget(self.btnReverseSweep, 1, 1)
         glayout.addWidget(self.btnCurve, 1, 2)
@@ -184,11 +184,7 @@ class MainGUI(QtWidgets.QMainWindow):
     def __init__(self, parent=None):
         super(MainGUI, self).__init__(parent)
         self.setWindowTitle('Sandia PSL Uncertainty Calculator - v' + version.__version__)
-        w, h = 1200, 900
-        desktopsize = QtWidgets.QDesktopWidget().availableGeometry()
-        self.setGeometry(desktopsize.width()//2 - w//2, desktopsize.height()//2 - h//2, w, h)  # Center window on screen
-        if h >= desktopsize.height() or w >= desktopsize.width():
-            self.showMaximized()
+        gui_widgets.centerWindow(self, 1200, 900)
 
         self.project = project.Project()  # New empty project
         self.components = []  # List of dict storing component info
@@ -325,10 +321,10 @@ class MainGUI(QtWidgets.QMainWindow):
             self.project.add_item(item)
             widget = page_sweep.UncertReverseSweepWidget(item)
             widget.newtype.connect(self.change_component)
-        elif typename == 'anova':
-            item = anova.ArrayGrouped()
+        elif typename == 'data':
+            item = dataset.DataSet()
             self.project.add_item(item)
-            widget = page_anova.AnovaWidget(item)
+            widget = page_dataset.DataSetWidget(item)
         elif typename == 'distributions':
             item = dist_explore.DistExplore()
             self.project.add_item(item)
@@ -440,8 +436,8 @@ class MainGUI(QtWidgets.QMainWindow):
                         widget = page_risk.RiskWidget(self.project.items[i])
                     elif mode == 'curvefit':
                         widget = page_curvefit.CurveFitWidget(self.project.items[i])
-                    elif mode == 'anova':
-                        widget = page_anova.AnovaWidget(self.project.items[i])
+                    elif mode == 'data':
+                        widget = page_dataset.DataSetWidget(self.project.items[i])
                     elif mode == 'distributions':
                         widget = page_distribution.DistWidget(self.project.items[i])
                     else:
@@ -459,15 +455,23 @@ class MainGUI(QtWidgets.QMainWindow):
 
     def newproject(self):
         ''' Clear/new project '''
-        self.projstack.blockSignals(True)
-        self.project = project.Project()
-        while self.projstack.count() > 0:  # No clear() method available
-            widget = self.projstack.widget(0)
-            self.menubar.removeAction(widget.get_menu().menuAction())
-            self.projstack.removeWidget(widget)
-        self.projstack.blockSignals(False)
-        self.topstack.setCurrentIndex(self.PG_TOP_INSERT)
-        self.dockwidget.projectlist.clear()
+        ok = True
+        if self.project is not None and self.project.count() > 0:
+            msgbox = QtWidgets.QMessageBox()
+            msgbox.setWindowTitle('Uncertainty Calculator')
+            msgbox.setText('Existing project components will be removed. Are you sure?')
+            msgbox.setStandardButtons(QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
+            ok = msgbox.exec_() == QtWidgets.QMessageBox.Yes
+        if ok:
+            self.projstack.blockSignals(True)
+            self.project = project.Project()
+            while self.projstack.count() > 0:  # No clear() method available
+                widget = self.projstack.widget(0)
+                self.menubar.removeAction(widget.get_menu().menuAction())
+                self.projstack.removeWidget(widget)
+            self.projstack.blockSignals(False)
+            self.topstack.setCurrentIndex(self.PG_TOP_INSERT)
+            self.dockwidget.projectlist.clear()
 
     def rename(self, index, name):
         ''' Rename an item in the project '''
@@ -508,12 +512,15 @@ class MainGUI(QtWidgets.QMainWindow):
 
     def closeEvent(self, event):
         ''' Window is being closed. Verify. '''
-        msgbox = QtWidgets.QMessageBox()
-        msgbox.setWindowTitle('Uncertainty Calculator')
-        msgbox.setText('Are you sure you want to close?')
-        msgbox.setStandardButtons(QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
-        if msgbox.exec_() == QtWidgets.QMessageBox.No:
-            event.ignore()
+        if self.project.count() > 0:
+            msgbox = QtWidgets.QMessageBox()
+            msgbox.setWindowTitle('Uncertainty Calculator')
+            msgbox.setText('Are you sure you want to close?')
+            msgbox.setStandardButtons(QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
+            if msgbox.exec_() == QtWidgets.QMessageBox.No:
+                event.ignore()
+            else:
+                event.accept()
         else:
             event.accept()
 

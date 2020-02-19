@@ -7,7 +7,7 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
 
 from .. import dist_explore
-from .. import customdists
+from .. import distributions
 from .. import output
 from .. import uparser
 from . import gui_common
@@ -29,8 +29,10 @@ class DistEntry(QtWidgets.QWidget):
     sampleDist = QtCore.pyqtSignal(str)  # emits name/expr of dist
     changeDist = QtCore.pyqtSignal(str)
 
-    def __init__(self, name='', dist=customdists.normal(1), parent=None):
+    def __init__(self, name='', dist=None, parent=None):
         super(DistEntry, self).__init__(parent)
+        if dist is None:
+            dist = distributions.get_distribution('normal')
         self.dist = dist
         self.btnAdd = QtWidgets.QToolButton()
         self.btnRem = QtWidgets.QToolButton()
@@ -106,7 +108,7 @@ class DistDialog(QtWidgets.QDialog):
         super(DistDialog, self).__init__(parent=parent)
         self.name = name
         self.dist = dist
-        args = customdists.get_config(self.dist)
+        args = self.dist.get_config()
         self.table = gui_widgets.DistributionEditTable(args)
         self.fig = Figure()
         self.canvas = FigureCanvas(self.fig)
@@ -126,21 +128,21 @@ class DistDialog(QtWidgets.QDialog):
         self.replot()
 
     def get_dist(self):
-        ''' Get the distribution stats.rv_continuous '''
+        ''' Get the distribution distributions.Distribution object '''
         return self.dist
 
     def replot(self):
         ''' Update the distribution and replot '''
         self.dist = self.table.statsdist
-        mean = self.dist.mean()
+        median = self.dist.median()
         std = self.dist.std()
-        xx = np.linspace(mean - 4*std, mean + 4*std, num=200)
+        if not np.isfinite(std):  # Some distributions (e.g. alpha) have infinite stdev
+            std = self.dist.kwds.get('scale', 1)
+        xx = np.linspace(median - 4*std, median + 4*std, num=200)
         try:
             yy = self.dist.pdf(xx)
-        except AttributeError:   # Discrete distribution has no pdf(). Approximate it.
-            samples = self.dist.rvs(10000).astype(float)
-            yy, xx = np.histogram(samples, bins=200)
-            xx = xx[1:]
+        except (TypeError, ValueError):
+            yy = np.full(len(xx), np.nan)
 
         self.fig.clf()
         ax = self.fig.add_subplot(1, 1, 1)
@@ -161,8 +163,10 @@ class DistributionListWidget(QtWidgets.QWidget):
         self.setLayout(self.pagelayout)
         self.pagelayout.addStretch()  # Stretch is always last item in layout
 
-    def addItem(self, name='', dist=customdists.normal(1), after=None):
+    def addItem(self, name='', dist=None, after=None):
         ''' Add a distribution to the list '''
+        if dist is None:
+            dist = distributions.get_distribution('normal')
         item = DistEntry(name, dist)
         item.addDist.connect(lambda x: self.addItem(after=x))
         item.remDist.connect(lambda x: self.remItem(item=x))
@@ -227,9 +231,9 @@ class DistWidget(QtWidgets.QWidget):
         self.cmbView.addItems(self.distexplore.samplevalues.keys())
         self.cmbFit = QtWidgets.QComboBox()
         dists = gui_common.settings.getDistributions()
-        dists = [d for d in dists if hasattr(customdists.get_dist(d), 'fit')]
+        dists = [d for d in dists if distributions.fittable(d)]
         self.cmbFit.addItems(['None'] + dists)
-        self.chkConf = QtWidgets.QCheckBox('Show 95% Confidence')
+        self.chkCoverage = QtWidgets.QCheckBox('Show 95% Coverage')
         self.chkProbPlot = QtWidgets.QCheckBox('Show Probability Plot')
         self.fig = Figure()
         self.canvas = FigureCanvas(self.fig)
@@ -250,7 +254,7 @@ class DistWidget(QtWidgets.QWidget):
         clayout.addStretch()
         clayout.addWidget(QtWidgets.QLabel('Fit:'))
         clayout.addWidget(self.cmbFit)
-        clayout.addWidget(self.chkConf)
+        clayout.addWidget(self.chkCoverage)
         clayout.addWidget(self.chkProbPlot)
         rlayout.addLayout(clayout)
         rlayout.addWidget(self.canvas, stretch=10)
@@ -279,13 +283,16 @@ class DistWidget(QtWidgets.QWidget):
         self.cmbView.currentIndexChanged.connect(self.changeview)
         self.cmbFit.currentIndexChanged.connect(self.changeview)
         self.chkProbPlot.stateChanged.connect(self.changeview)
-        self.chkConf.stateChanged.connect(self.changeview)
+        self.chkCoverage.stateChanged.connect(self.changeview)
         self.distlist.sample.connect(self.sample)
         self.distlist.changed.connect(self.dist_changed)
 
     def get_menu(self):
         ''' Get the menu for this widget '''
         return self.menu
+
+    def calculate(self):
+        pass
 
     def clear(self):
         ''' Clear the distribution list '''
@@ -303,7 +310,7 @@ class DistWidget(QtWidgets.QWidget):
             if fitdist is None and qq:
                 fitdist = 'normal'
 
-            self.distexplore.out.plot_hist(name, fig=self.fig, fitdist=fitdist, qqplot=qq, conf=self.chkConf.isChecked())
+            self.distexplore.out.plot_hist(name, plot=self.fig, fitdist=fitdist, qqplot=qq, coverage=self.chkCoverage.isChecked())
             self.txtOutput.setMarkdown(self.distexplore.out.report_single(name, **gui_common.get_rptargs()))
             self.fig.suptitle(output.format_math(name))
             self.canvas.draw_idle()
@@ -344,8 +351,8 @@ class DistWidget(QtWidgets.QWidget):
         fitdist = self.cmbFit.currentText()
         fitdist = None if fitdist == 'None' else fitdist
         qq = self.chkProbPlot.isChecked()
-        conf = self.chkConf.isChecked()
-        return self.distexplore.get_output().report_all(fitdist=fitdist, conf=conf, qqplot=qq, **gui_common.get_rptargs())
+        cov = self.chkCoverage.isChecked()
+        return self.distexplore.get_output().report_all(fitdist=fitdist, coverage=cov, qqplot=qq, **gui_common.get_rptargs())
 
     def save_report(self):
         ''' Save full report, asking user for settings/filename '''
