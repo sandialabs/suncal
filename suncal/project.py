@@ -8,6 +8,7 @@
     - UncertSweepReverse
     - Risk
     - CurveFit
+    - DataSet (ANOVA)
 
     New calculation objects must support the following methods:
 
@@ -15,17 +16,17 @@
     - get_config() -- Return a configuration dictionary
     - from_config() -- Build a calculator object from the config dictionary
     - from_configfile()  -- Build a calculator object from the yaml file
-
 '''
 
 from io import StringIO
 import shutil
 import yaml
+from contextlib import suppress
 
 from . import uncertainty
 from . import dataset
 from . import sweeper
-from . import output
+from . import report
 from . import curvefit
 from . import risk
 from . import reverse
@@ -100,10 +101,8 @@ class Project(object):
             names = self.get_names()
             self.items.pop(names.index(item))
 
-        try:
+        with suppress(AttributeError):
             del item.project
-        except AttributeError:
-            pass
 
     def rename_item(self, index, name):
         ''' Rename an item '''
@@ -190,48 +189,49 @@ class Project(object):
 
     def calculate(self):
         ''' Run calculate() method on all items and append all reports '''
-        r = output.MDstring()
+        r = report.Report()
         for item in self.items:
-            r += '# {}\n\n'.format(item.name)
-            r += item.calculate().report()
-            r += '---\n\n'
+            r.hdr(item.name, level=1)
+            r.append(item.calculate().report())
+            r.div()
         return r
 
     def report_all(self):
         ''' Report_all for every project component '''
-        r = output.MDstring()
+        r = report.Report()
         for i in range(self.count()):
-            r += '# {}\n\n'.format(self.items[i].name)
+            r.hdr(self.items[i].name, level=1)
             out = self.items[i].get_output()
             if out is not None:
-                r += out.report_all() + '\n\n'
+                r.append(out.report_all())
             else:
-                r += 'Calculation not run\n\n'
-            r += '---\n\n'
+                r.txt('Calculation not run\n\n')
+            r.div()
         return r
 
     def report_short(self):
-        ''' Report() for every project component '''
-        r = output.MDstring()
+        ''' Report for every project component '''
+        r = report.Report()
         for i in range(self.count()):
-            r += '# {}\n\n'.format(self.items[i].name)
+            r.hdr(self.items[i].name, level=1)
             out = self.items[i].get_output()
             if out is not None:
-                r += out.report() + '\n\n'
+                r.append(out.report())
             else:
-                r += 'Calculation not run\n\n'
-            r += '---\n\n'
+                r.txt('Calculation not run\n\n')
+            r.div()
         return r
 
     def report_summary(self):
         ''' Report_summary() for every project component '''
-        r = output.MDstring()
+        r = report.Report()
         for i in range(self.count()):
-            r += '# {}\n\n'.format(self.items[i].name)
+            r.hdr(self.items[i].name, level=1)
             out = self.items[i].get_output()
             if out is not None:
-                r += out.report_summary() + '\n\n'
+                r.append(out.report_summary())
+                r.txt('\n\n')
             else:
-                r += 'Calculation not run\n\n'
-            r += '---\n\n'
+                r.txt('Calculation not run\n\n')
+            r.div()
         return r

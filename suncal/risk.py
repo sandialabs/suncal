@@ -12,7 +12,7 @@
     The functions PFA_deaver and PFR_deaver use the equations in Deaver's "How to
     "Maintain Confidence" paper, which require specification limits in terms of
     standard deviations of the process distribution, and use a slightly different
-    definition for TUR. These functions are provided for convienience when working
+    definition for TUR. These functions are provided for convenience when working
     with this definition.
 
     The guardband and guardband_norm functions can be used to determine the guardband
@@ -34,12 +34,14 @@ import matplotlib.pyplot as plt
 from scipy.integrate import dblquad
 from scipy.optimize import brentq, fsolve
 
+from . import report
 from . import output
+from . import plotting
 from . import distributions
 
 
 def specific_risk(dist, LL, UL):
-    ''' Calculate process risk and process capability index for the distribution.
+    ''' Calculate specific risk and process capability index for the distribution.
 
         Parameters
         ----------
@@ -87,8 +89,8 @@ def specific_risk(dist, LL, UL):
         cpk = max(0, min(abs(stats.norm.ppf(risk_lower))/3, abs(stats.norm.ppf(risk_upper))/3))
         if risk_lower > .5 or risk_upper > .5:
             cpk = -cpk
-    res = namedtuple('SpecificRisk', ['cpk', 'total', 'lower', 'upper'])
-    return res(cpk, risk_total, risk_lower, risk_upper)
+    Result = namedtuple('SpecificRisk', ['cpk', 'total', 'lower', 'upper'])
+    return Result(cpk, risk_total, risk_lower, risk_upper)
 
 
 def guardband_norm(method, TUR, **kwargs):
@@ -172,7 +174,7 @@ def guardband_norm(method, TUR, **kwargs):
 
 def guardband(dist_proc, dist_test, LL, UL, target_PFA, testbias=0, approx=False):
     ''' Calculate (symmetric) guard band required to meet a target PFA value, for
-        arbitrary distributons.
+        arbitrary distributions.
 
         Parameters
         ----------
@@ -204,7 +206,6 @@ def guardband(dist_proc, dist_test, LL, UL, target_PFA, testbias=0, approx=False
         -----
         Uses Brent's Method to find zero of PFA(dist_proc, dist_test, LL, UL, GBU=x, GBL=x)-target_PFA.
     '''
-    # NOTE: This can be slow (several minutes) especially for non-normals. Any way to speed up?
     w = UL-(LL+UL)/2
     try:
         gb, r = brentq(lambda x: PFA(dist_proc, dist_test, LL, UL, GBU=x, GBL=x, testbias=testbias, approx=approx)-target_PFA, a=-w/2, b=w/2, full_output=True)
@@ -217,7 +218,7 @@ def guardband(dist_proc, dist_test, LL, UL, target_PFA, testbias=0, approx=False
         return np.nan
 
 
-def get_guardbandoffset(gbf, LL, UL):
+def guardbandfactor_to_offset(gbf, LL, UL):
     ''' Convert guardband factor into offset from spec limits '''
     return (UL-LL)/2 * (1-gbf)
 
@@ -238,8 +239,8 @@ def PFA_norm(itp, TUR, GB=1, **kwargs):
             limit A = T * K. In Dobbert's notation, K = 1 - M/TUR where
             A = T - U*M. GB = 1 implies no guardbanding.
 
-            If GB is a string, it can be one of options in get_guardband
-            method. kwargs passed to get_guardband.
+            If GB is a string, it can be one of options in guardband_norm
+            method. kwargs passed to guardband_norm.
     '''
     # Convert itp to stdev of process
     # This is T in equation 2 in Dobbert's Guard Banding Strategy, with T = 1.
@@ -274,8 +275,8 @@ def PFR_norm(itp, TUR, GB=1, **kwargs):
             limit A = T * K. In Dobbert's notation, K = 1 - M/TUR where
             A = T - U*M. GB = 1 implies no guardbanding.
 
-            If GB is a string, it can be one of options in get_guardband
-            method. kwargs passed to get_guardband.
+            If GB is a string, it can be one of options in guardband_norm
+            method. kwargs passed to guardband_norm.
     '''
     sigma0 = 1/stats.norm.ppf((1+itp)/2)
     sigmatest = 1/TUR/2
@@ -566,7 +567,7 @@ def _PFR_discrete(dist_proc, dist_test, LL, UL, GBL=0, GBU=0, testbias=0):
     return c
 
 
-def PFAR_MC(dist_proc, dist_test, LL, UL, GBL=0, GBU=0, N=100000, testbias=0, retsamples=False):
+def PFAR_MC(dist_proc, dist_test, LL, UL, GBL=0, GBU=0, N=100000, testbias=0):
     ''' Probability of False Accept/Reject using Monte Carlo Method
 
         dist_proc: stats.rv_frozen
@@ -586,8 +587,6 @@ def PFAR_MC(dist_proc, dist_test, LL, UL, GBL=0, GBU=0, N=100000, testbias=0, re
         testbias: float
             Bias (difference between distribution median and expected value)
             in test distribution
-        retsamples: bool
-            Return samples along with probabilities
 
         Returns
         -------
@@ -596,10 +595,11 @@ def PFAR_MC(dist_proc, dist_test, LL, UL, GBL=0, GBU=0, N=100000, testbias=0, re
         PFR: float
             False reject probability
         proc_samples: array (optional)
-            Monte Carlo samples for uut (if retsamples==True)
+            Monte Carlo samples for uut
         test_samples: array (optional)
-            Monte Carlo samples for test measurement (if retsamples==True)
+            Monte Carlo samples for test measurement
     '''
+    Result = namedtuple('MCRisk', ['pfa', 'pfr', 'process_samples', 'test_samples'])
     proc_samples = dist_proc.rvs(size=N)
     expected = dist_test.median() - testbias
     kwds = distributions.get_distargs(dist_test)
@@ -613,23 +613,16 @@ def PFAR_MC(dist_proc, dist_test, LL, UL, GBL=0, GBU=0, N=100000, testbias=0, re
     except ValueError:
         # Invalid parameter in kwds
         test_samples = np.array([])
-        if retsamples:
-            return np.nan, np.nan, None, None
-        else:
-            return np.nan, np.nan
+        return Result(np.nan, np.nan, None, None)
 
     FA = np.count_nonzero(((test_samples < UL-GBU) & (test_samples > LL+GBL)) & ((proc_samples > UL) | (proc_samples < LL))) / N
     FR = np.count_nonzero(((test_samples > UL-GBU) | (test_samples < LL+GBL)) & ((proc_samples < UL) & (proc_samples > LL))) / N
-
-    if retsamples:
-        return FA, FR, proc_samples, test_samples
-    else:
-        return FA, FR
+    return Result(FA, FR, proc_samples, test_samples)
 
 
 class Risk(object):
-    ''' Class incorporating risk calculations. Monstly useful for implementing the GUI.
-        Risk Functions in this module can be used more easiliy for manual work.
+    ''' Class incorporating risk calculations. Mostly useful for implementing the GUI.
+        Risk Functions in this module should be used for manual data analysis.
     '''
     def __init__(self, name='risk'):
         self.name = name
@@ -641,7 +634,7 @@ class Risk(object):
         self.guardband = (0, 0)        # Guard band offset (A = speclimits - guardband)
         self.out = RiskOutput(self)
         self.cost_FA = None  # Cost of false accept
-        self.cost_RF = None  # Cost of false reject
+        self.cost_FR = None  # Cost of false reject
 
     def set_testdist(self, testdist, testbias=None):
         ''' Set the test distribution
@@ -1068,10 +1061,10 @@ class RiskOutput(output.Output):
         if self.risk.get_procdist() is not None:
             cpk, risk_total, risk_lower, risk_upper = self.risk.cpk()
             hdr.extend(['Process Risk'])   # No way to span columns at this point...
-            cols.append(['Process Risk: {:.2f}%'.format(risk_total*100),
-                         'Upper limit risk: {:.2f}%'.format(risk_upper*100),
-                         'Lower limit risk: {:.2f}%'.format(risk_lower*100),
-                         'Process capability index (Cpk): {:.6f}'.format(cpk)])
+            cols.append([('Process Risk: ', report.Number(risk_total*100, fmt='auto'), '%'),
+                         ('Upper limit risk: ', report.Number(risk_upper*100, fmt='auto'), '%'),
+                         ('Lower limit risk: ', report.Number(risk_lower*100, fmt='auto'), '%'),
+                         ('Process capability index (Cpk): ', report.Number(cpk))])
             if self.risk.cost_FA is not None:
                 cost = self.risk.cost_FA * risk_total  # Everything accepted - no false rejects
 
@@ -1081,58 +1074,57 @@ class RiskOutput(output.Output):
 
             hdr.extend(['Test Measurement Risk'])
             cols.append([
-                'TUR: {:.1f}'.format(self.risk.get_tur()),
-                'Measured value: {:.4g}'.format(val),
+                ('TUR: ', report.Number(self.risk.get_tur(), fmt='auto')),
+                ('Measured value: ', report.Number(val)),
                 'Result: {}'.format('ACCEPT' if accept else 'REJECT'),
-                'PF{} of measurement: {:.2f}%'.format('A' if accept else 'R', PFx*100),
-                ''])
+                ('PF{} of measurement: '.format('A' if accept else 'R'), report.Number(PFx*100, fmt='auto'), '%'),
+                ])
 
         if self.risk.get_testdist() is not None and self.risk.get_procdist() is not None:
             hdr.extend(['Combined Risk'])
             pfa = self.risk.PFA()
             pfr = self.risk.PFR()
             cols.append([
-                'Total PFA: {:.2f}%'.format(pfa*100),
-                'Total PFR: {:.2f}%'.format(pfr*100), '', ''])
+                ('Total PFA: ', report.Number(pfa*100, fmt='auto'), '%'),
+                ('Total PFR: ', report.Number(pfr*100, fmt='auto'), '%'), '', ''])
             if self.risk.cost_FA is not None and self.risk.cost_FR is not None:
                 cost = self.risk.cost_FA * pfa + self.risk.cost_FR * pfr
 
+        rpt = report.Report()
         if len(hdr) > 0:
             rows = list(map(list, zip(*cols)))  # Transpose cols->rows
-            rpt = output.md_table(rows=rows, hdr=hdr)
-        else:
-            rpt = output.MDstring()
+            rpt.table(rows=rows, hdr=hdr)
 
         if cost is not None:
-            costrows = [['Cost of false accept', format(self.risk.cost_FA, '.4g')],
-                        ['Cost of false reject', format(self.risk.cost_FR, '.4g')],
-                        ['Expected cost', format(cost, '.4g')]]
-            rpt += output.md_table(costrows, hdr=['Cost', 'Value'])
+            costrows = [[('Cost of false accept', report.Number(self.risk.cost_FA))],
+                        [('Cost of false reject', report.Number(self.risk.cost_FR))],
+                        [('Expected cost', report.Number(cost))]]
+            rpt.table(costrows, hdr=['Cost', 'Value'])
         return rpt
 
     def report_all(self, **kwargs):
         ''' Report with table and plots '''
         if kwargs.get('mc', False):
-            with mpl.style.context(output.mplcontext):
+            with mpl.style.context(plotting.mplcontext):
                 plt.ioff()
                 fig = plt.figure()
             r = self.report_montecarlo(fig=fig, **kwargs)
-            r.add_fig(fig)
+            r.plot(fig)
         else:
-            with mpl.style.context(output.mplcontext):
+            with mpl.style.context(plotting.mplcontext):
                 plt.ioff()
                 fig = plt.figure()
                 self.plot_dists(fig)
-            r = output.MDstring()
-            r.add_fig(fig)
-            r += self.report(**kwargs)
+            r = report.Report(**kwargs)
+            r.plot(fig)
+            r.append(self.report(**kwargs))
         return r
 
     def plot_dists(self, plot=None):
         ''' Plot risk distributions '''
-        with mpl.style.context(output.mplcontext):
+        with mpl.style.context(plotting.mplcontext):
             plt.ioff()
-            fig, ax = output.initplot(plot)
+            fig, ax = plotting.initplot(plot)
             fig.clf()
 
             procdist = self.risk.get_procdist()
@@ -1198,7 +1190,7 @@ class RiskOutput(output.Output):
         SL = self.risk.get_speclimits()
         GB = self.risk.get_guardband()
         pfa, pfr, psamples, tsamples = PFAR_MC(self.risk.get_procdist(), self.risk.get_testdist(),
-                                               *SL, *GB, N=N, testbias=self.risk.get_testbias(), retsamples=True)
+                                               *SL, *GB, N=N, testbias=self.risk.get_testbias())
 
         if fig is not None:
             fig.clf()
@@ -1227,5 +1219,11 @@ class RiskOutput(output.Output):
                 ax.set_ylim(slmin, slmax)
                 fig.tight_layout()
 
-        s = '- TUR: {:.2f}\n- Total PFA: {:.2f}%\n- Total PFR: {:.2f}%'.format(self.risk.get_tur(), pfa*100, pfr*100)
-        return output.MDstring(s)
+        rpt = report.Report(**kwargs)
+        rpt.txt('- TUR: ')
+        rpt.num(self.risk.get_tur(), fmt='auto', end='\n')
+        rpt.txt('- Total PFA: ')
+        rpt.num(pfa*100, fmt='auto', end='%\n')
+        rpt.txt('- Total PFR: ')
+        rpt.num(pfr*100, fmt='auto', end='%\n')
+        return rpt

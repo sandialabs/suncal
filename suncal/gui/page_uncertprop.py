@@ -1,18 +1,19 @@
 ''' Page for propagating uncertainty calculations '''
 
 import re
+from contextlib import suppress
 import numpy as np
 import sympy
 from pint import DimensionalityError, UndefinedUnitError, OffsetUnitCalculusError
-
 from PyQt5 import QtWidgets, QtGui, QtCore
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
 
-from .. import uncertainty as uc
+from .. import uncertainty
 from .. import uparser
-from .. import output
+from .. import report
+from .. import plotting
 from .. import distributions
 from .. import ttable
 from . import gui_common
@@ -23,24 +24,10 @@ from . import page_dataimport
 TREESTYLE = """
 QTreeView {
     show-decoration-selected: 1;
+    font-size: 16px;
 }
-QTreeView::item {
-    border: 1px solid #d9d9d9;
-    border-top-color: transparent;
-    border-bottom-color: transparent;
-}
-QTreeView::item:has-children {
-    border-bottom-color: #d9d9d9;
-}
-QTreeView::item:selected {
-    border: 1px solid #567dbc;
-}
-QTreeView::item:selected:active{
-    background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1, stop: 0 #6ea1f1, stop: 1 #567dbc);
-}
-QTreeView::item:selected:!active {
-    background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1, stop: 0 #6b9be8, stop: 1 #577fbf);
-}"""
+"""
+
 
 TABLESTYLE = """
 QTableView {
@@ -53,93 +40,90 @@ QTableView::item:selected:active{
     background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1, stop: 0 #6ea1f1, stop: 1 #567dbc);
 }
 QTableView::item:selected:!active {
-    background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1, stop: 0 #6b9be8, stop: 1 #577fbf);
+    background: palette(base);
+    border: none;
 }"""
 
 
-def tree_bold(item, column):
-    ''' Set the TreeWidgetItem font bold '''
-    font = item.font(column)
-    font.setBold(True)
-    item.setFont(column, font)
-
-
-class TreeRow(QtWidgets.QTreeWidgetItem):
-    ''' TreeWidgetItem formatted for Input Tree '''
-    def __init__(self, parent, obj, name, value='', text=''):
-        super(TreeRow, self).__init__(parent, [name, value, text])
-        self.setFlags(self.flags() | QtCore.Qt.ItemIsEditable)
-        self.obj = obj
-        self.valid = True
-        tree_bold(self, 1)
-
-
-class TreeRowTex(QtWidgets.QTreeWidgetItem):
-    ''' TreeWidgetItem formatted for Input Tree, with first column displayed as latex '''
-    def __init__(self, parent, obj, name, value='', text=''):
-        super(TreeRowTex, self).__init__(parent, ['', value, text])
-        self.setFlags(self.flags() | QtCore.Qt.ItemIsEditable)
-        self.obj = obj
-        self.valid = True
-        tree_bold(self, 1)
-        # Remove display text, replace with rendered math
-        px = QtGui.QPixmap()
-        px.loadFromData(output.tex_to_buf(obj.get_latex()).read())
-        self.setData(0, QtCore.Qt.DecorationRole, px)
-        self.setData(0, gui_widgets.ROLE_ORIGDATA, obj.name)
-
-
 class TableItemTex(QtWidgets.QTableWidgetItem):
-    ''' TableWidgetItem formatted for Functions Input Table '''
-    def __init__(self, tex=''):
-        super(TableItemTex, self).__init__()
+    ''' TableWidgetItem formatted to display Math expression '''
+    def __init__(self, expr=''):
+        super().__init__()
         self.setFlags(self.flags() | QtCore.Qt.ItemIsEditable)
+        self.setExpr(expr)
 
+    def setExpr(self, expr):
         # Remove display text, replace with rendered math
         px = QtGui.QPixmap()
-        px.loadFromData(output.tex_to_buf(output.format_math(tex)).read())
+        px.loadFromData(report.Math(expr).svg_buf().read())
         self.setData(QtCore.Qt.DecorationRole, px)
-        self.setData(gui_widgets.ROLE_ORIGDATA, tex)
+        self.setData(gui_widgets.ROLE_ORIGDATA, expr)
 
 
 class FunctionTableWidget(QtWidgets.QTableWidget):
-    ''' Function definition widget '''
+    ''' Table for defining measurement model functions
+
+        Signals
+        -------
+        funcchanged: One of the functions was modified
+        funcremoved: A function was removed
+        orderchange: Functions were reordered via drag/drop
+        resizerows: Emitted when the number of rows in the table changes
+    '''
     funcchanged = QtCore.pyqtSignal(int, dict)
     funcremoved = QtCore.pyqtSignal(int)
     orderchange = QtCore.pyqtSignal()
+    resizerows = QtCore.pyqtSignal()
     COL_NAME = 0
     COL_EXPR = 1
     COL_UNIT = 2
     COL_DESC = 3
     COL_REPT = 4
+    COL_CNT = 5
 
     def __init__(self, parent=None):
-        super(FunctionTableWidget, self).__init__(parent)
+        super().__init__(parent)
         self.setColumnCount(5)
         self.setDragEnabled(True)
         self.setAcceptDrops(True)
         self.viewport().setAcceptDrops(True)
         self.setDragDropOverwriteMode(False)
         self.setDropIndicatorShown(True)
-        self.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
         self.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self.setDragDropMode(QtWidgets.QAbstractItemView.InternalMove)
-        self._delegate = gui_widgets.LatexDelegate()  # Don't let the garbage collector eat it
-        self.setItemDelegateForColumn(0, self._delegate)
-        self.setItemDelegateForColumn(1, self._delegate)
+        self._delegate = gui_widgets.LatexDelegate()  # Assign to self - don't let the garbage collector eat it
+        self.setItemDelegateForColumn(self.COL_NAME, self._delegate)
+        self.setItemDelegateForColumn(self.COL_EXPR, self._delegate)
+        self.setSizePolicy(QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Minimum)
+        self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
         self.setStyleSheet(TABLESTYLE)
+        self.verticalHeader().hide()
+        self.verticalHeader().setDefaultSectionSize(48)
+        self.setSizePolicy(QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Minimum)
         self.clear()
         self.addRow()
         self.cellChanged.connect(self.itemEdit)
+        self.fixSize()
+
+    def fixSize(self):
+        ''' Adjust the size of the table to fit the number of rows '''
+        height = max(self.horizontalHeader().height()+20, self.verticalHeader().length() + self.horizontalHeader().height())
+        self.setFixedHeight(height)
+        self.resizerows.emit()
 
     def clear(self):
-        ''' Override clear to reset things correctly. '''
+        ''' Clear everything in the table. Overrides TableWidget clear. '''
         self.setRowCount(0)
         self.setHorizontalHeaderLabels(['Name', 'Expression',  'Units', 'Description', 'Report?'])
         self.resizeColumnsToContents()
+        # NOTE: with window width 1200, sum of columnwidths 1110 fills the tree
+        self.setColumnWidth(self.COL_NAME, 100)
         self.setColumnWidth(self.COL_EXPR, 400)
-        self.setColumnWidth(self.COL_UNIT, 75)
-        self.setColumnWidth(self.COL_DESC, 400)
+        self.setColumnWidth(self.COL_UNIT, 100)
+        self.setColumnWidth(self.COL_DESC, 460)
+        self.setColumnWidth(self.COL_REPT, 50)
+        self.fixSize()
 
     def setFunclist(self, funclist):
         ''' Set a list of functions '''
@@ -157,6 +141,7 @@ class FunctionTableWidget(QtWidgets.QTableWidget):
             chk.setCheckState(QtCore.Qt.Checked)
             chk.stateChanged.connect(lambda x, row=row, col=self.COL_REPT: self.itemEdit(row, col))
             self.setCellWidget(row, self.COL_REPT, chk)
+        self.fixSize()
 
     def addRow(self):
         ''' Add an empty row to function table '''
@@ -172,6 +157,7 @@ class FunctionTableWidget(QtWidgets.QTableWidget):
         chk.stateChanged.connect(lambda x, row=rows, col=self.COL_REPT: self.itemEdit(row, col))
         self.setCellWidget(rows, self.COL_REPT, chk)
         self.blockSignals(False)
+        self.fixSize()
 
     def remRow(self):
         ''' Remove row at index from function table '''
@@ -180,6 +166,7 @@ class FunctionTableWidget(QtWidgets.QTableWidget):
             idx = idx[0].row()
             self.removeRow(idx)
             self.funcremoved.emit(idx)
+        self.fixSize()
 
     def itemText(self, row, col):
         ''' Get text of item, if item exists. '''
@@ -203,14 +190,14 @@ class FunctionTableWidget(QtWidgets.QTableWidget):
 
         # Check Expression
         try:
-            fn = uparser.check_expr(expr, name=name)
+            fn = uparser.parse_math(expr, name=name)
         except ValueError:
             fn = None
         else:
             ok = True
 
         try:
-            sname = uparser.check_expr(name)
+            sname = uparser.parse_math(name)
         except ValueError:
             sname = None
             ok = False
@@ -223,7 +210,7 @@ class FunctionTableWidget(QtWidgets.QTableWidget):
                 self.clearSelection()
 
         if col == self.COL_NAME and self.item(row, self.COL_NAME) is not None:
-            if isinstance(sname, sympy.symbol.Symbol):
+            if isinstance(sname, sympy.Basic):
                 self.item(row, self.COL_NAME).setBackground(QtGui.QBrush(gui_common.COLOR_OK))
             else:
                 self.item(row, self.COL_NAME).setBackground(QtGui.QBrush(gui_common.COLOR_INVALID))
@@ -232,10 +219,11 @@ class FunctionTableWidget(QtWidgets.QTableWidget):
         # Check units
         if unit != '':
             try:
-                unit = uc.get_units(unit)
+                unit = uparser.parse_unit(unit)
             except ValueError:
                 self.item(row, self.COL_UNIT).setBackground(QtGui.QBrush(gui_common.COLOR_INVALID))
                 self.item(row, self.COL_UNIT).setText(unit)
+                self.clearSelection()
             else:
                 self.item(row, self.COL_UNIT).setBackground(QtGui.QBrush(gui_common.COLOR_OK))
                 self.item(row, self.COL_UNIT).setText(format(unit, '~P'))
@@ -248,8 +236,7 @@ class FunctionTableWidget(QtWidgets.QTableWidget):
             func = {'name': name,
                     'desc': self.itemText(row, self.COL_DESC),
                     'unit': unit,
-                    'expr': expr,
-                    }
+                    'expr': expr}
             if self.cellWidget(row, self.COL_REPT):
                 func['report'] = self.cellWidget(row, self.COL_REPT).checkState() == QtCore.Qt.Checked
             self.funcchanged.emit(row, func)
@@ -293,7 +280,7 @@ class FunctionTableWidget(QtWidgets.QTableWidget):
                 self.item(drop_row + row_index, 1).setSelected(True)
 
             # Remove blank rows to maintain consistency with uncCalc.functions list
-            for row_idx in range(self.rowCount())[::-1]:
+            for row_idx in reversed(range(self.rowCount())):
                 if (self.item(row_idx, self.COL_EXPR) is None or self.item(row_idx, self.COL_EXPR).data(gui_widgets.ROLE_ORIGDATA) == ''):
                     self.removeRow(row_idx)
 
@@ -302,6 +289,7 @@ class FunctionTableWidget(QtWidgets.QTableWidget):
         self.orderchange.emit()
 
     def is_below(self, pos, index):
+        ''' Check if index is below position. Used for drag/drop '''
         rect = self.visualRect(index)
         margin = 2
         if pos.y() - rect.top() < margin:
@@ -320,6 +308,7 @@ class FunctionTableWidget(QtWidgets.QTableWidget):
         return True
 
     def contextMenuEvent(self, event):
+        ''' Show right-click context menu '''
         item = self.itemAt(event.pos())
         if item:
             row = item.row()
@@ -328,16 +317,52 @@ class FunctionTableWidget(QtWidgets.QTableWidget):
             if expr is None:
                 expr = self.item(row, self.COL_EXPR).text()
             try:
-                fn = uparser.check_expr(expr, name=name)
+                fn = uparser.parse_math(expr, name=name)
             except ValueError:
                 return
 
             menu = QtWidgets.QMenu()
+            add = menu.addAction('Add model equation')
+            rem = menu.addAction('Remove model equation')
+            add.triggered.connect(self.addRow)
+            rem.triggered.connect(self.remRow)
+
             solve = menu.addMenu('Solve for')
             for symbol in fn.free_symbols:
                 act = solve.addAction(str(symbol))
                 act.triggered.connect(lambda x, fn=fn, name=name, var=str(symbol), row=row: self.solvefor(fn, name, var, row))
             menu.exec(event.globalPos())
+
+        else:
+            menu = QtWidgets.QMenu()
+            add = menu.addAction('Add model equation')
+            add.triggered.connect(self.addRow)
+            menu.exec(event.globalPos())
+
+    def moveCursor(self, cursorAction, modifiers):
+        ''' Override cursor so tab works as expected '''
+        assert self.COL_CNT == 5   # If column defs change, need to update this tab-key behavior
+        assert self.COL_DESC == 3
+        if cursorAction == QtWidgets.QAbstractItemView.MoveNext:
+            index = self.currentIndex()
+            if index.isValid():
+                if index.column() in [self.COL_DESC, self.COL_REPT] and index.row()+1 < self.model().rowCount(index.parent()):
+                    return index.sibling(index.row()+1, 1)
+                elif index.column() in [self.COL_NAME, self.COL_EXPR, self.COL_UNIT]:
+                    return index.sibling(index.row(), index.column()+1)
+                else:
+                    return QtCore.QModelIndex()
+        elif cursorAction == QtWidgets.QAbstractItemView.MovePrevious:
+            index = self.currentIndex()
+            if index.isValid():
+                if index.column() == self.COL_NAME:
+                    if index.row() > 0:
+                        return index.sibling(index.row()-1, self.COL_DESC)
+                    else:
+                        return QtCore.QModelIndex()
+                else:
+                    return index.sibling(index.row(), index.column()-1)
+        return super().moveCursor(cursorAction, modifiers)
 
     def solvefor(self, fn, name, var, row):
         ''' Algebraically rearrange function on row, solving for var and replacing
@@ -385,7 +410,8 @@ class FunctionTableWidget(QtWidgets.QTableWidget):
 
         mbox = QtWidgets.QMessageBox()
         mbox.setWindowTitle('Uncertainty Calculator')
-        mbox.setText('Set model equation?' + '<br><br>' + output.tex_to_html(sympy.latex(sympy.Eq(svar, solution))))
+        math = report.Math.from_sympy(sympy.Eq(svar, solution)).svg_b64()
+        mbox.setText('Set model equation?' + '<br><br>' + '<img src="{}"/>'.format(math))
         mbox.setInformativeText('Measured Quantity entries may be removed.<br><br>Note: Do not use for reversing the calculation to determine required uncertainty of a measured quantity.')
         mbox.setStandardButtons(QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
         ok = mbox.exec_()
@@ -397,144 +423,343 @@ class FunctionTableWidget(QtWidgets.QTableWidget):
                 self._delegate.setModelData(QtWidgets.QLineEdit(var), self.model(), self.indexFromItem(self.item(row, self.COL_NAME)))
 
 
-class TreeButton(QtWidgets.QToolButton):
-    ''' Round button for use in a tree widget '''
-    # CSS stylesheet for nice round buttons
-    buttonstyle = '''QToolButton {border: 1px solid #8f8f91; border-radius: 8px;
-                     background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1, stop: 0 #f6f7fa, stop: 1 #dadbde);}
-
-                     QToolButton:pressed {border: 2px solid #8f8f91; border-radius: 8px; border-width: 2px;
-                     background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1, stop: 0 #dadbde, stop: 1 #f6f7fa);}
-
-                     QToolButton:checked {border: 2px solid #8f8f91; border-radius: 8px; border-width: 1px;
-                     background-color: qlineargradient(x1: 0, y1: 1, x2: 0, y2: 0, stop: 0 #dadbde, stop: 1 #7c7c7c);}
-                     '''
-
-    def __init__(self, text):
-        super(TreeButton, self).__init__(text=text)
-        self.setStyleSheet(self.buttonstyle)
-        self.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
-
-
-class InputTreeWidget(QtWidgets.QTreeWidget):
+class MeasTableWidget(QtWidgets.QTableWidget):
     ''' Tree Widget for editing input nominal values '''
-    COL_NAME = 0
+    COL_VARNAME = 0
     COL_VALUE = 1
-    COL_TEXT = 2
-    COL_DEGF = 3
-    COL_BTN = 4
-    COL_CNT = 5
+    COL_UNITS = 2
+    COL_DIST = 3
+    COL_PARAM1 = 4
+    COL_PARAM2 = 5
+    COL_PARAM3 = 6
+    COL_PARAM4 = 7
+    COL_DEGF = 8
+    COL_DESC = 9
+    COL_STDUNC = 10
+    COL_CNT = 11
 
-    replotdist = QtCore.pyqtSignal(object)  # Emit the uncert object to plot
+    updated = QtCore.pyqtSignal(object)  # Emit when uncertainty changes, to signal replot
+    resizerows = QtCore.pyqtSignal()
 
-    def __init__(self):
-        super(InputTreeWidget, self).__init__()
+    def __init__(self, unccalc):
+        super().__init__()
+        self.unccalc = unccalc
         self.clear()
-        self.setColumnCount(self.COL_CNT)
-        self.setHeaderItem(QtWidgets.QTreeWidgetItem(['Parameter', 'Value', 'Standard Uncertainty', 'Deg. Freedom', '', '']))
         self.setEditTriggers(QtWidgets.QTableWidget.NoEditTriggers)  # Only start editing manually
+
         self.inputlist = []
-        self.setColumnWidth(self.COL_NAME, 200)
-        self.setColumnWidth(self.COL_VALUE, 100)
-        self.setColumnWidth(self.COL_TEXT, 150)
-        self.setColumnWidth(self.COL_DEGF, 100)
-        self.setColumnWidth(self.COL_BTN, 20)
-        self.setUniformRowHeights(True)
-        self.setStyleSheet(TREESTYLE)
+        self.setStyleSheet(TABLESTYLE)
         self._delegate = gui_widgets.LatexDelegate()
-        self.setItemDelegateForColumn(self.COL_NAME, self._delegate)
+        self.setItemDelegateForColumn(self.COL_VARNAME, self._delegate)
+        self.setItemDelegateForColumn(self.COL_VALUE, self._delegate)
+        self.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        self.verticalHeader().hide()
+        self.setSizePolicy(QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Minimum)
 
+        self.itemActivated.connect(self.checkEdit)
         self.itemChanged.connect(self.itemchange)
-        self.itemDoubleClicked.connect(self.checkEdit)
-        self.currentItemChanged.connect(self.rowchange)
+        self.currentCellChanged.connect(self.rowchange)
+        self.fixSize()
 
-    def checkEdit(self, item, column):
-        ''' Check if this item/column is editable, and start editor if it is. '''
-        if self.editable(item, column):
-            self.editItem(item, column)
+    def clear(self):
+        ''' Clear the table '''
+        super().clear()
+        self.setRowCount(0)
+        self.setColumnCount(self.COL_CNT)
+        self.setColumnWidth(self.COL_VARNAME, 70)
+        self.setColumnWidth(self.COL_VALUE, 80)
+        self.setColumnWidth(self.COL_UNITS, 80)
+        self.setColumnWidth(self.COL_DIST, 100)
+        self.setColumnWidth(self.COL_PARAM1, 80)
+        self.setColumnWidth(self.COL_PARAM2, 80)
+        self.setColumnWidth(self.COL_PARAM3, 80)
+        self.setColumnWidth(self.COL_PARAM4, 80)
+        self.setColumnWidth(self.COL_DEGF, 80)
+        self.setColumnWidth(self.COL_DESC, 290)
+        self.setColumnWidth(self.COL_STDUNC, 90)
+        self.setHorizontalHeaderLabels(['Variable', 'Value', 'Units', 'Distribution', 'Param 1', 'Param 2', 'Param 3', 'Param 4', 'Degrees\nFreedom', 'Description', 'Standard\nUncertainty'])
+        self.fixSize()
 
-    def editable(self, item, column):
-        ''' Check if this item/column is editable '''
-        if column == self.COL_VALUE and item.childCount() == 0:
-            return True
-        elif column == self.COL_NAME and item.childCount() > 0 and isinstance(item.obj, uc.InputUncert):
-            return True
-        return False
+    def fixSize(self):
+        ''' Adjust the size of the table to fit the number of rows '''
+        height = max(self.horizontalHeader().height()+20, self.verticalHeader().length() + self.horizontalHeader().height())
+        self.setFixedHeight(height)
+        self.resizerows.emit()
 
-    def rowchange(self, new, prev):
-        ''' Selected row was changed '''
-        if new is not None and isinstance(new.obj, uc.InputUncert):
-            obj = new.obj
-        else:
-            obj = None
-        self.replotdist.emit(obj)
+    def checkEdit(self, item):
+        ''' Start editor if this item/column is editable '''
+        column = item.column()
+        row = item.row()
+        uncert = None
+        with suppress(AttributeError):
+            uncert = self.item(row, self.COL_VALUE).data(gui_widgets.ROLE_UNCERT)
+
+        if ((uncert is None and column in [self.COL_VALUE, self.COL_UNITS, self.COL_DESC]) or
+            (uncert is not None and column not in [self.COL_VARNAME, self.COL_STDUNC])):
+            self.editItem(item)  # Variable row
 
     def filltable(self, inputlist=None):
-        ''' Fill the entire table with inputs and uncertainties '''
+        ''' Fill the table with inputs defined in inputlist, or refresh using existing inputlist '''
         self.blockSignals(True)
         if inputlist is not None:
             self.inputlist = inputlist
         self.clear()
-        topitem = self.invisibleRootItem()
-        for row, inpt in enumerate(self.inputlist):
-            newitem = TreeRowTex(topitem, inpt, '', '', '')
-            TreeRow(newitem, inpt, 'Nominal', format(inpt.nom, '.5g'))
-            TreeRow(newitem, inpt, 'Units', uc.printunit(inpt.units, fmt=''))
-            TreeRow(newitem, inpt, 'Description', inpt.desc)
-            uncitem = TreeRow(newitem, inpt, 'Uncertainties')
-            addbutton = TreeButton('+')
-            addbutton.clicked.connect(lambda x, inpt=inpt, uncitem=uncitem: self.add_comp(inpt, uncitem))
-            uncitem.treeWidget().setItemWidget(uncitem, self.COL_BTN, addbutton)
-            for unc in inpt.uncerts:
-                compitem = TreeRowTex(uncitem, unc, unc.get_latex(), '', '')
-                tree_bold(compitem, self.COL_NAME)
-                rembutton = TreeButton(gui_common.CHR_ENDASH)
-                rembutton.clicked.connect(lambda x, item=compitem, unc=unc: self.rem_comp(item, unc))
-                compitem.treeWidget().setItemWidget(compitem, self.COL_BTN, rembutton)
-                self.fill_uncertparams(compitem, unc)
-        self.update_text()
-        self.setColumnWidth(self.COL_NAME, 200)
-        self.setColumnWidth(self.COL_VALUE, 200)
-        self.setColumnWidth(self.COL_TEXT, 150)
-        self.setColumnWidth(self.COL_DEGF, 100)
-        self.setColumnWidth(self.COL_BTN, 20)
-        self.blockSignals(False)
+        COLOR2 = QtGui.QBrush(QtGui.QColor(246, 246, 246, 255))
+        for inpt in self.inputlist:
+            self.setRowCount(self.rowCount() + 1)
+            row = self.rowCount() - 1
+            inptitem = TableItemTex(inpt.name)
+            inptitem.setBackground(QtGui.QBrush(gui_common.COLOR_UNUSED))
+            valueitem = TableItemTex(format(inpt.nom, '.5g'))
+            valueitem.setData(gui_widgets.ROLE_VARIABLE, inpt)  # Data is always in COL_VALUE
+            self.setItem(row, self.COL_VARNAME, inptitem)
+            self.setItem(row, self.COL_VALUE, valueitem)
+            self.setItem(row, self.COL_UNITS, gui_widgets.EditableTableItem(format(inpt.units, '~P')))
+            self.setItem(row, self.COL_DESC, gui_widgets.EditableTableItem(inpt.desc))
+            self.setItem(row, self.COL_STDUNC, gui_widgets.ReadOnlyTableItem('± {:.2g~P}'.format(inpt.stdunc())))
+            degf = inpt.degf()
+            self.setItem(row, self.COL_DEGF, gui_widgets.ReadOnlyTableItem('inf' if not np.isfinite(degf) else format(degf, '.1f')))
+            self.setItem(row, self.COL_DIST, gui_widgets.ReadOnlyTableItem())
+            self.setSpan(row, self.COL_DIST, 1, 5)
+            for col in [self.COL_DIST, self.COL_DEGF, self.COL_PARAM1, self.COL_PARAM2, self.COL_PARAM3, self.COL_PARAM4, self.COL_STDUNC]:
+                with suppress(AttributeError):
+                    self.item(row, col).setBackground(QtGui.QBrush(gui_common.COLOR_UNUSED))
+            for col in [self.COL_VALUE, self.COL_UNITS, self.COL_DESC]:
+                with suppress(AttributeError):
+                    self.item(row, col).setBackground(QtGui.QBrush(COLOR2))
 
-    def fill_uncertparams(self, compitem, uncobj):
-        ''' Fill uncertainty parameters for uncertainty uncobj under treewidget compitem '''
+            for uncert in inpt.uncerts:
+                self.setRowCount(self.rowCount() + 1)
+                row = self.rowCount() - 1
+                item = TableItemTex(uncert.name)
+                item.setData(gui_widgets.ROLE_UNCERT, uncert)
+                item.setData(gui_widgets.ROLE_VARIABLE, inpt)
+                self.setItem(row, self.COL_VALUE, item)
+                self.fill_uncertparams(row)
+
+        self.blockSignals(False)
+        self.fixSize()
+
+    def fill_uncertparams(self, row):
+        ''' Fill uncertainty parameters for the given row '''
         # Signals should already be blocked
-        compitem.takeChildren()  # clear
-        distitem = TreeRow(compitem, uncobj, 'Distribution')
+        uncert = self.item(row, self.COL_VALUE).data(gui_widgets.ROLE_UNCERT)
         cmbdist = gui_widgets.ComboNoWheel()
         cmbdist.addItems(gui_common.settings.getDistributions())
-        cmbdist.setCurrentIndex(cmbdist.findText(uncobj.distname))
+        cmbdist.setCurrentIndex(cmbdist.findText(uncert.distname))
         if cmbdist.currentText() == '':
-            cmbdist.addItem(uncobj.distname)
+            cmbdist.addItem(uncert.distname)
             cmbdist.setCurrentIndex(cmbdist.count()-1)
-        compitem.treeWidget().setItemWidget(distitem, self.COL_VALUE, cmbdist)
-        TreeRow(compitem, uncobj, 'units', format(uncobj.units, '~P'))
-        degf = uncobj.degf
-        TreeRow(compitem, uncobj, 'deg. freedom', 'inf' if not np.isfinite(degf) else format(degf, '.2f'))
-        if uncobj.distname in ['normal', 't']:
-            if 'conf' in uncobj.args:
-                conf = float(uncobj.args['conf'])
+        self.setCellWidget(row, self.COL_DIST, cmbdist)
+        self.setItem(row, self.COL_UNITS, gui_widgets.EditableTableItem(format(uncert.units, '~P')))
+        degf = uncert.degf
+        self.setItem(row, self.COL_DEGF, gui_widgets.EditableTableItem('inf' if not np.isfinite(degf) else format(degf, '.1f')))
+        self.setItem(row, self.COL_DESC, gui_widgets.EditableTableItem(uncert.desc))
+        self.setItem(row, self.COL_STDUNC, gui_widgets.ReadOnlyTableItem('± {:.2g~P}'.format(uncert.std())))
+        if uncert.distname in ['normal', 't']:
+            if 'conf' in uncert.args:
+                conf = float(uncert.args['conf'])
                 k = ttable.t_factor(conf, degf)
             else:
-                k = float(uncobj.args.get('k', 2))
+                k = float(uncert.args.get('k', 1))
                 conf = ttable.confidence(k, degf)
-            TreeRow(compitem, uncobj, 'k', '{:.2f}'.format(k))
-            TreeRow(compitem, uncobj, 'confidence', '{:.2f}%'.format(conf*100))
-            TreeRow(compitem, uncobj, 'uncertainty', '{}'.format(uncobj.args.get('unc', k*uncobj.args.get('std', 1))))
-        elif uncobj.distname == 'histogram':
-            pass  # No extra widgets
+            uncstr = uncert.args.get('unc', k*float(uncert.args.get('std', 1)))  # Could be float or string
+            with suppress(ValueError):
+                uncstr = '{:.5g}'.format(uncstr)
+
+            self.setItem(row, self.COL_PARAM1, gui_widgets.EditableTableItem(uncstr))
+            self.setItem(row, self.COL_PARAM2, gui_widgets.EditableTableItem('{:.2f}'.format(k)))
+            self.setItem(row, self.COL_PARAM3, gui_widgets.EditableTableItem('{:.2f}%'.format(float(conf)*100)))
+            self.setItem(row, self.COL_PARAM4, gui_widgets.EditableTableItem(''))
+        elif uncert.distname == 'histogram':
+            for col in range(4):
+                self.setItem(row, self.COL_PARAM1+col, gui_widgets.EditableTableItem(''))
         else:
-            for row, arg in enumerate(sorted(uncobj.distribution.argnames)):
-                TreeRow(compitem, uncobj, arg, format(uncobj.args.get(arg, 1)))
-        cmbdist.currentIndexChanged.connect(lambda y, item=compitem, obj=uncobj: self.change_dist(item, obj))
+            for col, arg in enumerate(sorted(uncert.distribution.argnames)):
+                self.setItem(row, self.COL_PARAM1+col, gui_widgets.EditableTableItem(format(uncert.args.get(arg, 1))))
+            for col in range(len(uncert.distribution.argnames), 4):
+                self.setItem(row, self.COL_PARAM1+col, gui_widgets.EditableTableItem(''))
+
+        item = self.item(row, self.COL_VALUE)
+        cmbdist.currentIndexChanged.connect(lambda y, item=item: self.change_dist(item))
+
+    def change_dist(self, item):
+        ''' Distribution type in combobox was changed. item is the COL_VALUE item with
+            data() of uncertainty component.
+        '''
+        self.blockSignals(True)
+        row = item.row()
+        uncert = item.data(gui_widgets.ROLE_UNCERT)
+        distname = self.cellWidget(row, self.COL_DIST).currentText()   # Dist combo is always first child
+        uncert.set_dist(distname)
+        self.fill_uncertparams(row)
+        self.rowchange(row, self.COL_DIST)  # To update header row
+        self.blockSignals(False)
+        self.updated.emit(uncert)
+
+    def rowchange(self, row, column, oldrow=None, oldcolumn=None):
+        ''' Selected row was changed - update header labels and refresh the preview plot '''
+        if row is not None:
+            uncert = None
+            with suppress(AttributeError):
+                uncert = self.item(row, self.COL_VALUE).data(gui_widgets.ROLE_UNCERT)
+                if uncert.distname in ['normal', 't']:
+                    arg = ['Uncertainty', 'k', 'Confidence']
+                else:
+                    arg = uncert.distribution.argnames.copy()
+                    assert len(arg) <= 4
+                for i in range(len(arg), 4):
+                    arg.append('')
+
+                self.setHorizontalHeaderLabels(['Variable', 'Value', 'Units', 'Distribution'] + arg + ['Degrees\nFreedom', 'Description', 'Standard\nUncertainty'])
+        else:  # Unselected
+            uncert = None
+            self.setHorizontalHeaderLabels(['Variable', 'Value', 'Units', 'Distribution', 'Param 1', 'Param 2', 'Param 3', 'Param 4', 'Degrees\nFreedom', 'Description', 'Standard\nUncertainty'])
+        self.updated.emit(uncert)
+
+    def itemchange(self, item):
+        ''' An item in the table was edited. Validate the input and update the model. '''
+        COLOR = {True: gui_common.COLOR_OK, False: gui_common.COLOR_INVALID}
+        self.blockSignals(True)
+        column = self.column(item)
+        row = self.row(item)
+        inpt = self.item(row, self.COL_VALUE).data(gui_widgets.ROLE_VARIABLE)
+        uncert = self.item(row, self.COL_VALUE).data(gui_widgets.ROLE_UNCERT)
+        value = item.text().strip()
+        obj = uncert if uncert is not None else inpt
+
+        status = True
+        if column == self.COL_VALUE:
+            if item.data(gui_widgets.ROLE_ORIGDATA) == '':
+                status = False
+            elif uncert is not None:
+                uncert.name = item.data(gui_widgets.ROLE_ORIGDATA)
+            else:
+                status = inpt.set_nom(item.data(gui_widgets.ROLE_ORIGDATA))
+
+        elif column == self.COL_UNITS:
+            status = obj.set_units(value)
+            if status:
+                item.setText(obj.get_unitstr())
+
+        elif column == self.COL_DESC:
+            obj.desc = value
+
+        elif column == self.COL_PARAM1 and uncert.distname in ['normal', 't']:
+            uncert.args['unc'] = value
+            uncert.args.pop('std', None)
+            if 'k' not in uncert.args:
+                uncert.args['k'] = self.item(row, self.COL_PARAM2).text()
+
+        elif column in [self.COL_DEGF, self.COL_PARAM1, self.COL_PARAM2, self.COL_PARAM3] and uncert.distname in ['normal', 't']:
+            # For normal or t distributions where conf/k need extra processing
+            value = value.strip('%')  # In case conf was entered with percent symbol
+            try:
+                value = float(value)
+            except ValueError:
+                status = False
+            else:
+                if column == self.COL_DEGF:
+                    uncert.degf = value
+                    status = uncert.updateparams()
+                    if 'k' in uncert.args:
+                        self.item(row, self.COL_PARAM3).setText('{:.2f}%'.format(ttable.confidence(float(uncert.args['k']), uncert.degf)*100))
+                    elif 'conf' in uncert.args:
+                        self.item(row, self.COL_PARAM2).setText('{:.2f}'.format(ttable.t_factor(float(uncert.args['conf']), uncert.degf)))
+
+                elif column == self.COL_PARAM2:  # k
+                    uncert.args['k'] = value
+                    uncert.args.pop('conf', None)
+                    self.item(row, self.COL_PARAM3).setText('{:.2f}%'.format(ttable.confidence(value, uncert.degf)*100))
+
+                elif column == self.COL_PARAM3:  # confidence
+                    uncert.args['conf'] = value/100   # Assume entry in percent
+                    uncert.args.pop('k', None)
+                    self.item(row, self.COL_PARAM2).setText('{:.2f}'.format(ttable.t_factor(value/100, uncert.degf)))
+                    self.item(row, self.COL_PARAM3).setText('{:.2f}%'.format(value))
+
+        elif column in [self.COL_DEGF]:
+            try:
+                value = float(value)
+            except ValueError:
+                status = False
+            else:
+                uncert.degf = value
+
+        else:
+            paramidx = column - self.COL_PARAM1
+            if paramidx < len(uncert.distribution.argnames):  # When user fills in column that's not used
+                paramname = uncert.distribution.argnames[paramidx]
+                uncert.args[paramname] = value
+
+        if uncert is not None:
+            status = status and uncert.updateparams()
+
+        item.setBackground(COLOR[status])
+        if not status:
+            self.clearSelection()
+
+        item.valid = status
+        self.blockSignals(False)
+        if status:
+            self.trickle_units()
+            self.updated.emit(uncert)
+
+    def trickle_units(self):
+        ''' Trickle up/down changes in units and standard uncertainty '''
+        self.blockSignals(True)
+        for row in range(self.rowCount()):
+            item = self.item(row, self.COL_VALUE)
+            if item:
+                uncert = item.data(gui_widgets.ROLE_UNCERT)
+                inpt = item.data(gui_widgets.ROLE_VARIABLE)
+                if uncert is None:  # Variable
+                    degf = inpt.degf()
+                    self.item(row, self.COL_VALUE).setExpr(str(inpt.nom))
+                    self.item(row, self.COL_STDUNC).setText('± {:.2g~P}'.format(inpt.stdunc()))
+                    self.item(row, self.COL_DEGF).setText('inf' if not np.isfinite(degf) else format(degf, '.1f'))
+                else:  # Uncertainty
+                    self.setItem(row, self.COL_DEGF, gui_widgets.EditableTableItem('{:.1f}'.format(uncert.degf)))
+                    self.setItem(row, self.COL_UNITS, gui_widgets.EditableTableItem(format(uncert.units, '~P')))
+                    self.item(row, self.COL_STDUNC).setText('± {:.2g~P}'.format(uncert.std()))
+        self.blockSignals(False)
+
+    def contextMenuEvent(self, event):
+        ''' Show right-click context menu '''
+        item = self.itemAt(event.pos())
+        menu = QtWidgets.QMenu()
+
+        if item:
+            row = self.row(item)
+            uncert = None
+            with suppress(AttributeError):
+                uncert = self.item(row, self.COL_VALUE).data(gui_widgets.ROLE_UNCERT)
+
+            if uncert is None:  # Variable row
+                inpt = self.item(row, self.COL_VALUE).data(gui_widgets.ROLE_VARIABLE)
+                add = menu.addAction('Add uncertainty component')
+                add.triggered.connect(lambda x, inpt=inpt, item=item: self.add_comp(inpt, row))
+
+            else:  # Uncert Row
+                inpt = self.item(row, self.COL_VALUE).data(gui_widgets.ROLE_VARIABLE)
+                add = menu.addAction('Add uncertainty component')
+                add.triggered.connect(lambda x, inpt=inpt, row=row: self.add_comp(inpt, row))
+                rem = menu.addAction('Remove uncertainty component')
+                rem.triggered.connect(lambda x, uncert=uncert, row=row: self.rem_comp(uncert, row))
+                imp = menu.addAction('Import distribution from...')
+                imp.triggered.connect(self.import_dist)
+                hlp = menu.addAction('Distribution help...')
+                def helppopup():
+                    dlg = PopupHelp(uncert.distribution.helpstr())
+                    dlg.exec_()
+                hlp.triggered.connect(helppopup)
+            menu.exec(event.globalPos())
 
     def import_dist(self):
         ''' Import a distribution from somewhere else in the project '''
-        dlg = page_dataimport.DistributionSelectWidget(singlecol=True, project=self.parent().unccalc.project)
+        dlg = page_dataimport.DistributionSelectWidget(singlecol=True, project=self.unccalc.project)
         ok = dlg.exec_()
         if ok:
             distargs = dlg.get_dist()
@@ -544,184 +769,137 @@ class InputTreeWidget(QtWidgets.QTreeWidget):
                 distargs['histogram'] = (distargs['histogram'][0], np.array(distargs['histogram'][1])-nominal)
 
             selitem = self.currentItem()
-            uncobj = selitem.obj
-
-            # Get treeitem containing uncertainty name
-            if selitem.childCount() > 0:
-                topitem = selitem
-            else:
-                topitem = selitem.parent()
-
-            inpt = topitem.parent().obj  # Up to "Uncertainties" treerow
+            row = selitem.row()
+            uncert = self.item(row, self.COL_VALUE).data(gui_widgets.ROLE_UNCERT)
+            inpt = self.item(row, self.COL_VALUE).data(gui_widgets.ROLE_VARIABLE)
             inpt.set_nom(nominal)
-            uncobj.nom = nominal
-            uncobj.args = distargs
-            uncobj.set_dist(distname)
-            uncobj.updateparams()
-
+            uncert.nom = nominal
+            uncert.args = distargs
+            uncert.set_dist(distname)
+            uncert.updateparams()
             self.blockSignals(True)
-            self.fill_uncertparams(topitem, uncobj)
-            self.update_text()
-            nomitem = topitem.parent().parent().child(0)   # Get 'Nominal' tree item
-            assert nomitem.text(self.COL_NAME) == 'Nominal'  # Make sure previous line works and things don't change
-            nomitem.setText(self.COL_VALUE, format(inpt.nom, '.5g'))
+            self.fill_uncertparams(row)
+            self.trickle_units()
             self.blockSignals(False)
-            self.replotdist.emit(uncobj)
+            self.updated.emit(uncert)
 
-    def change_dist(self, compitem, uncobj):
-        ''' Distribution type in combobox was changed '''
-        self.blockSignals(True)
-        distname = self.itemWidget(compitem.child(0), self.COL_VALUE).currentText()   # Dist combo is always first child
-        uncobj.set_dist(distname)
-        self.fill_uncertparams(compitem, uncobj)
-        self.update_text()
-        self.blockSignals(False)
-        self.replotdist.emit(uncobj)
-
-    def add_comp(self, inpt, uncitem):
+    def add_comp(self, inpt, row):
         ''' Add a blank uncertainty component '''
         self.blockSignals(True)
-        name = 'u{}({})'.format(len(inpt.uncerts)+1, inpt.name)
-        unc = inpt.add_comp(name)
+        i = 1
+        name = 'u{}({})'.format(i, inpt.name)
+        while name in [u.name for u in inpt.uncerts]:
+            i += 1
+            name = 'u{}({})'.format(i, inpt.name)
+        unc = inpt.add_comp(name, unc=1.0, k=2)
 
-        compitem = TreeRowTex(uncitem, unc, unc.get_nameunicode())
-        font = compitem.font(self.COL_NAME)
-        font.setBold(True)
-        compitem.setFont(self.COL_NAME, font)
-        rembutton = TreeButton(gui_common.CHR_ENDASH)
-        rembutton.clicked.connect(lambda x, item=compitem, unc=unc: self.rem_comp(item, unc))
-        compitem.treeWidget().setItemWidget(compitem, self.COL_BTN, rembutton)
-        self.fill_uncertparams(compitem, unc)
+        item = TableItemTex(unc.name)
+        item.setData(gui_widgets.ROLE_UNCERT, unc)
+        item.setData(gui_widgets.ROLE_VARIABLE, inpt)
+        self.insertRow(row+1)
+        self.setItem(row+1, self.COL_VALUE, item)
+        self.fill_uncertparams(row+1)
         self.blockSignals(False)
-        self.update_text()
+        self.trickle_units()
+        self.updated.emit(unc)
+        self.fixSize()
 
-    def rem_comp(self, compitem, unc):
+    def rem_comp(self, unc, row):
         ''' Remove selected uncertainty component '''
-        inptitem = compitem.parent()
-        inpt = inptitem.obj
+        inpt = self.item(row, self.COL_VALUE).data(gui_widgets.ROLE_VARIABLE)
         idx = inpt.uncerts.index(unc)
         inpt.rem_comp(idx)
-        inptitem.removeChild(compitem)
-        self.update_text()
-
-    def itemchange(self, item, column):
-        ''' An item in the table was edited. Validate the input and update the Uncert model. '''
-        COLOR = {True: gui_common.COLOR_TEXT_OK, False: gui_common.COLOR_INVALID}
-        self.blockSignals(True)
-
-        obj = item.obj  # Either InputVar or InputUncert
-        param = item.text(self.COL_NAME)
-        value = item.text(self.COL_VALUE).strip()
-        status = True
-        if param == 'Nominal' and isinstance(obj, uc.InputVar):
-            status = obj.set_nom(value)
-            if status:
-                item.setText(self.COL_VALUE, format(obj.nom, '.5g'))
-
-        elif param.lower() == 'units':
-            status = obj.set_units(value)
-            if status:
-                item.setText(self.COL_VALUE, obj.get_unitstr())
-
-        elif param == 'Description':
-            obj.desc = value
-
-        elif column == self.COL_NAME and isinstance(obj, uc.InputUncert):
-            obj.name = item.data(self.COL_NAME, gui_widgets.ROLE_ORIGDATA)
-
-        elif param == 'uncertainty':
-            obj.args['unc'] = value
-            obj.args.pop('std', None)
-            if 'k' not in obj.args:
-                kitem = [item.parent().child(i) for i in range(item.parent().childCount()) if item.parent().child(i).text(self.COL_NAME) == 'k'][0]
-                obj.args['k'] = kitem.text(self.COL_VALUE)
-
-        elif param in ['k', 'confidence', 'deg. freedom']:
-            # Must be floating points
-            value = value.strip('%')  # In case conf was entered with percent symbol
-            try:
-                value = float(value)
-            except ValueError:
-                status = False
-            else:
-                if param == 'deg. freedom':
-                    obj.degf = value
-                    status = obj.updateparams()
-                    kitems = [item.parent().child(i) for i in range(item.parent().childCount()) if item.parent().child(i).text(self.COL_NAME) == 'k']
-                    if len(kitems) > 0:
-                        if 'k' in obj.args:
-                            confitem = [item.parent().child(i) for i in range(item.parent().childCount()) if item.parent().child(i).text(self.COL_NAME) == 'confidence'][0]
-                            confitem.setText(self.COL_VALUE, '{:.2f}%'.format(ttable.confidence(float(obj.args['k']), obj.degf)*100))
-                        elif 'conf' in obj.args:
-                            kitem = [item.parent().child(i) for i in range(item.parent().childCount()) if item.parent().child(i).text(self.COL_NAME) == 'k'][0]
-                            kitem.setText(self.COL_VALUE, '{:.2f}'.format(ttable.t_factor(float(obj.args['conf']), obj.degf)))
-
-                elif param == 'k':
-                    obj.args['k'] = value
-                    obj.args.pop('conf', None)
-                    confitem = [item.parent().child(i) for i in range(item.parent().childCount()) if item.parent().child(i).text(self.COL_NAME) == 'confidence'][0]
-                    confitem.setText(self.COL_VALUE, '{:.2f}%'.format(ttable.confidence(value, obj.degf)*100))
-
-                elif param == 'confidence':
-                    obj.args['conf'] = value/100   # Assume entry in percent
-                    obj.args.pop('k', None)
-                    kitem = [item.parent().child(i) for i in range(item.parent().childCount()) if item.parent().child(i).text(self.COL_NAME) == 'k'][0]
-                    kitem.setText(self.COL_VALUE, '{:.2f}'.format(ttable.t_factor(value/100, obj.degf)))
-                    item.setText(self.COL_VALUE, '{:.2f}%'.format(value))
-        else:
-            obj.args[param] = value
-
-        try:
-            status = status and obj.updateparams()
-        except AttributeError:
-            pass
-
-        item.setForeground(self.COL_VALUE, COLOR[status])
-        self.blockSignals(False)
-        if not status:
-            self.clearSelection()
-        else:
-            self.update_text()
-            if isinstance(obj, uc.InputUncert):
-                self.replotdist.emit(obj)
-
-    def update_text(self):
-        ''' Uncertainty table changed downstream. Update the descriptive combined uncertainty column for each row.
-            Also update units if they changed automatically.
-        '''
-        self.blockSignals(True)
-        it = QtWidgets.QTreeWidgetItemIterator(self)
-        while it.value():
-            item = it.value()
-            if isinstance(item.obj, uc.InputVar) and item.parent() is None:
-                # Top level variable
-                item.setText(self.COL_TEXT, '{:.5g~P} ± {:.2g~P}'.format(item.obj.mean(), item.obj.stdunc()))
-                item.setText(self.COL_DEGF, '{:.1f}'.format(item.obj.degf()))
-            elif isinstance(item.obj, uc.InputUncert) and item.childCount() > 0:
-                # Uncert Component top
-                item.setText(self.COL_TEXT, '± {:.2g~P}'.format(item.obj.std()))
-                item.setText(self.COL_DEGF, '{:.1f}'.format(item.obj.degf))
-            elif item.text(self.COL_NAME) == 'units':
-                item.setText(self.COL_VALUE, format(item.obj.units, '~P'))
-            it += 1
-
-        self.blockSignals(False)
+        self.removeRow(row)
+        self.trickle_units()
+        self.updated.emit(None)
+        self.fixSize()
 
     def isValid(self):
         ''' Return True if all entries are valid (not red) '''
-        it = QtWidgets.QTreeWidgetItemIterator(self)
-        while it.value():
-            item = it.value()
-            if not item.valid:
-                return False
-            it += 1
+        for row in range(self.rowCount()):
+            for col in range(self.columnCount()):
+                with suppress(AttributeError):
+                    if not self.item(row, col).valid:
+                        return False
         return True
+
+    def moveCursor(self, cursorAction, modifiers):
+        ''' Override cursor so tab works as expected '''
+        assert self.COL_CNT == 11   # If column defs change, need to update this tab-key behavior
+        assert self.COL_STDUNC == 10
+        assert self.COL_DIST == 3
+
+        index = self.currentIndex()
+        if index.isValid():
+            uncert = index.sibling(index.row(), self.COL_VALUE).data(gui_widgets.ROLE_UNCERT)
+            if cursorAction == QtWidgets.QAbstractItemView.MoveNext:
+                if not uncert:  # Variable row
+                    if index.column() == self.COL_UNITS:
+                        return index.sibling(index.row(), self.COL_DESC)
+                    elif index.column() == self.COL_DESC:
+                        return index.sibling(index.row()+1, self.COL_VALUE)  # Jump to value on either variable or uncert row
+                    else:
+                        return index.sibling(index.row(), index.column()+1)
+                else:  # Uncertainty row
+                    if index.column() == self.COL_DESC:
+                        return index.sibling(index.row()+1, self.COL_VALUE)
+                    elif index.column() == self.COL_UNITS:
+                        return index.sibling(index.row(), self.COL_PARAM1)  # Skip Distribution combobox
+                    else:
+                        return index.sibling(index.row(), index.column()+1)
+
+            elif cursorAction == QtWidgets.QAbstractItemView.MovePrevious:
+                if index.column() == self.COL_VALUE:
+                    prevuncert = index.sibling(index.row()-1, self.COL_VALUE).data(gui_widgets.ROLE_UNCERT)
+                    if not prevuncert:  # Going back to variable row
+                        return index.sibling(index.row()-1, self.COL_DESC)
+                    else:  # Going back to another uncertainty row
+                        return index.sibling(index.row()-1, self.COL_DESC)
+                elif not uncert and index.column() == self.COL_DESC:  # Variable row jump desc-> units
+                    return index.sibling(index.row(), self.COL_UNITS)
+                elif index.column() == self.COL_PARAM1:
+                    return index.sibling(index.row(), self.COL_UNITS)  # Skip distribution combo
+                else:
+                    return index.sibling(index.row(), index.column()-1)
+
+        return super().moveCursor(cursorAction, modifiers)
+
+
+class UncertPreview(QtWidgets.QWidget):
+    ''' Plot of uncertainty component PDF '''
+    def __init__(self):
+        super().__init__()
+        self.setFixedSize(300, 250)
+        self.figure = Figure()
+        self.canvas = FigureCanvas(self.figure)
+        self.component = None
+
+        layout = QtWidgets.QVBoxLayout()
+        layout.addWidget(self.canvas)
+        layout.setContentsMargins(0, 0, 0, 0)
+        self.setLayout(layout)
+
+    def replot(self, comp=None):
+        ''' Update the plot with PDF of InptUncert comp '''
+        if comp is not None:
+            self.component = comp
+
+        if self.component is not None:
+            self.figure.clf()
+            ax = self.figure.add_subplot(1, 1, 1)
+            x, y = self.component.pdf()
+            ax.plot(x.magnitude, y)
+            ax.text(.02, .9, '${}${}'.format(self.component.get_latex(), report.Unit(self.component.parentunits, bracket=True).latex()),
+                    transform=ax.transAxes)
+            ax.yaxis.set_ticks([])
+            self.figure.tight_layout()
+            self.canvas.draw_idle()
 
 
 class PopupHelp(QtWidgets.QDialog):
     ''' Show a floating dialog window with a text message '''
     def __init__(self, text):
-        super(PopupHelp, self).__init__()
+        super().__init__()
         gui_widgets.centerWindow(self, 600, 400)
         self.setModal(False)
         self.text = QtWidgets.QTextEdit()
@@ -735,161 +913,152 @@ class PopupHelp(QtWidgets.QDialog):
         self.setLayout(layout)
 
 
-class CorrelationTableWidget(QtWidgets.QWidget):
+class CorrelationTableWidget(QtWidgets.QTableWidget):
     ''' Widget for setting correlations between inputs '''
-    cellChanged = QtCore.pyqtSignal(int, int)
+    resizerows = QtCore.pyqtSignal()
 
     def __init__(self):
-        super(CorrelationTableWidget, self).__init__()
-        self.table = QtWidgets.QTableWidget()
-        self.label = QtWidgets.QLabel('Correlations:')
-        self.btnadd = QtWidgets.QToolButton()
-        self.btnrem = QtWidgets.QToolButton()
-        self.btnadd.setText('+')
-        self.btnadd.setToolTip('Add correlation')
-        self.btnrem.setText(gui_common.CHR_ENDASH)
-        self.btnrem.setToolTip('Remove correlation')
-        self.btnadd.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
-        self.btnrem.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
-        self.btnadd.clicked.connect(self.addRow)
-        self.btnrem.clicked.connect(self.remRow)
-        self.table.cellChanged.connect(self.cellChanged)
+        super().__init__()
         self.varnames = []
-        self.reset()
+        self.clear()
+        self.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        self.verticalHeader().hide()
+        self.setSizePolicy(QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Minimum)
+        self.setStyleSheet(TABLESTYLE)
+        self.fixSize()
 
-        layout = QtWidgets.QVBoxLayout()
-        hlayout = QtWidgets.QHBoxLayout()
-        hlayout.addWidget(self.label)
-        hlayout.addWidget(self.btnadd)
-        hlayout.addWidget(self.btnrem)
-        layout.addLayout(hlayout)
-        layout.addWidget(self.table)
-        self.setLayout(layout)
-
-    def reset(self):
+    def clear(self):
         ''' Clear and reset the table '''
-        self.table.setColumnCount(3)
-        self.table.setRowCount(0)
-        self.table.setHorizontalHeaderLabels(['Input 1', 'Input 2', 'Correlation\nCoefficient'])
-        self.table.verticalHeader().hide()
+        super().clear()
+        self.setColumnCount(3)
+        self.setRowCount(0)
+        self.setHorizontalHeaderLabels(['Input 1', 'Input 2', 'Correlation Coefficient'])
+        self.setColumnWidth(0, 100)
+        self.setColumnWidth(1, 100)
+        self.setColumnWidth(2, 200)
         self.varnames = []
-        self.table.resizeColumnsToContents()
+        self.fixSize()
+
+    def fixSize(self):
+        ''' Adjust the size of the table to fit the number of rows '''
+        height = max(self.horizontalHeader().height()+20, self.verticalHeader().length() + self.horizontalHeader().height())
+        self.setFixedHeight(height)
+        self.resizerows.emit()
 
     def setVarNames(self, names):
         ''' Set names of available variables '''
-        self.table.blockSignals(True)
+        self.blockSignals(True)
         self.varnames = names
-        for row in range(self.table.rowCount()):
-            prev1 = self.table.cellWidget(row, 0).currentText()
-            prev2 = self.table.cellWidget(row, 1).currentText()
-            self.table.cellWidget(row, 0).clear()
-            self.table.cellWidget(row, 1).clear()
-            self.table.cellWidget(row, 0).addItems(names)
-            self.table.cellWidget(row, 1).addItems(names)
-            self.table.cellWidget(row, 0).setCurrentIndex(self.table.cellWidget(row, 0).findText(prev1))
-            self.table.cellWidget(row, 1).setCurrentIndex(self.table.cellWidget(row, 1).findText(prev2))
-        self.table.blockSignals(False)
+        for row in range(self.rowCount()):
+            prev1 = self.cellWidget(row, 0).currentText()
+            prev2 = self.cellWidget(row, 1).currentText()
+            self.cellWidget(row, 0).clear()
+            self.cellWidget(row, 1).clear()
+            self.cellWidget(row, 0).addItems(names)
+            self.cellWidget(row, 1).addItems(names)
+            self.cellWidget(row, 0).setCurrentIndex(self.cellWidget(row, 0).findText(prev1))
+            self.cellWidget(row, 1).setCurrentIndex(self.cellWidget(row, 1).findText(prev2))
+        self.blockSignals(False)
 
     def remRow(self):
         ''' Remove selected row from correlation table '''
-        self.table.removeRow(self.table.currentRow())
+        self.removeRow(self.currentRow())
         self.cellChanged.emit(0, 0)
+        self.fixSize()
 
     def addRow(self):
         ''' Add a row to the table. '''
-        row = self.table.rowCount()
-        self.table.blockSignals(True)
-        self.table.insertRow(row)
+        row = self.rowCount()
+        self.blockSignals(True)
+        self.insertRow(row)
         v1 = QtWidgets.QComboBox()
         v1.addItems(self.varnames)
-        v1.setMaximumWidth(50)
         v2 = QtWidgets.QComboBox()
-        v2.setMaximumWidth(50)
         v2.addItems(self.varnames)
-        self.table.setCellWidget(row, 0, v1)
-        self.table.setCellWidget(row, 1, v2)
-        val = QtWidgets.QTableWidgetItem('0')
-        val.setFlags(QtCore.Qt.ItemIsEditable | QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsSelectable)
-        self.table.setItem(row, 2, val)
+        self.setCellWidget(row, 0, v1)
+        self.setCellWidget(row, 1, v2)
+        val = gui_widgets.EditableTableItem('0')
+        self.setItem(row, 2, val)
         v1.currentIndexChanged.connect(lambda idx, r=row, c=0: self.cmbchange(r, c))
         v2.currentIndexChanged.connect(lambda idx, r=row, c=1: self.cmbchange(r, c))
-        self.table.blockSignals(False)
+        self.blockSignals(False)
+        self.fixSize()
 
     def setRow(self, row, v1, v2, cor):
         ''' Set values to an existing row '''
-        self.table.cellWidget(row, 0).setCurrentIndex(self.table.cellWidget(row, 0).findText(v1))
-        self.table.cellWidget(row, 1).setCurrentIndex(self.table.cellWidget(row, 1).findText(v2))
-        self.table.item(row, 2).setText(str(cor))
+        self.cellWidget(row, 0).setCurrentIndex(self.cellWidget(row, 0).findText(v1))
+        self.cellWidget(row, 1).setCurrentIndex(self.cellWidget(row, 1).findText(v2))
+        self.item(row, 2).setText(format(cor, '.4f'))
 
     def getRow(self, row):
         ''' Get values for one row in the table. Returns (input1, input2, corrleation) '''
-        v1 = self.table.cellWidget(row, 0).currentText()
-        v2 = self.table.cellWidget(row, 1).currentText()
-        val = self.table.item(row, 2).text()
+        v1 = self.cellWidget(row, 0).currentText()
+        v2 = self.cellWidget(row, 1).currentText()
+        val = self.item(row, 2).text()
         return v1, v2, val
 
     def cmbchange(self, row, col):
         ''' Combobox (input name) changed. '''
         self.cellChanged.emit(row, col)
 
+    def contextMenuEvent(self, event):
+        ''' Right-click menu '''
+        row = self.currentRow()
+        menu = QtWidgets.QMenu()
+        add = menu.addAction('Add correlation coefficient')
+        add.triggered.connect(self.addRow)
+        if row > -1:
+            rem = menu.addAction('Remove correlation coefficient')
+            rem.triggered.connect(self.remRow)
+        menu.exec(event.globalPos())
 
-class SettingsWidget(QtWidgets.QWidget):
+
+class SettingsWidget(QtWidgets.QTableWidget):
     ''' Widget for Monte-Carlo settings '''
-    def __init__(self, parent=None):
-        super(SettingsWidget, self).__init__(parent)
-        self.txtSamples = QtWidgets.QLineEdit(str(gui_common.settings.getSamples()))
-        self.txtSamples.setValidator(QtGui.QIntValidator(0, 1E8))
-        self.txtSamples.validator().setBottom(0)
-        self.txtSeed = QtWidgets.QLineEdit(str(gui_common.settings.getRandomSeed()))
-        layout = QtWidgets.QFormLayout()
-        layout.addRow('Monte Carlo Samples', self.txtSamples)
-        layout.addRow('Random Seed', self.txtSeed)
-        self.setLayout(layout)
+    COL_NAME = 0
+    COL_VALUE = 1
+    ROW_SAMPLES = 0
+    ROW_SEED = 1
+    ROW_CNT = 2
 
-
-class DistInfo(QtWidgets.QWidget):
-    ''' Widget for displaying more info about distribution '''
-    import_dist = QtCore.pyqtSignal()
+    changed = QtCore.pyqtSignal(str, str)
 
     def __init__(self, parent=None):
-        super(DistInfo, self).__init__(parent=parent)
-        self.distname = QtWidgets.QLabel('Probability Distribution for ')
-        self.distfig = Figure()
-        self.distcanvas = FigureCanvas(self.distfig)
-        self.btnImport = QtWidgets.QToolButton()
-        self.btnImport.setIcon(gui_common.load_icon('loaddist'))
-        self.btnImport.setToolTip('Import Distribution From...')
-        self.btnHelp = QtWidgets.QToolButton()
-        self.btnHelp.setIcon(gui_common.load_icon('help'))
-        self.btnHelp.setToolTip('Distribution Parameter Help')
-        blayout = QtWidgets.QHBoxLayout()
-        blayout.addWidget(self.distname)
-        blayout.addStretch()
-        blayout.addWidget(self.btnImport)
-        blayout.addWidget(self.btnHelp)
-        layout = QtWidgets.QVBoxLayout()
-        layout.addLayout(blayout)
-        layout.addWidget(self.distcanvas)
-        self.setLayout(layout)
-        self.comp = None
-        self.btnHelp.clicked.connect(self.showhelp)
-        self.btnImport.clicked.connect(self.import_dist)
+        super().__init__(parent)
+        self.setColumnCount(2)
+        self.setRowCount(self.ROW_CNT)
+        self.setHorizontalHeaderLabels(['Setting', 'Value'])
+        self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        self.setStyleSheet(TABLESTYLE)
+        self.verticalHeader().hide()
+        self.setSizePolicy(QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Minimum)
 
-    def update_info(self, comp):
-        self.comp = comp
-        self.distfig.clf()
-        ax = self.distfig.add_subplot(1, 1, 1)
-        x, y = comp.pdf()
-        ax.plot(x, y)
-        ax.set_xlabel('{}{}'.format(comp.name, output.formatunittex(comp.parentunits, bracket=True)))
-        self.distfig.tight_layout()
-        self.distcanvas.draw_idle()
-        self.distname.setText('Probability Distribution for {}'.format(comp.get_nameunicode()))
+        self.setItem(self.ROW_SAMPLES, self.COL_NAME, gui_widgets.ReadOnlyTableItem('Monte Carlo Samples'))
+        self.setItem(self.ROW_SAMPLES, self.COL_VALUE, gui_widgets.EditableTableItem(str(gui_common.settings.getSamples())))
+        self.setItem(self.ROW_SEED, self.COL_NAME, gui_widgets.ReadOnlyTableItem('Random Seed'))
+        self.setItem(self.ROW_SEED, self.COL_VALUE, gui_widgets.EditableTableItem(str(gui_common.settings.getRandomSeed())))
+        self.resizeColumnsToContents()
+        self.itemChanged.connect(self.valuechange)
 
-    def showhelp(self):
-        ''' Show description of distribution parameters '''
-        dlg = PopupHelp(self.comp.distribution.helpstr())
-        dlg.exec_()
+        height = self.verticalHeader().length() + self.horizontalHeader().height()
+        self.setFixedHeight(height)
+
+    def valuechange(self, item):
+        ''' A setting value was changed. '''
+        row = self.row(item)
+        name = self.item(row, self.COL_NAME).text()
+        value = item.text()
+        self.changed.emit(name, value)
+
+    def setvalue(self, name, value):
+        ''' Change the value of a setting '''
+        item = self.findItems(name, QtCore.Qt.MatchExactly)
+        assert len(item) == 1
+        row = item[0].row()
+        self.item(row, self.COL_VALUE).setText(str(value))
 
 
 class PageInput(QtWidgets.QWidget):
@@ -897,69 +1066,52 @@ class PageInput(QtWidgets.QWidget):
 
     ''' Page for setting up input parameters '''
     def __init__(self, unccalc, parent=None):
-        super(PageInput, self).__init__(parent)
+        super().__init__(parent)
         self.unccalc = unccalc
         # Set up widgets
-        self.btnAdd = QtWidgets.QToolButton()
-        self.btnAdd.setText('+')
-        self.btnAdd.setToolTip('Add model equation')
-        self.btnRem = QtWidgets.QToolButton()
-        self.btnRem.setText(gui_common.CHR_ENDASH)
-        self.btnRem.setToolTip('Remove model equation')
-        self.btnAdd.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
-        self.btnRem.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
         self.funclist = FunctionTableWidget()
-        self.inputtable = InputTreeWidget()
+        self.meastable = MeasTableWidget(unccalc)
+        self.uncpreview = UncertPreview()
         self.corrtable = CorrelationTableWidget()
-        self.distinfo = DistInfo()
         self.btnCalc = QtWidgets.QPushButton('Calculate')
         self.description = QtWidgets.QPlainTextEdit()
-        self.MCsettings = SettingsWidget()
+        self.settings = SettingsWidget()
 
-        self.tab = QtWidgets.QTabWidget()
-        self.tab.addTab(self.description, 'Notes')
-        self.tab.addTab(self.corrtable, 'Correlations')
-        self.tab.addTab(self.MCsettings, 'Settings')
-        self.tab.setFixedWidth(400)
-
-        self.btnAdd.clicked.connect(self.funclist.addRow)
-        self.btnRem.clicked.connect(self.funclist.remRow)
+        self.panel = gui_widgets.WidgetPanel()
+        self.panel.setStyleSheet(TREESTYLE)
+        self.panel.setAnimated(True)
         self.btnCalc.clicked.connect(self.calculate)
 
-        blayout = QtWidgets.QHBoxLayout()
-        blayout.addWidget(QtWidgets.QLabel('Measurement Model:'))
-        blayout.addWidget(self.btnAdd)
-        blayout.addWidget(self.btnRem)
-        blayout.addStretch()
-        hlayout = QtWidgets.QHBoxLayout()
-        hlayout.addWidget(self.inputtable, stretch=10)
-        hlayout.addWidget(self.tab)
+        self.panel.add_widget('Measurement Model', self.funclist)
+        self.panel.add_widget('Uncertainties', self.meastable)
+        self.panel.add_widget('Uncertainty Preview', self.uncpreview)
+        self.panel.add_widget('Correlations', self.corrtable)
+        self.panel.add_widget('Notes', self.description)
+        self.panel.add_widget('Settings', self.settings)
+        self.panel.expand('Measurement Model')
+        self.panel.expand('Values')
+        self.panel.expand('Uncertainties')
+
+        self.funclist.resizerows.connect(self.panel.fixSize)
+        self.meastable.resizerows.connect(self.panel.fixSize)
+        self.corrtable.resizerows.connect(self.panel.fixSize)
+        self.meastable.updated.connect(self.uncpreview.replot)
+
         calclayout = QtWidgets.QHBoxLayout()
         calclayout.addStretch()
         calclayout.addWidget(self.btnCalc)
         layout = QtWidgets.QVBoxLayout()
-        layout.addLayout(blayout)
-        layout.addWidget(self.funclist, stretch=5)
-        layout.addWidget(QtWidgets.QLabel('Measured Quantities:'))
-        layout.addLayout(hlayout, stretch=8)
+        layout.addWidget(self.panel)
         layout.addLayout(calclayout)
         self.setLayout(layout)
-
-        self.inputtable.replotdist.connect(self.update_disttab)
-        self.distinfo.import_dist.connect(self.inputtable.import_dist)
 
     def set_unccalc(self, unccalc):
         ''' Set the uncertainty calc object '''
         self.unccalc = unccalc
 
-    def update_disttab(self, comp=None):
-        ''' Update the plot with PDF of distribution '''
-        if comp is not None:
-            self.tab.insertTab(0, self.distinfo, 'Distribution')
-            self.distinfo.update_info(comp)
-            self.tab.setCurrentIndex(0)
-        elif self.tab.tabText(0) == 'Distribution':
-            self.tab.removeTab(0)
+    def isValid(self):
+        ''' Check if all inputs are valid '''
+        return self.funclist.isValid() and self.meastable.isValid()
 
 
 #------------------------------------------------------------
@@ -970,7 +1122,7 @@ class OutputExpandedWidget(QtWidgets.QWidget):
     changed = QtCore.pyqtSignal()
 
     def __init__(self):
-        super(OutputExpandedWidget, self).__init__()
+        super().__init__()
         self.GUMexpanded = gui_widgets.GUMExpandedWidget(multiselect=True, dflt=[0, 1, 2, 3, 4])
         self.MCexpanded = gui_widgets.MCExpandedWidget(multiselect=True, dflt=[0, 1, 2, 3, 4])
         layout = QtWidgets.QVBoxLayout()
@@ -992,7 +1144,7 @@ class OutputPlotWidget(QtWidgets.QWidget):
     changed = QtCore.pyqtSignal()
 
     def __init__(self):
-        super(OutputPlotWidget, self).__init__()
+        super().__init__()
         self.cmbjoint = QtWidgets.QComboBox()
         self.cmbjoint.addItems(['Individual PDF', 'Joint PDF'])
         self.cmbjoint.setVisible(False)
@@ -1111,7 +1263,7 @@ class OutputMCSampleWidget(QtWidgets.QWidget):
     changed = QtCore.pyqtSignal()
 
     def __init__(self):
-        super(OutputMCSampleWidget, self).__init__()
+        super().__init__()
         self.cmbjoint = QtWidgets.QComboBox()
         self.cmbjoint.addItems(['Individual PDF', 'Joint PDF'])
         self.cmbscat = QtWidgets.QComboBox()
@@ -1170,7 +1322,7 @@ class OutputMCDistributionWidget(QtWidgets.QWidget):
     changed = QtCore.pyqtSignal()
 
     def __init__(self):
-        super(OutputMCDistributionWidget, self).__init__()
+        super().__init__()
         self.cmbdist = QtWidgets.QComboBox()
         dists = gui_common.settings.getDistributions()
         dists = [d for d in dists if distributions.fittable(d)]
@@ -1218,7 +1370,7 @@ class OutputMCConvergeWidget(QtWidgets.QWidget):
     changed = QtCore.pyqtSignal()
 
     def __init__(self):
-        super(OutputMCConvergeWidget, self).__init__()
+        super().__init__()
         self.relative = QtWidgets.QCheckBox('Relative to final value')
         self.relative.stateChanged.connect(self.changed)
         layout = QtWidgets.QVBoxLayout()
@@ -1232,7 +1384,7 @@ class OutputGUMValidityWidget(QtWidgets.QWidget):
     changed = QtCore.pyqtSignal()
 
     def __init__(self):
-        super(OutputGUMValidityWidget, self).__init__()
+        super().__init__()
         self.ndig = gui_widgets.SpinWidget('Significant Digits')
         self.ndig.spin.setRange(1, 5)
         self.ndig.setValue(1)
@@ -1248,7 +1400,7 @@ class OutputGUMDerivationWidget(QtWidgets.QWidget):
     changed = QtCore.pyqtSignal()
 
     def __init__(self):
-        super(OutputGUMDerivationWidget, self).__init__()
+        super().__init__()
         self.showvalues = QtWidgets.QCheckBox('Show derivation with values')
         self.showvalues.stateChanged.connect(self.changed)
         layout = QtWidgets.QVBoxLayout()
@@ -1260,13 +1412,13 @@ class OutputGUMDerivationWidget(QtWidgets.QWidget):
 class OutputReportGen(QtWidgets.QWidget):
     ''' Class for controlling full output report '''
     def __init__(self, parent=None):
-        super(OutputReportGen, self).__init__(parent=parent)
+        super().__init__(parent=parent)
         self.report = None  # Cache the report object, only refresh on button press
         self.btnRefresh = QtWidgets.QPushButton('Refresh')
         self.chkSummary = QtWidgets.QCheckBox('Summary')
         self.chkOutputPlot = QtWidgets.QCheckBox('Output Plots')
         self.chkInputs = QtWidgets.QCheckBox('Input Values')
-        self.chkComponents = QtWidgets.QCheckBox('Uncertainty Components')
+        self.chkComponents = QtWidgets.QCheckBox('Uncertainty Budget')
         self.chkSensitivity = QtWidgets.QCheckBox('Sensitivity Coefficients')
         self.chkExpanded = QtWidgets.QCheckBox('Expanded Uncertainties')
         self.chkGUMderiv = QtWidgets.QCheckBox('GUM Derivation')
@@ -1304,9 +1456,9 @@ class PageOutput(QtWidgets.QWidget):
     back = QtCore.pyqtSignal()
 
     def __init__(self, uncCalc, parent=None):
-        super(PageOutput, self).__init__(parent)
+        super().__init__(parent)
         self.outputSelect = QtWidgets.QComboBox()
-        self.outputSelect.addItems(['Summary', 'Comparison Plots', 'Expanded Uncertainties', 'Uncertainty Components',
+        self.outputSelect.addItems(['Summary', 'Comparison Plots', 'Expanded Uncertainties', 'Uncertainty Budget',
                                     'GUM Derivation', 'GUM Validity', 'Monte Carlo Distribution',
                                     'Monte Carlo Input Plots', 'Monte Carlo Convergence', 'Full Report'])
         self.outputPlot = OutputPlotWidget()
@@ -1331,7 +1483,7 @@ class PageOutput(QtWidgets.QWidget):
         self.ctrlStack.addWidget(QtWidgets.QWidget())  # 1 - Summary (blank - no controls)
         self.ctrlStack.addWidget(self.outputPlot)      # 2
         self.ctrlStack.addWidget(self.outputExpanded)  # 3
-        self.ctrlStack.addWidget(QtWidgets.QWidget())  # 4 - Uncertainty components (blank)
+        self.ctrlStack.addWidget(QtWidgets.QWidget())  # 4 - Uncertainty budget (blank)
         self.ctrlStack.addWidget(self.outputGUMderiv)  # 5
         self.ctrlStack.addWidget(self.outputGUMvalid)  # 6
         self.ctrlStack.addWidget(self.outputMCdist)    # 7
@@ -1421,7 +1573,6 @@ class PageOutput(QtWidgets.QWidget):
             rptsetup['outplotparams']['plotargs']['intervalsGUM'] = self.outputPlot.GUMexpanded.get_covlist()
             rptsetup['outplotparams']['plotargs']['intTypeGUMt'] = self.outputPlot.GUMexpanded.GUMtype.currentText() == 'Student-t'
 
-        rptsetup.update(gui_common.get_rptargs())  # Add in formatting
         self.outputReportSetup.report = self.outdata.report_all(**rptsetup)  # Cache report for displaying/saving
         self.outputupdate()
         return self.outputReportSetup.report
@@ -1435,28 +1586,29 @@ class PageOutput(QtWidgets.QWidget):
         # If these names change, make sure corresponding option in "if" below is updated.
         assert self.outputSelect.findText('Summary') != -1
         assert self.outputSelect.findText('Expanded Uncertainties') != -1
-        assert self.outputSelect.findText('Uncertainty Components') != -1
+        assert self.outputSelect.findText('Uncertainty Budget') != -1
         assert self.outputSelect.findText('GUM Validity') != -1
         assert self.outputSelect.findText('GUM Derivation') != -1
         assert self.outputSelect.findText('Comparison Plots') != -1
         assert self.outputSelect.findText('Monte Carlo Input Plots') != -1
         assert self.outputSelect.findText('Monte Carlo Distribution') != -1
         assert self.outputSelect.findText('Full Report') != -1
-        if (option in ['Summary', 'Expanded Uncertainties', 'Uncertainty Components', 'GUM Validity', 'GUM Derivation',
+        if (option in ['Summary', 'Expanded Uncertainties', 'Uncertainty Budget', 'GUM Validity', 'GUM Derivation',
                        'Monte Carlo Components', 'Full Report', 'Warnings']):
             self.outputStack.setCurrentIndex(TEXT)
         else:
             self.outputStack.setCurrentIndex(PLOT)
 
         if option == 'Summary':
-            r = output.MDstring('## Results\n\n')
-            r += self.outdata.report_summary(**gui_common.get_rptargs())
-            self.txtOutput.setMarkdown(r)
+            r = report.Report()
+            r.hdr('Results', level=2)
+            r.append(self.outdata.report_summary())
+            self.txtOutput.setReport(r)
 
         elif option == 'Full Report':
             if self.outputReportSetup.report is None:
                 self.refresh_fullreport()
-            self.txtOutput.setMarkdown(self.outputReportSetup.report)
+            self.txtOutput.setReport(self.outputReportSetup.report)
 
         elif option == 'Expanded Uncertainties':
             assert self.outputExpanded.GUMexpanded.GUMtype.findText('Normal/k') != -1
@@ -1465,19 +1617,20 @@ class PageOutput(QtWidgets.QWidget):
             intervals = self.outputExpanded.MCexpanded.get_covlist()
             norm = self.outputExpanded.GUMexpanded.GUMtype.currentText() == 'Normal/k'
             shortest = self.outputExpanded.MCexpanded.MCtype.currentText() == 'Shortest'
-            r = '## Expanded Uncertainty\n\n'
-            r += self.outdata.report_expanded(covlist=intervals, normal=norm, shortest=shortest, covlistgum=intervalsgum, **gui_common.get_rptargs())
-            self.txtOutput.setMarkdown(r)
+            r = report.Report()
+            r.hdr('Expanded Uncertainty', level=2)
+            r.append(self.outdata.report_expanded(covlist=intervals, normal=norm, shortest=shortest, covlistgum=intervalsgum))
+            self.txtOutput.setReport(r)
 
-        elif option == 'Uncertainty Components':
-            self.txtOutput.setMarkdown(self.outdata.report_allinputs(**gui_common.get_rptargs()))
+        elif option == 'Uncertainty Budget':
+            self.txtOutput.setReport(self.outdata.report_allinputs())
 
         elif option == 'Warnings':
-            self.txtOutput.setMarkdown(self.outdata.report_warns(**gui_common.get_rptargs()))
+            self.txtOutput.setReport(self.outdata.report_warns())
 
         elif option == 'GUM Derivation':
             solve = self.outputGUMderiv.showvalues.isChecked()
-            self.txtOutput.setMarkdown(self.outdata.report_derivation(solve=solve, **gui_common.get_rptargs()))
+            self.txtOutput.setReport(self.outdata.report_derivation(solve=solve))
 
         elif option == 'Monte Carlo Convergence':
             self.outdata.plot_converge(plot=self.fig, relative=self.outputMCconv.relative.isChecked())
@@ -1531,19 +1684,17 @@ class PageOutput(QtWidgets.QWidget):
 
         elif option == 'GUM Validity':
             ndig = self.outputGUMvalid.ndig.value()
-            r = self.outdata.report_validity(ndig=ndig, **gui_common.get_rptargs())
-            self.txtOutput.setMarkdown(r)
+            r = self.outdata.report_validity(ndig=ndig)
+            self.txtOutput.setReport(r)
 
         elif option == 'Monte Carlo Distribution':
             fidx = self.outputMCdist.cmbfunc.currentIndex()
             dist = self.outputMCdist.cmbdist.currentText()
             y = self.outdata.foutputs[fidx].mc.samples.magnitude
-            fitparams = output.fitdist(y, distname=dist, plot=self.fig, qqplot=True, bins=100, points=200)
-            try:
+            fitparams = plotting.fitdist(y, distname=dist, plot=self.fig, qqplot=True, bins=100, points=200)
+            with suppress(IndexError):  # Raises if axes weren't added (maybe invalid samples)
                 self.fig.axes[0].set_title('Distribution Fit')
                 self.fig.axes[1].set_title('Probability Plot')
-            except IndexError:
-                pass  # Axes weren't added (maybe invalid samples)
             self.fig.tight_layout()
             self.outputMCdist.update_label(fitparams)
             self.canvas.draw_idle()
@@ -1560,7 +1711,7 @@ class PageOutput(QtWidgets.QWidget):
         self.outputMCsample.set_inptlist(self.outdata.ucalc.get_baseinputnames())
         self.outputReportSetup.report = None
         idx = self.outputSelect.findText('Warnings')
-        if len(self.outdata.report_warns()) > 0:
+        if len(self.outdata.report_warns().get_md().strip()) > 0:
             if idx < 0 or idx is None:
                 self.outputSelect.addItem('Warnings')
             self.outputSelect.setCurrentIndex(self.outputSelect.count()-1)
@@ -1576,7 +1727,6 @@ class PageOutput(QtWidgets.QWidget):
 
 class UncertPropWidget(QtWidgets.QWidget):
     ''' Uncertainty propagation widget '''
-    opencsvfolder = QtCore.QStandardPaths.standardLocations(QtCore.QStandardPaths.HomeLocation)[0]
     openconfigfolder = QtCore.QStandardPaths.standardLocations(QtCore.QStandardPaths.HomeLocation)[0]
     newtype = QtCore.pyqtSignal(object, str)
 
@@ -1584,8 +1734,8 @@ class UncertPropWidget(QtWidgets.QWidget):
     PG_OUTPUT = 1
 
     def __init__(self, item, parent=None):
-        super(UncertPropWidget, self).__init__(parent)
-        assert isinstance(item, uc.UncertCalc)
+        super().__init__(parent)
+        assert isinstance(item, uncertainty.UncertCalc)
         self.pginput = PageInput(item)
         self.pgoutput = PageOutput(item)
         self.stack = QtWidgets.QStackedWidget()
@@ -1637,8 +1787,7 @@ class UncertPropWidget(QtWidgets.QWidget):
         self.pginput.funclist.funcchanged.connect(self.funcchanged)
         self.pginput.funclist.funcremoved.connect(self.funcremoved)
         self.pginput.corrtable.cellChanged.connect(self.set_correlations)
-        self.pginput.MCsettings.txtSeed.editingFinished.connect(self.setSeed)
-        self.pginput.MCsettings.txtSamples.editingFinished.connect(self.setSamples)
+        self.pginput.settings.changed.connect(self.setSetting)
         self.pginput.description.textChanged.connect(self.setDesc)
         self.pgoutput.back.connect(self.backbutton)
         self.set_calc(item)
@@ -1657,22 +1806,21 @@ class UncertPropWidget(QtWidgets.QWidget):
     def clearinput(self):
         ''' Clear all the input/output values '''
         self.pginput.funclist.clear()
-        self.pginput.inputtable.clear()
-        self.pginput.corrtable.reset()
+        self.pginput.meastable.clear()
+        self.pginput.corrtable.clear()
         self.pginput.description.setPlainText('')
-        self.pginput.MCsettings.txtSamples.setText(str(gui_common.settings.getSamples()))
-        self.pginput.MCsettings.txtSeed.setText(str(gui_common.settings.getRandomSeed()))
-        self.setSamples()
-        self.setSeed()
+        self.setSetting('Random Seed', gui_common.settings.getRandomSeed())
+        self.setSetting('Monte Carlo Samples', gui_common.settings.getSamples())
         self.uncCalc.clearall()
         self.actSweep.setEnabled(False)
+        self.actReverse.setEnabled(False)
         self.stack.setCurrentIndex(0)
 
     def checkunits(self):
         ''' Show units/dimensionality report '''
         dlg = gui_widgets.MarkdownTextEdit()
         dlg.setMinimumSize(800, 600)
-        dlg.setMarkdown(self.uncCalc.units_report(**gui_common.get_rptargs()))
+        dlg.setReport(self.uncCalc.units_report())
         dlg.show()
 
     def funcchanged(self, row, fdict):
@@ -1681,10 +1829,10 @@ class UncertPropWidget(QtWidgets.QWidget):
                                   show=fdict.get('report', True), outunits=fdict['unit'])
         self.uncCalc.add_required_inputs()
         baseinputs = self.uncCalc.get_baseinputs()
-        self.pginput.inputtable.filltable(baseinputs)
-        self.pginput.update_disttab()
+        self.pginput.meastable.filltable(baseinputs)
         self.pginput.corrtable.setVarNames(self.uncCalc.get_reqd_inputs())
         self.actSweep.setEnabled(True)
+        self.actReverse.setEnabled(True)
 
     def funcremoved(self, row):
         ''' A function was removed from the list '''
@@ -1699,42 +1847,39 @@ class UncertPropWidget(QtWidgets.QWidget):
         ''' Description was edited. Save to uncCalc. '''
         self.uncCalc.longdescription = self.pginput.description.toPlainText()
 
-    def setSeed(self):
-        ''' Seed textbox was edited. Save seed to uncCalc. '''
-        try:
-            seed = abs(int(float(self.pginput.MCsettings.txtSeed.text())))
-        except (ValueError, OverflowError):
-            seed = None
-        self.uncCalc.seed = seed
-        self.pginput.MCsettings.txtSeed.blockSignals(True)
-        self.pginput.MCsettings.txtSeed.setText(str(seed))
-        self.pginput.MCsettings.txtSeed.blockSignals(False)
+    def setSetting(self, name, value):
+        if name == 'Random Seed':
+            try:
+                seed = abs(int(float(value)))
+            except (TypeError, ValueError, OverflowError):
+                seed = None
+                self.pginput.settings.setvalue(name, None)
+            else:
+                self.uncCalc.seed = seed
 
-    def setSamples(self):
-        ''' Samples textbox was edited. Save to uncCalc. '''
-        try:
-            samples = int(float(self.pginput.MCsettings.txtSamples.text()))  # cast to float first so exp-notation will work
-        except (ValueError, OverflowError):
-            samples = 1000000
-        self.uncCalc.samples = samples
-        self.pginput.MCsettings.txtSamples.blockSignals(True)
-        self.pginput.MCsettings.txtSamples.setText(str(samples))
-        self.pginput.MCsettings.txtSamples.blockSignals(False)
+        elif name == 'Monte Carlo Samples':
+            try:
+                samples = int(float(value))  # cast to float first so exp-notation will work
+            except (TypeError, ValueError, OverflowError):
+                samples = 1000000
+                self.pginput.settings.setvalue(name, samples)
+            else:
+                self.uncCalc.samples = samples
 
     def set_correlations(self):
         ''' Set correlation table in unc calc. '''
         self.uncCalc.clear_corr()
-        for row in range(self.pginput.corrtable.table.rowCount()):
+        for row in range(self.pginput.corrtable.rowCount()):
             v1, v2, val = self.pginput.corrtable.getRow(row)
             try:
                 f = float(val)
                 self.uncCalc.correlate_vars(v1, v2, f)
             except ValueError:
-                if self.pginput.corrtable.table.item(row, 2) is not None:
-                    self.pginput.corrtable.table.item(row, 2).setBackground(QtGui.QBrush(gui_common.COLOR_INVALID))
-                self.pginput.corrtable.table.clearSelection()
+                if self.pginput.corrtable.item(row, 2) is not None:
+                    self.pginput.corrtable.item(row, 2).setBackground(QtGui.QBrush(gui_common.COLOR_INVALID))
+                self.pginput.corrtable.clearSelection()
             else:
-                self.pginput.corrtable.table.item(row, 2).setBackground(QtGui.QBrush(gui_common.COLOR_OK))
+                self.pginput.corrtable.item(row, 2).setBackground(QtGui.QBrush(gui_common.COLOR_OK))
 
     def importdistributions(self):
         ''' Load uncertainty components from data for multiple input variables '''
@@ -1748,21 +1893,22 @@ class UncertPropWidget(QtWidgets.QWidget):
                     for (v1, v2), corr in params.items():
                         if corr != 0.:
                             self.pginput.corrtable.addRow()
-                            self.pginput.corrtable.setRow(self.pginput.corrtable.table.rowCount()-1, v1, v2, corr)
+                            self.pginput.corrtable.setRow(self.pginput.corrtable.rowCount()-1, v1, v2, corr)
+                    self.pginput.panel.expand('Correlations')
 
                 else:
                     nom = params.pop('expected', params.pop('median', params.pop('mean', None)))  # Don't pass along median, it's handled by Variable
                     if nom is not None:
                         self.uncCalc.set_input(varname, nom=nom)
                     self.uncCalc.set_uncert(varname, name=f'u({varname})', degf=params.get('df', np.inf),
-                                            **params)
-                self.pginput.inputtable.filltable()
+                                            units=str(self.uncCalc.get_input(varname).units), **params)
+                self.pginput.meastable.filltable()
                 self.backbutton()
 
     def calculate(self):
         ''' Run the calculation '''
         msg = None
-        if not (self.pginput.funclist.isValid() and self.pginput.inputtable.isValid()):
+        if not (self.pginput.funclist.isValid() and self.pginput.meastable.isValid()):
             msg = 'Invalid input parameter!'
 
         elif len(self.uncCalc.functions) < 1:
@@ -1790,7 +1936,7 @@ class UncertPropWidget(QtWidgets.QWidget):
                 msg = 'Ambiguous unit {}. Try "{}".'.format(badunit, 'delta_{}'.format(badunit))
             except RecursionError:
                 msg = 'Error - possible circular reference in function definitions'
-            except ValueError:
+            except (TypeError, ValueError):
                 msg = 'Error computing solution!'
 
         if msg is None:
@@ -1812,19 +1958,18 @@ class UncertPropWidget(QtWidgets.QWidget):
         self.pgoutput.set_unccalc(self.uncCalc)
         self.pginput.set_unccalc(self.uncCalc)
         self.pginput.funclist.setFunclist(calc.functions)
-        self.pginput.MCsettings.txtSamples.setText(str(self.uncCalc.samples))
         self.pginput.corrtable.setVarNames([i.name for i in self.uncCalc.get_baseinputs()])
-        self.pginput.MCsettings.txtSeed.setText(str(self.uncCalc.seed))
+        self.pginput.settings.setvalue('Monte Carlo Samples', self.uncCalc.samples)
+        self.pginput.settings.setvalue('Random Seed', self.uncCalc.seed)
         self.pginput.description.setPlainText(str(self.uncCalc.longdescription))
-
-        if self.uncCalc.longdescription != '':
-            self.pginput.tab.setCurrentIndex([self.pginput.tab.tabText(i) for i in range(self.pginput.tab.count())].index('Notes'))
 
         if self.uncCalc._corr is not None:
             for v1, v2, c in self.uncCalc.get_corr_list():
                 if c != 0.:
                     self.pginput.corrtable.addRow()
-                    self.pginput.corrtable.setRow(self.pginput.corrtable.table.rowCount()-1, v1, v2, c)
+                    self.pginput.corrtable.setRow(self.pginput.corrtable.rowCount()-1, v1, v2, c)
+        if self.uncCalc.longdescription:
+            self.pginput.panel.expand('Notes')
         self.stack.setCurrentIndex(self.PG_INPUT)
         self.pginput.funclist.blockSignals(False)
 
@@ -1837,7 +1982,7 @@ class UncertPropWidget(QtWidgets.QWidget):
 
     def save_report(self):
         ''' Save full output report to file, using user's GUI settings '''
-        gui_widgets.savemarkdown(self.get_report())
+        gui_widgets.savereport(self.get_report())
 
     def save_samples_csv(self):
         ''' Save Monte-Carlo samples (inputs and outputs) to CSV file. This file can get big fast! '''

@@ -4,22 +4,20 @@
 
     The SweepOutput* classes hold the output of an UncertSweep calculation.
 '''
+from collections import namedtuple
 import numpy as np
 import sympy
 import yaml
+import matplotlib as mpl
+import matplotlib.pyplot as plt
 
 from . import dataset
 from . import reverse
 from . import uncertainty
 from . import output
-
-try:
-    import matplotlib as mpl
-    import matplotlib.pyplot as plt
-except ImportError:
-    pass
-else:
-    mpl.style.use('bmh')
+from . import uparser
+from . import report
+from . import plotting
 
 
 class UncertSweep(object):
@@ -28,7 +26,7 @@ class UncertSweep(object):
         Parameters
         ----------
         unccalc: Uncertainty Propagation Object
-            Uncertianty Calculator to sweep
+            Uncertainty Calculator to sweep
     '''
     def __init__(self, unccalc, name='sweep'):
         self.unccalc = unccalc
@@ -115,14 +113,14 @@ class UncertSweep(object):
 
         reportlist = []
         for sweepidx in range(N):
+            # Make a copy (using config dictionary) so we don't destroy the original uncertcalc object and overwrite inputs
+            # Note: dont use deepcopy() or we'll be copying output data too
             ucalccopy = uncertainty.UncertCalc.from_config(self.unccalc.get_config())
             for sweepparams in self.sweeplist:
                 inptname = sweepparams.get('var', None)
                 comp = sweepparams.get('comp', 'nom')
                 param = sweepparams.get('param', None)
                 values = sweepparams.get('values', [])
-                # Make a copy (using config dictionary) so we don't destroy the original uncertcalc object and overwrite inputs
-                # Note: dont use deepcopy() or we'll be copying output data too
 
                 inptvar = ucalccopy.get_input(inptname)
                 if inptname == 'corr':
@@ -218,7 +216,7 @@ class UncertSweep(object):
 class UncertSweepReverse(UncertSweep):
     ''' Sweep a reverse propagation calculator '''
     def __init__(self, unccalc, name='reversesweep'):
-        super(UncertSweepReverse, self).__init__(unccalc, name=name)   # Just override the default name
+        super().__init__(unccalc, name=name)   # Just override the default name
 
     def calculate(self, samples=1000000, gum=True, mc=True):
         ''' Calculate reverse propagation sweep.
@@ -263,7 +261,7 @@ class UncertSweepReverse(UncertSweep):
 
     def get_config(self):
         ''' Get configuration dictionary '''
-        d = super(UncertSweepReverse, self).get_config()
+        d = super().get_config()
         d['mode'] = 'reversesweep'
         return d
 
@@ -310,15 +308,25 @@ class SweepOutput(output.Output):
             comp = sweepparams.get('comp', 'nom')
             param = sweepparams.get('param', None)
             if comp == 'nom':
-                self.inpthdr.append(output.format_math(inptname))
+                r = report.Math(inptname)
             elif param == 'df':
-                self.inpthdr.append(output.format_math(inptname) + ' deg.f')
+                r = (report.Math(inptname), ' deg.f')
             elif param in ['unc', 'std']:
-                self.inpthdr.append(output.format_math(comp.replace('(', '_').replace(')', '')))
+                r = report.Math(comp.replace('(', '_').replace(')', ''))
             else:
-                self.inpthdr.append(output.format_math(comp.replace('(', '_').replace(')', '')) + ', ' + param)
+                r = (report.Math(comp.replace('(', '_').replace(')', '')), ', ', param)
+            self.inpthdr.append(r)
 
-        self.inptvals = [v['values']*uncertainty.get_units(v.get('units', '')) for v in sweeplist]
+        self.inpthdr_strs = []
+        for hdr in self.inpthdr:
+            r = report.Report()
+            try:
+                r.add(*hdr)
+            except TypeError:
+                r.add(hdr)
+            self.inpthdr_strs.append(r.get_md(mathfmt='ascii'))
+
+        self.inptvals = [v['values']*uparser.parse_unit(v.get('units', '')) for v in sweeplist]
         self.N = len(self.inptvals[0])
 
         self.outnames = [f.name for f in outputlist[0].foutputs]
@@ -366,8 +374,8 @@ class SweepOutput(output.Output):
         ''' Get description for a single index in the sweep '''
         slist = []
         for i in range(len(self.inpthdr)):
-            valstrs = output.formatter.f_array(self.inptvals[i])
-            slist.append('{} = {}'.format(self.inpthdr[i].replace('$', ''), valstrs[idx]))
+            valstrs = report.Number.number_array(self.inptvals[i])
+            slist.append('{} = {}'.format(self.inpthdr_strs[i], valstrs[idx].string()))
         return '; '.join(slist).strip()
 
     def report(self, **kwargs):
@@ -378,36 +386,36 @@ class SweepOutput(output.Output):
             gum: bool
             mc: bool
 
-            Passed to number formatter. E.g. 'n=3' for 3 significant digits.
+            Other kwargs passed to report.Report.
         '''
-        rpt = output.MDstring()
+        rpt = report.Report(**kwargs)
         if kwargs.get('gum', True) and self.outpvalsgum is not None:
-            rpt += '## GUM Results\n\n'
-            inptvalstrs = [output.formatter.f_array(a, **kwargs) for a in self.inptvals]
-            outvalstrs = [output.formatter.f_array(a, **kwargs) for a in self.outpvalsgum]
-            uncstrs = [[output.formatter.f(a, **kwargs) for a in x] for x in self.outpuncsgum]
+            rpt.hdr('GUM Results', level=2)
+            inptvalstrs = [report.Number.number_array(a) for a in self.inptvals]
+            outvalstrs = [report.Number.number_array(a) for a in self.outpvalsgum]
+            uncstrs = [[report.Number(a) for a in x] for x in self.outpuncsgum]
             rows = []
             for inpts, means, uncs in zip(list(zip(*inptvalstrs)), list(zip(*outvalstrs)), list(zip(*uncstrs))):
                 rows.append(list(inpts) + [k for j in list(zip(means, uncs)) for k in j])   # i.e. transpose
             hdr = self.inpthdr.copy()
             for n in self.outnames:
-                hdr.append(output.format_math(n))
-                hdr.append(output.format_math('u_{}'.format(n)))
-            rpt += output.md_table(rows, hdr=hdr)
+                hdr.append(report.Math(n))
+                hdr.append(report.Math('u_{}'.format(n)))
+            rpt.table(rows, hdr=hdr)
 
         if kwargs.get('mc', True) and self.outpvalsmc is not None:
-            rpt += '## Monte Carlo results\n\n'
-            inptvalstrs = [output.formatter.f_array(a, **kwargs) for a in self.inptvals]
-            outvalstrs = [output.formatter.f_array(a, **kwargs) for a in self.outpvalsmc]
-            uncstrs = [[output.formatter.f(a, **kwargs) for a in x] for x in self.outpuncsmc]
+            rpt.hdr('Monte Carlo results', level=2)
+            inptvalstrs = [report.Number.number_array(a) for a in self.inptvals]
+            outvalstrs = [report.Number.number_array(a) for a in self.outpvalsmc]
+            uncstrs = [[report.Number(a) for a in x] for x in self.outpuncsmc]
             rows = []
             for inpts, means, uncs in zip(list(zip(*inptvalstrs)), list(zip(*outvalstrs)), list(zip(*uncstrs))):
                 rows.append(list(inpts) + [k for j in list(zip(means, uncs)) for k in j])   # i.e. transpose
             hdr = self.inpthdr.copy()
             for n in self.outnames:
-                hdr.append(output.format_math(n))
-                hdr.append(output.format_math('u_{}'.format(n)))
-            rpt += output.md_table(rows, hdr=hdr)
+                hdr.append(report.Math(n))
+                hdr.append(report.Math('u_{}'.format(n)))
+            rpt.table(rows, hdr=hdr)
         return rpt
 
     def expanded(self, cov=0.95, fidx=0, normal=False, shortest=False, method='gum'):
@@ -428,22 +436,28 @@ class SweepOutput(output.Output):
             Returns
             -------
             expanded: array
-                For GUM uncertainties, array is Nx2. First column is expanded uncertainty,
-                second column is k-value. For MC uncertainties, array is Nx3, with columns
-                of minimum, maximum, and k-value for range.
+                Array of expanded uncertainties at each sweep point (GUM method)
+            umin: array
+                Array of bottom of coverage interval for each sweep point (MC method)
+            umax: array
+                Array of top of coverage interval for each sweep point (MC method)
+            k: array
+                Array of k-values for each sweep point.
         '''
         if method == 'gum':
+            Expanded = namedtuple('Expanded', ['uncertainty', 'k'])
             expanded = [r.get_output(fidx=fidx, method=method).expanded(cov=cov, normal=normal) for r in self.outputlist]
             # Last index is always 0 because there's only one parameter in UncertCalc Output.
             uncert = np.array([x[0].magnitude for x in expanded]) * expanded[0][0].units
             k = np.array([x[1] for x in expanded])
-            return uncert, k
+            return Expanded(uncert, k)
         elif method == 'mc':
+            Expanded = namedtuple('Expanded', ['minimum', 'maximum', 'k'])
             expanded = [r.get_output(fidx=fidx, method=method).expanded(cov=cov, shortest=shortest) for r in self.outputlist]
             umin = [x[0].magnitude for x in expanded] * expanded[0][0].units
             umax = [x[1].magnitude for x in expanded] * expanded[0][1].units
             k = [x[2] for x in expanded]
-            return umin, umax, k
+            return Expanded(umin, umax, k)
 
     def report_expanded(self, cov=0.95, fidx=0, normal=False, shortest=False, **kwargs):
         ''' Report table of expanded uncertainties
@@ -462,27 +476,27 @@ class SweepOutput(output.Output):
 
             Keyword Arguments
             -----------------
-            Passed to number formatter. E.g. 'n=3' for 3 significant digits.
+            Passed to report.Report
         '''
-        rpt = output.MDstring()
-        inptvalstrs = [output.formatter.f_array(a) for a in self.inptvals]
+        rpt = report.Report(**kwargs)
+        inptvalstrs = [report.Number.number_array(a) for a in self.inptvals]
         if kwargs.get('gum', True) and self.outpvalsgum is not None:
-            uncvals, kvals = self.expanded(cov=cov, fidx=fidx, normal=normal, method='gum')  # expanded returns uncertainty, k
+            uncvals, kvals = self.expanded(cov=cov, fidx=fidx, normal=normal, method='gum')
             hdr = self.inpthdr + ['Expanded Uncertainty', 'k']
             rows = []
             for inpts, unc, k in zip(list(zip(*inptvalstrs)), uncvals, kvals):
-                rows.append(list(inpts) + [output.formatter.f(unc, **kwargs)] + [output.formatter.f(k, n=2)])
-            rpt += '### GUM\n\n'
-            rpt += output.md_table(rows, hdr)
+                rows.append(list(inpts) + [report.Number(unc)] + [report.Number(k, n=2)])
+            rpt.hdr('GUM', level=3)
+            rpt.table(rows, hdr)
 
         if kwargs.get('mc', True) and self.outpvalsmc is not None:
             umins, umaxs, kvals = self.expanded(cov=cov, fidx=fidx, shortest=shortest, method='mc')
             hdr = self.inpthdr + ['Min', 'Max', 'k']
             rows = []
             for inpts, umin, umax, k in zip(list(zip(*inptvalstrs)), umins, umaxs, kvals):
-                rows.append(list(inpts) + [output.formatter.f(umin, **kwargs)] + [output.formatter.f(umax, **kwargs)] + [output.formatter.f(k, n=2)])
-            rpt += '### Monte Carlo\n\n'
-            rpt += output.md_table(rows, hdr)
+                rows.append(list(inpts) + [report.Number(umin)] + [report.Number(umax)] + [report.Number(k, n=2)])
+            rpt.hdr('Monte Carlo', level=3)
+            rpt.table(rows, hdr)
         return rpt
 
     def plot(self, plot=None, inptidx=0, funcidx=0, uy='errorbar', expanded=False, cov=.95, gum=True, mc=True):
@@ -509,7 +523,7 @@ class SweepOutput(output.Output):
             mc: bool
                 Plot MC results
         '''
-        fig, ax = output.initplot(plot)
+        fig, ax = plotting.initplot(plot)
         fig.clf()
         if gum and mc:
             axgum = fig.add_subplot(1, 2, 1)
@@ -532,12 +546,12 @@ class SweepOutput(output.Output):
                     ax.plot(xvals, yvals-uyvals, ls=':', color=p.get_color())
             else:
                 ax.plot(xvals, yvals, ls=uy, marker='o', label=label)
-            ax.set_xlabel(self.inpthdr[inptidx])
+            ax.set_xlabel(self.inpthdr_strs[inptidx])
             ax.set_ylabel(self.outnames[funcidx])
             if xunits:
-                ax.set_xlabel(ax.get_xlabel() + output.formatunittex(xunits, bracket=True))
+                ax.set_xlabel(ax.get_xlabel() + report.Unit(xunits).latex(bracket=True))
             if yunits:
-                ax.set_ylabel(ax.get_ylabel() + output.formatunittex(yunits, bracket=True))
+                ax.set_ylabel(ax.get_ylabel() + report.Unit(yunits).latex(bracket=True))
 
         xvals = self.inptvals[inptidx].magnitude
         xunits = self.inptvals[inptidx].units
@@ -566,23 +580,24 @@ class SweepOutput(output.Output):
 
     def report_summary(self, **kwargs):
         ''' Report summary, including table AND plot '''
-        with mpl.style.context(output.mplcontext):
-            r = output.MDstring('## Sweep Results\n\n')
-            r += self.report(**kwargs)
-            with mpl.style.context(output.mplcontext):
+        rpt = report.Report(**kwargs)
+        with mpl.style.context(plotting.mplcontext):
+            rpt.hdr('Sweep Results', level=2)
+            rpt.append(self.report(**kwargs))
+            with mpl.style.context(plotting.mplcontext):
                 plt.ioff()
 
                 for i in range(len(self.funcnames)):
                     fig = plt.figure()
                     self.plot(plot=fig, inptidx=0, funcidx=i)
-                    r.add_fig(fig)
-        return r
+                    rpt.plot(fig)
+        return rpt
 
     def report_all(self, **kwargs):
         ''' Report full output '''
         r = self.report_summary(**kwargs)
-        r += '### Expanded Uncertainties\n\n'
-        r += self.report_expanded(**kwargs)
+        r.hdr('Expanded Uncertainties', level=3)
+        r.append(self.report_expanded(**kwargs))
         return r
 
     def get_rptsingle(self, idx=0):
@@ -605,7 +620,7 @@ class SweepOutput(output.Output):
                 DataSet containing mean and uncertainties of each sweep point
         '''
         xvals = [x.magnitude for x in self.inptvals]
-        names = self.inpthdr.copy()
+        names = self.inpthdr_strs
 
         if gum:
             yvals = self.outpvalsgum[funcidx].magnitude
@@ -642,15 +657,24 @@ class SweepOutputReverse(output.Output):
             comp = sweepparams.get('comp', 'nom')
             param = sweepparams.get('param', None)
             if comp == 'nom':
-                self.inpthdr.append(output.format_math(inptname))
+                self.inpthdr.append(report.Math(inptname))
             elif param == 'df':
-                self.inpthdr.append(output.format_math(inptname) + ' deg.f')
+                self.inpthdr.append((report.Math(inptname), ' deg.f'))
             elif param in ['unc', 'std']:
-                self.inpthdr.append(output.format_math(comp.replace('(', '_').replace(')', '')))
+                self.inpthdr.append(report.Math(comp.replace('(', '_').replace(')', '')))
             else:
-                self.inpthdr.append(output.format_math(comp.replace('(', '_').replace(')', '') + '\n' + param))
+                self.inpthdr.append((report.Math(comp.replace('(', '_').replace(')', '')), '\n'+param))
 
-        self.inptvals = [v['values']*uncertainty.get_units(v.get('units', '')) for v in sweeplist]
+        self.inpthdr_strs = []
+        for hdr in self.inpthdr:
+            r = report.Report()
+            try:
+                r.add(*hdr)
+            except TypeError:
+                r.add(hdr)
+            self.inpthdr_strs.append(r)
+
+        self.inptvals = [v['values']*uparser.parse_unit(v.get('units', '')) for v in sweeplist]
         self.N = len(self.inptvals[0])
 
         if self.outputlist[0].mcdata:
@@ -687,27 +711,27 @@ class SweepOutputReverse(output.Output):
 
     def report(self, **kwargs):
         ''' Report table of results of reverse-sweep '''
-        r = output.MDstring()
-        inptvalstrs = [output.formatter.f_array(a) for a in self.inptvals]
-        varname = output.format_math(self.varname)
-        uvarname = output.format_math(f'u_{self.varname}')
+        r = report.Report(**kwargs)
+        inptvalstrs = [report.Number.number_array(a) for a in self.inptvals]
+        varname = report.Math(self.varname)
+        uvarname = report.Math(f'u_{self.varname}')
         if self.gumoutvals is not None:
             rows = []
-            r += '### GUM\n\n'
+            r.hdr('GUM', level=3)
             hdr = self.inpthdr + [varname, uvarname]
             for inpts, val, unc in zip(list(zip(*inptvalstrs)), self.gumoutvals, self.gumoutuncs):
-                row = list(inpts) + [output.formatter.f(val, **kwargs), output.formatter.f(unc, **kwargs)]
+                row = list(inpts) + [report.Number(val), report.Number(unc)]
                 rows.append(row)
-            r += output.md_table(rows, hdr)
+            r.table(rows, hdr)
 
         if self.mcoutvals is not None:
             rows = []
-            r += '### Monte Carlo\n\n'
+            r.hdr('Monte Carlo', level=3)
             hdr = self.inpthdr + [varname, uvarname]
             for inpts, val, unc in zip(list(zip(*inptvalstrs)), self.mcoutvals, self.mcoutuncs):
-                row = list(inpts) + [output.formatter.f(val, **kwargs), output.formatter.f(unc, **kwargs)]
+                row = list(inpts) + [report.Number(val), report.Number(unc)]
                 rows.append(row)
-            r += output.md_table(rows, hdr)
+            r.table(rows, hdr)
         return r
 
     def report_summary(self, **kwargs):
@@ -715,15 +739,17 @@ class SweepOutputReverse(output.Output):
         uf_req = self.outputlist[0].gumdata['uf_required']
         fname = self.outputlist[0].gumdata['fname']
         eqn = sympy.Eq(fname, self.outputlist[0].gumdata['f'])
-        r = output.MDstring('## Reverse Sweep Results\n\n')
-        r += output.sympyeqn(eqn) + '\n\n'
-        r += 'Target: ${} = {} ± {}$'.format(fname, output.formatter.f(f_req, matchto=uf_req, **kwargs), output.formatter.f(uf_req, **kwargs)) + '\n\n'
-        r += self.report(**kwargs)
-        with mpl.style.context(output.mplcontext):
+        r = report.Report(**kwargs)
+        r.hdr('Reverse Sweep Results', level=2)
+        r.sympy(eqn, end='\n\n')
+        r.add('Target: ', report.Math.from_sympy(fname), ' = ', report.Number(f_req, matchto=uf_req),
+              ' ± ', report.Number(uf_req), '\n\n')
+        r.append(self.report(**kwargs))
+        with mpl.style.context(plotting.mplcontext):
             plt.ioff()
             fig, ax = plt.subplots()
             self.plot(plot=ax)
-            r.add_fig(fig)
+            r.plot(fig)
         return r
 
     def plot(self, plot=None, xidx=0, GUM=True, MC=True):
@@ -740,7 +766,7 @@ class SweepOutputReverse(output.Output):
             MC: bool
                 Show MC calculation result
         '''
-        fig, ax = output.initplot(plot)
+        fig, ax = plotting.initplot(plot)
         xunits = self.inptvals[xidx].units
         if GUM and self.gumoutuncs is not None:
             ax.plot(self.inptvals[xidx].magnitude, self.gumoutuncs.magnitude, marker='o', label='GUM')
@@ -749,14 +775,16 @@ class SweepOutputReverse(output.Output):
             ax.plot(self.inptvals[xidx].magnitude, self.mcoutuncs.magnitude, marker='^', label='Monte Carlo')
             yunits = self.mcoutuncs[0].units
 
-        ax.set_xlabel(self.inpthdr[xidx] + output.formatunittex(xunits, bracket=True))
-        ax.set_ylabel('Required $u_{{{}}}$'.format(self.varname) + output.formatunittex(yunits, bracket=True))
+        xunitstr = report.Unit(xunits).latex(bracket=True)
+        yunitstr = report.Unit(yunits).latex(bracket=True)
+        ax.set_xlabel(self.inpthdr_strs[xidx].get_md(mathfmt='latex') + xunitstr)
+        ax.set_ylabel('Required $u_{{{}}}$'.format(self.varname) + yunitstr)
 
         if GUM and MC and self.gumoutuncs is not None and self.mcoutuncs is not None:
             ax.legend(loc='best')
 
     def to_array(self, gum=True):
-        ''' Return Array object of swept data and uncertainties
+        ''' Return DataSet object of swept data and uncertainties
 
             Parameters
             ----------
@@ -769,7 +797,7 @@ class SweepOutputReverse(output.Output):
                 DataSet containing x, y, ux, and uy values
         '''
         xvals = [x.magnitude for x in self.inptvals]
-        names = self.inpthdr.copy()
+        names = [r.get_md(mathfmt='ascii') for r in self.inpthdr_strs]
 
         if gum:
             yvals = self.gumoutvals.magnitude

@@ -9,15 +9,6 @@ from . import gui_common
 from .licenses import licenses
 
 
-def resource_path(relative):
-    ''' Get absolute file path for resource. Will switch between pyInstaller tmp dir and gui folder '''
-    try:
-        base = sys._MEIPASS  # MEIPASS is added by pyinstaller
-    except AttributeError:
-        base = os.path.dirname(__file__)
-    return os.path.join(base, relative)
-
-
 class AboutUC(QtWidgets.QWidget):
     ''' Widget with the normal "About" information '''
 
@@ -32,7 +23,7 @@ Copyright 2019-2020 National Technology & Engineering Solutions of Sandia, LLC (
 </font>'''.format(version.__version__, version.__date__)
 
     def __init__(self, parent=None):
-        super(AboutUC, self).__init__(parent=parent)
+        super().__init__(parent=parent)
         layout = QtWidgets.QVBoxLayout()
         layout.addWidget(QtWidgets.QLabel(self.ABOUT))
         snlico = gui_common.get_snllogo(pixmap=True)
@@ -46,7 +37,7 @@ Copyright 2019-2020 National Technology & Engineering Solutions of Sandia, LLC (
 class AboutBox(QtWidgets.QDialog):
     ''' About dialog with copyright, credits, and license information '''
     def __init__(self, parent=None):
-        super(AboutBox, self).__init__(parent=parent)
+        super().__init__(parent=parent)
         self.setWindowTitle('Sandia PSL Uncertainty Calculator')
         self.setMinimumHeight(450)
         self.ok = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok)

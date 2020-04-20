@@ -40,7 +40,7 @@ class SelectCSVData(QtWidgets.QDialog):
         to import
     '''
     def __init__(self, fname, parent=None):
-        super(SelectCSVData, self).__init__(parent=parent)
+        super().__init__(parent=parent)
         gui_widgets.centerWindow(self, 900, 600)
         self.table = QtWidgets.QTableWidget()
         self.transpose = QtWidgets.QCheckBox('Transpose')

@@ -83,8 +83,8 @@ def test_sweep():
     s = sweeper.UncertSweep(u)
     s.add_sweep_unc('a', values=np.array([.5, 1.0, 1.5]))
     s.calculate()
-    assert s.out.get_single_desc(0) == 'u_{a} = 0.50'   # Description of each sweep index
-    assert s.out.get_single_desc(1) == 'u_{a} = 1.0'
+    assert s.out.get_single_desc(0) == 'u_a = 0.50'   # Description of each sweep index
+    assert s.out.get_single_desc(1) == 'u_a = 1.0'
     assert np.isclose(s.out.get_rptsingle(0).f.gum.uncert.magnitude, np.sqrt(0.5**2 + 0.5**2))  # Uncertainties should sweep
     assert np.isclose(s.out.get_rptsingle(1).f.gum.uncert.magnitude, np.sqrt(1**2 +.5**2))
     assert np.isclose(s.out.get_rptsingle(2).f.gum.uncert.magnitude, np.sqrt(1.5**2 + .5**2))

@@ -17,7 +17,7 @@ class ColorMapPickerWidget(QtWidgets.QWidget):
     cmappicked = QtCore.pyqtSignal(str)
 
     def __init__(self, selectedcmap=None, cmaps=None):
-        super(ColorMapPickerWidget, self).__init__()
+        super().__init__()
 
         self.cmaps = cmaps if cmaps is not None else DFLT_CMAPS
         if selectedcmap in self.cmaps:
@@ -80,7 +80,7 @@ class ColorMapPickerWidget(QtWidgets.QWidget):
 class ColorMapDialog(QtWidgets.QDialog):
     ''' Dialog for showing colormappicker and ok/cancel buttons '''
     def __init__(self, parent=None, selectedcmap=None):
-        super(ColorMapDialog, self).__init__(parent)
+        super().__init__(parent)
         self.setGeometry(600, 200, 600, 600)
         self.setWindowTitle('Data Importer')
 
@@ -98,4 +98,4 @@ class ColorMapDialog(QtWidgets.QDialog):
     def accept(self):
         ''' Accept the dialog with selected color '''
         self.selectedcmap = self.cpicker.get_selectedcmap()
-        super(ColorMapDialog, self).accept()
+        super().accept()

@@ -1,4 +1,6 @@
 ''' GUI page for loading datasets and computing stats such as analysis of variance '''
+
+from contextlib import suppress
 import numpy as np
 from PyQt5 import QtWidgets, QtCore
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
@@ -6,6 +8,7 @@ from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as Navigatio
 from matplotlib.figure import Figure
 
 from .. import dataset
+from .. import report
 from . import gui_common
 from . import gui_widgets
 from . import page_csvload
@@ -16,7 +19,7 @@ class HistCtrlWidget(QtWidgets.QWidget):
     changed = QtCore.pyqtSignal()
 
     def __init__(self, parent=None):
-        super(HistCtrlWidget, self).__init__(parent=parent)
+        super().__init__(parent=parent)
         self.colSelect = QtWidgets.QComboBox()
         layout = QtWidgets.QHBoxLayout()
         layout.addWidget(QtWidgets.QLabel('Column:'))
@@ -25,7 +28,7 @@ class HistCtrlWidget(QtWidgets.QWidget):
         self.setLayout(layout)
         self.colSelect.currentIndexChanged.connect(self.changed)
 
-    def udpate_colnames(self, names):
+    def update_colnames(self, names):
         self.colSelect.blockSignals(True)
         self.colSelect.clear()
         self.colSelect.addItems(names)
@@ -38,7 +41,7 @@ class CorrCtrlWidget(QtWidgets.QWidget):
     changed = QtCore.pyqtSignal()
 
     def __init__(self, parent=None):
-        super(CorrCtrlWidget, self).__init__(parent=parent)
+        super().__init__(parent=parent)
         self.col1Select = QtWidgets.QComboBox()
         self.col2Select = QtWidgets.QComboBox()
         layout = QtWidgets.QHBoxLayout()
@@ -51,7 +54,7 @@ class CorrCtrlWidget(QtWidgets.QWidget):
         self.col1Select.currentIndexChanged.connect(self.changed)
         self.col2Select.currentIndexChanged.connect(self.changed)
 
-    def udpate_colnames(self, names):
+    def update_colnames(self, names):
         self.col1Select.blockSignals(True)
         self.col1Select.clear()
         self.col1Select.addItems(names)
@@ -68,7 +71,7 @@ class ACorrCtrlWidget(QtWidgets.QWidget):
     changed = QtCore.pyqtSignal()
 
     def __init__(self, parent=None):
-        super(ACorrCtrlWidget, self).__init__(parent=parent)
+        super().__init__(parent=parent)
         self.colSelect = QtWidgets.QComboBox()
         self.mode = QtWidgets.QComboBox()
         self.mode.addItems(['Autocorrelation Plot', 'Lag Plot'])
@@ -93,7 +96,7 @@ class ACorrCtrlWidget(QtWidgets.QWidget):
         self.lag.setVisible(self.mode.currentText() == 'Lag Plot')
         self.laglabel.setVisible(self.mode.currentText() == 'Lag Plot')
 
-    def udpate_colnames(self, names):
+    def update_colnames(self, names):
         self.colSelect.blockSignals(True)
         self.colSelect.clear()
         self.colSelect.addItems(names)
@@ -104,7 +107,7 @@ class ACorrCtrlWidget(QtWidgets.QWidget):
 class DataSetWidget(QtWidgets.QWidget):
     ''' Widget for displaying measured data and ANOVA calculations '''
     def __init__(self, item, parent=None):
-        super(DataSetWidget, self).__init__(parent=parent)
+        super().__init__(parent=parent)
         self.dataset = item
 
         self.table = gui_widgets.FloatTableWidget(movebyrows=True, headeredit='str')
@@ -217,6 +220,7 @@ class DataSetWidget(QtWidgets.QWidget):
             self.togglesummary()
 
         self.table.blockSignals(False)
+        self.updatecolnames()
 
     def get_menu(self):
         ''' Get the menu for this calculation mode '''
@@ -273,67 +277,60 @@ class DataSetWidget(QtWidgets.QWidget):
     def updatecolnames(self):
         ''' Update column names in column-select widgets '''
         names = [str(c) for c in self.dataset.colnames]
+        self.histctrls.update_colnames(names)
+        self.corrctrls.update_colnames(names)
+        self.acorctrls.update_colnames(names)
 
-        def updatecol(widget):
-            widget.blockSignals(True)
-            widget.clear()
-            widget.addItems(names)
-            widget.blockSignals(False)
-        updatecol(self.histctrls.colSelect)
-        updatecol(self.corrctrls.col1Select)
-        updatecol(self.corrctrls.col2Select)
-        updatecol(self.acorctrls.colSelect)
 
     def refresh_output(self):
         ''' Refresh the output plot and report '''
         self.figure.clf()
 
+        rpt = report.Report()
         mode = self.cmbMode.currentText()
         if mode == 'Summary':
-            rpt = '## Columns\n\n'
-            rpt += self.dataset.out.report(**gui_common.get_rptargs())
+            rpt.hdr('Columns', level=2)
+            rpt.append(self.dataset.out.report())
             if self.dataset.ncolumns() > 1:
-                rpt += '### Pooled Statistics'
-                rpt += self.dataset.out.report_pooled(**gui_common.get_rptargs())
+                rpt.hdr('Pooled Statistics', level=3)
+                rpt.append(self.dataset.out.report_pooled())
                 self.dataset.out.plot_groups(plot=self.figure)
             else:
                 self.dataset.out.plot_histogram(plot=self.figure)
 
         elif mode == 'Histogram':
             col = self.histctrls.colSelect.currentText()
-            rpt = f'## {col}\n\n'
-            rpt += self.dataset.out.report_column(col, **gui_common.get_rptargs())
+            rpt.hdr(col, level=2)
+            rpt.append(self.dataset.out.report_column(col))
             self.dataset.out.plot_histogram(colname=col, plot=self.figure)
 
         elif mode == 'Correlation':
-            rpt = f'## Correlation Matrix\n'
-            rpt += self.dataset.out.report_correlation(**gui_common.get_rptargs())
+            rpt.hdr('Correlation Matrix', level=2)
+            rpt.append(self.dataset.out.report_correlation())
             col1 = self.corrctrls.col1Select.currentText()
             col2 = self.corrctrls.col2Select.currentText()
             self.dataset.out.plot_scatter(col1, col2, plot=self.figure)
 
         elif mode == 'Autocorrelation':
-            rpt = f'## Autocorrelation\n'
+            rpt.hdr('Autocorrelation', level=2)
             col = self.acorctrls.colSelect.currentText()
             lag = self.acorctrls.lag.value()
-            rpt += self.dataset.out.report_autocorrelation(**gui_common.get_rptargs())
+            rpt.append(self.dataset.out.report_autocorrelation())
             if self.acorctrls.mode.currentText() == 'Lag Plot':
-                try:
+                with suppress(ValueError):  # Raises when lag too high
                     self.dataset.out.plot_lag(col, lag=lag, plot=self.figure)
-                except ValueError:
-                    pass  # Lag too high
             else:
                 self.dataset.out.plot_autocorrelation(col, plot=self.figure)
 
         elif mode == 'Analysis of Variance':
-            rpt = f'## Analysis of Variance\n'
-            rpt += self.dataset.out.report_anova(**gui_common.get_rptargs())
+            rpt.hdr('Analysis of Variance', level=2)
+            rpt.append(self.dataset.out.report_anova())
             self.dataset.out.plot_groups(plot=self.figure)
 
         else:
             raise NotImplementedError
 
-        self.txtOutput.setMarkdown(rpt)
+        self.txtOutput.setReport(rpt)
         self.figure.tight_layout()
         self.canvas.draw_idle()
 
@@ -403,8 +400,6 @@ class DataSetWidget(QtWidgets.QWidget):
                 dset = dlg.dataset()
                 data = dset.data
                 hdr = dset.colnames
-                #data = dlg.columns  # List of arrays
-                #hdr = dlg.header    # List of strings
                 colcnt = max(len(hdr), len(data))
                 rowcnt = max([len(c) for c in data])
 
@@ -420,8 +415,8 @@ class DataSetWidget(QtWidgets.QWidget):
 
     def get_report(self):
         ''' Get full report of dataset, using page settings '''
-        return self.dataset.get_output().report_all(**gui_common.get_rptargs())
+        return self.dataset.get_output().report_all()
 
     def save_report(self):
         ''' Save full report, asking user for settings/filename '''
-        gui_widgets.savemarkdown(self.get_report())
+        gui_widgets.savereport(self.get_report())

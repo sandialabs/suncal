@@ -182,7 +182,7 @@ class Distribution(object):
     def helpstr(self):
         ''' Get a help string for this Distribution. '''
         helpstr = self.dist.__class__.__doc__.split('\n')
-        helpstr = '\n'.join([l for l in helpstr if not l.startswith('    %')])
+        helpstr = '\n'.join(l for l in helpstr if not l.startswith('    %'))
         return helpstr
 
 
@@ -206,7 +206,7 @@ class DNormal(Distribution):
                 k = ttable.t_factor(self.kwds['conf'], np.inf)
                 std = self.kwds['unc']/k
             else:
-                k = self.kwds.get('k', 2)
+                k = self.kwds.get('k', 1)
                 std = self.kwds['unc']/k
         elif 'std' in self.kwds:
             std = self.kwds.get('std')
@@ -245,6 +245,7 @@ class Dt(Distribution):
         ''' Update the keywords for the distribution. '''
         self.kwds.update(kwds)
         df = self.kwds.get('df', np.inf)
+        df = max(2.00001, df)  # No div/0 or negative scales later
         if 'unc' in self.kwds:   # UNC and DF, but no conf or K......
             if 'conf' in self.kwds:
                 k = ttable.t_factor(self.kwds['conf'], df)
@@ -450,8 +451,8 @@ class DHistogram(Distribution):
         d = {'hist': list(self.kwds['hist']),
              'edges': list(self.kwds['edges']),
              'dist': self.name}
-        return d        
-        
+        return d
+
     def helpstr(self):
         return 'Histogram approximation to a probability distribution.'
 

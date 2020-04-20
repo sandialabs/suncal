@@ -1,6 +1,7 @@
 '''
 Pages for sweeping uncertainty propagation and reverse propagations.
 '''
+from contextlib import suppress
 import numpy as np
 from PyQt5 import QtWidgets, QtGui, QtCore
 
@@ -15,7 +16,7 @@ from . import page_dataimport
 class StartStopCountWidget(QtWidgets.QDialog):
     ''' Dialog for defining a sweep from start/stop/step values '''
     def __init__(self, title=None, parent=None):
-        super(StartStopCountWidget, self).__init__(parent=parent)
+        super().__init__(parent=parent)
         self.setWindowTitle(title if title else 'Enter Range')
         self.start = QtWidgets.QLineEdit()
         self.stop = QtWidgets.QLineEdit()
@@ -45,48 +46,27 @@ class StartStopCountWidget(QtWidgets.QDialog):
             return np.array([])
 
 
-class SweepSetupWidget(QtWidgets.QWidget):
-    ''' Widget for defining sweep variables '''
+class SweepSetupTable(gui_widgets.FloatTableWidget):
+    ''' Table for defining sweep variables '''
     def __init__(self, calc=None, parent=None):
-        super(SweepSetupWidget, self).__init__(parent=parent)
-        self.calcsweep = calc
+        super().__init__(parent=parent, movebyrows=True, paste_multicol=False)
+        self.sweepcalc = calc
         self.inptlist = []
-        self.btnAdd = QtWidgets.QToolButton()
-        self.btnAdd.setText('+')
-        self.btnRem = QtWidgets.QToolButton()
-        self.btnRem.setText(gui_common.CHR_ENDASH)
-        self.btnFill = QtWidgets.QToolButton()
-        self.btnFill.setText(gui_common.CHR_ELLIPSIS)
-        self.btnLoad = QtWidgets.QToolButton()
-        self.btnLoad.setIconSize(QtCore.QSize(22, 22))
-        self.btnLoad.setIcon(gui_common.load_icon('loaddat'))
-        self.btnAdd.setToolTip('Add a sweep')
-        self.btnRem.setToolTip('Remove sweep column')
-        self.btnFill.setToolTip('Insert sweep range')
-        self.btnLoad.setToolTip('Load sweep data from...')
-        self.table = gui_widgets.FloatTableWidget(paste_multicol=False)
-
-        layout = QtWidgets.QVBoxLayout()
-        hlayout = QtWidgets.QHBoxLayout()
-        hlayout.addWidget(self.btnAdd)
-        hlayout.addWidget(self.btnRem)
-        hlayout.addSpacing(10)
-        hlayout.addWidget(self.btnFill)
-        hlayout.addWidget(self.btnLoad)
-        hlayout.addStretch()
-        layout.addLayout(hlayout)
-        layout.addWidget(self.table)
-        self.setLayout(layout)
+        self.setStyleSheet(page_uncertprop.TABLESTYLE)
+        
+        # This is stupid and ugly but otherwise the keyboard navigation doesn't work with a table 
+        # embedded in a tree. It works fine when table isn't embedded in tree.
+        self.setEditTriggers(QtWidgets.QTableWidget.AllEditTriggers)
 
         # Load initial values from saved file
-        self.table.setColumnCount(len(self.calcsweep.sweeplist))
-        for swpidx, swp in enumerate(self.calcsweep.sweeplist):
+        self.setColumnCount(len(self.sweepcalc.sweeplist))
+        for swpidx, swp in enumerate(self.sweepcalc.sweeplist):
             values = swp.get('values', [])
-            if len(values) > self.table.rowCount():
-                self.table.setRowCount(len(values))
+            if len(values) > self.rowCount():
+                self.setRowCount(len(values))
 
             for i, val in enumerate(values):
-                self.table.setItem(i, swpidx, QtWidgets.QTableWidgetItem(str(val)))
+                self.setItem(i, swpidx, QtWidgets.QTableWidgetItem(str(val)))
             inptname = swp.get('inptname')
             comp = swp.get('comp')
             param = swp.get('param')
@@ -98,25 +78,51 @@ class SweepSetupWidget(QtWidgets.QWidget):
                 sweepstr = 'df({})'.format(comp)
             else:
                 sweepstr = 'Unc({}, {}, {})'.format(swp.get('var'), comp, param)
-            self.table.setHorizontalHeaderItem(swpidx, QtWidgets.QTableWidgetItem(sweepstr))
+            self.setHorizontalHeaderItem(swpidx, QtWidgets.QTableWidgetItem(sweepstr))
 
-        self.btnAdd.clicked.connect(self.addcol)
-        self.btnRem.clicked.connect(self.remcol)
-        self.btnFill.clicked.connect(self.filldata)
-        self.btnLoad.clicked.connect(self.importdata)
-        self.table.valueChanged.connect(self.update_sweepparams)
+        self.valueChanged.connect(self.update_sweepparams)
 
     def set_inptlist(self, inptlist):
         ''' Set the list of inputs '''
         self.inptlist = inptlist
 
+    def clear(self):
+        ''' Clear the table '''
+        super().clear()
+        self.setRowCount(1)
+        self.setColumnCount(0)
+
+    def contextMenuEvent(self, event):
+        ''' Right-click menu '''
+        menu = QtWidgets.QMenu(self)
+        actAddCol = menu.addAction('Add sweep column')
+        actRemCol = menu.addAction('Remove sweep column')
+        actFill = menu.addAction('Fill column...')
+        actImport = menu.addAction('Import Sweep List...')
+        menu.addSeparator()
+        actInsert = menu.addAction('Insert Row')
+        actRemove = menu.addAction('Remove Row')
+        menu.addSeparator()
+        actCopy = menu.addAction('Copy')
+        actPaste = menu.addAction('Paste')
+        actPaste.setEnabled(QtWidgets.QApplication.instance().clipboard().text() != '')
+        actAddCol.triggered.connect(self.addcol)
+        actRemCol.triggered.connect(self.remcol)
+        actFill.triggered.connect(self.filldata)
+        actImport.triggered.connect(self.importdata)
+        actPaste.triggered.connect(self._paste)
+        actCopy.triggered.connect(self._copy)
+        actInsert.triggered.connect(self._insertrow)
+        actRemove.triggered.connect(self._removerow)
+        menu.popup(QtGui.QCursor.pos())
+
     def remcol(self):
         ''' Remove the selected column '''
-        col = self.table.currentColumn()
+        col = self.currentColumn()
         if col >= 0:
-            self.table.blockSignals(True)
-            self.table.removeColumn(col)
-            self.table.blockSignals(False)
+            self.blockSignals(True)
+            self.removeColumn(col)
+            self.blockSignals(False)
             self.update_sweepparams()
 
     def addcol(self):
@@ -124,19 +130,19 @@ class SweepSetupWidget(QtWidgets.QWidget):
         w = SweepParamWidget(self.inptlist)
         status = w.exec_()
         if status:
-            self.table.blockSignals(True)
-            col = self.table.columnCount()
-            self.table.setColumnCount(col+1)
+            self.blockSignals(True)
+            col = self.columnCount()
+            self.setColumnCount(col+1)
             sweepstr = w.get_sweepstr()
-            self.table.setHorizontalHeaderItem(col, QtWidgets.QTableWidgetItem(sweepstr))
-            self.table.setCurrentCell(0, col)
-            self.table.blockSignals(False)
+            self.setHorizontalHeaderItem(col, QtWidgets.QTableWidgetItem(sweepstr))
+            self.setCurrentCell(0, col)
+            self.blockSignals(False)
         return status
 
     def importdata(self):
         ''' Import sweep array from the project into the selected column '''
-        col = self.table.currentColumn()
-        if col < 0 and self.table.columnCount() == 0:
+        col = self.currentColumn()
+        if col < 0 and self.columnCount() == 0:
             ok = self.addcol()
             col = 0
             if not ok:
@@ -144,29 +150,29 @@ class SweepSetupWidget(QtWidgets.QWidget):
         elif col < 0:
             col = 0
 
-        dlg = page_dataimport.ArraySelectWidget(singlecol=True, project=self.calcsweep.project)
+        dlg = page_dataimport.ArraySelectWidget(singlecol=True, project=self.sweepcalc.project)
         ok = dlg.exec_()
         if ok:
             sweep = dlg.get_array().y
             if sweep is not None:
-                self.table.blockSignals(True)
-                if len(sweep) > self.table.rowCount():
-                    self.table.setRowCount(len(sweep))
+                self.blockSignals(True)
+                if len(sweep) > self.rowCount():
+                    self.setRowCount(len(sweep))
 
                 # Clear out all rows in column
-                for i in range(self.table.rowCount()):
-                    self.table.setItem(i, col, QtWidgets.QTableWidgetItem(''))
+                for i in range(self.rowCount()):
+                    self.setItem(i, col, QtWidgets.QTableWidgetItem(''))
 
                 # Fill rows from range
                 for i, val in enumerate(sweep):
-                    self.table.item(i, col).setText(str(val))
-                self.table.blockSignals(False)
+                    self.item(i, col).setText(str(val))
+                self.blockSignals(False)
                 self.update_sweepparams()
 
     def filldata(self):
         ''' Fill selected column with start/stop/step values '''
-        col = self.table.currentColumn()
-        if col < 0 and self.table.columnCount() == 0:
+        col = self.currentColumn()
+        if col < 0 and self.columnCount() == 0:
             # No columns defined, add one
             ok = self.addcol()
             col = 0
@@ -176,30 +182,31 @@ class SweepSetupWidget(QtWidgets.QWidget):
             # Sweep the first column by default
             col = 0
 
-        dlg = StartStopCountWidget(title=self.table.horizontalHeaderItem(col).text())
+        dlg = StartStopCountWidget(title=self.horizontalHeaderItem(col).text())
         ok = dlg.exec_()
         if ok:
-            self.table.blockSignals(True)
+            self.blockSignals(True)
             rng = dlg.get_range()
-            if len(rng) > self.table.rowCount():
-                self.table.setRowCount(len(rng))
+            if len(rng) > self.rowCount():
+                self.setRowCount(len(rng))
 
             # Clear out all rows in column
-            for i in range(self.table.rowCount()):
-                self.table.setItem(i, col, QtWidgets.QTableWidgetItem(''))
+            for i in range(self.rowCount()):
+                self.setItem(i, col, QtWidgets.QTableWidgetItem(''))
 
             # Fill rows from range
             for i, val in enumerate(rng):
-                self.table.item(i, col).setText(str(val))
-            self.table.blockSignals(False)
+                self.item(i, col).setText(str(val))
+            self.blockSignals(False)
             self.update_sweepparams()
+
 
     def update_sweepparams(self):
         ''' Update UncertSweep model with currently displayed parameters '''
         sweeplist = []
-        for col in range(self.table.columnCount()):
-            sweepstr = self.table.horizontalHeaderItem(col).text()
-            vals = [self.table.item(i, col).text() for i in range(self.table.rowCount()) if self.table.item(i, col) and self.table.item(i, col).text() != '']
+        for col in range(self.columnCount()):
+            sweepstr = self.horizontalHeaderItem(col).text()
+            vals = [self.item(i, col).text() for i in range(self.rowCount()) if self.item(i, col) and self.item(i, col).text() != '']
             try:
                 vals = np.array([float(v) for v in vals])
             except ValueError:
@@ -215,22 +222,22 @@ class SweepSetupWidget(QtWidgets.QWidget):
                 d['param'] = params[2]
             sweeplist.append(d)
 
-        self.calcsweep.clear_sweeps()
+        self.sweepcalc.clear_sweeps()
         for params in sweeplist:
             if params['mode'] == 'Mean':
-                self.calcsweep.add_sweep_nom(params['varname'], params['values'])
+                self.sweepcalc.add_sweep_nom(params['varname'], params['values'])
             elif params['mode'] == 'Unc':
-                self.calcsweep.add_sweep_unc(params['varname'], params['values'], params['comp'], params['param'])
+                self.sweepcalc.add_sweep_unc(params['varname'], params['values'], params['comp'], params['param'])
             elif params['mode'] == 'df':
-                self.calcsweep.add_sweep_df(params['varname'], params['values'])
+                self.sweepcalc.add_sweep_df(params['varname'], params['values'])
             elif params['mode'] == 'corr':
-                self.calcsweep.add_sweep_corr(params['varname'], params['comp'], params['values'])
+                self.sweepcalc.add_sweep_corr(params['varname'], params['comp'], params['values'])
 
 
 class SweepParamWidget(QtWidgets.QDialog):
     ''' Widget for selecting what is being swept in this column '''
     def __init__(self, inptlist, parent=None):
-        super(SweepParamWidget, self).__init__(parent=parent)
+        super().__init__(parent=parent)
         self.inptlist = inptlist
         self.setWindowTitle('Add Parameter Sweep')
         self.mode = QtWidgets.QComboBox()
@@ -350,7 +357,7 @@ class SweepSlider(QtWidgets.QWidget):
     valueChanged = QtCore.pyqtSignal()
 
     def __init__(self, parent=None):
-        super(SweepSlider, self).__init__(parent=parent)
+        super().__init__(parent=parent)
         self.slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
         self.slider.valueChanged.connect(self.valueChanged)
         self.lblValue = QtWidgets.QLabel()
@@ -378,7 +385,7 @@ class PageOutputSweep(page_uncertprop.PageOutput):
         individual runs in the sweep
     '''
     def __init__(self, sweepReport=None, parent=None):
-        super(PageOutputSweep, self).__init__(uncCalc=None, parent=parent)
+        super().__init__(uncCalc=None, parent=parent)
         self.sweepReport = sweepReport
         self.slider = SweepSlider()
         self.slider.valueChanged.connect(self.sliderchange)
@@ -397,6 +404,7 @@ class PageOutputSweep(page_uncertprop.PageOutput):
         i = self.slider.value()
         self.set_unccalc(self.sweepReport.outputlist[i].ucalc)
         self.update(self.sweepReport.outputlist[i])
+        # TODO: update slider to show math image instead of text only, get_single_desc would return latex
         self.slider.setLblTxt(self.sweepReport.get_single_desc(i))
         self.outputupdate()
 
@@ -406,14 +414,13 @@ class PageOutputSweep(page_uncertprop.PageOutput):
         '''
         option = self.outputSelect.currentText()
         if option == 'Summary':
-            r = self.sweepReport.report_summary(uy=':', **gui_common.get_rptargs())
-            self.txtOutput.setMarkdown(r)
+            r = self.sweepReport.report_summary(uy=':')
+            self.txtOutput.setReport(r)
             self.outputStack.setCurrentIndex(1)
             self.slider.setVisible(False)
-
         else:
             self.slider.setVisible(True)
-            super(PageOutputSweep, self).outputupdate()
+            super().outputupdate()
 
 
 class UncertSweepWidget(page_uncertprop.UncertPropWidget):
@@ -421,8 +428,8 @@ class UncertSweepWidget(page_uncertprop.UncertPropWidget):
     def __init__(self, item, parent=None):
         assert isinstance(item, sweeper.UncertSweep)
         self.uncSweep = item
-        self.sweepsetup = SweepSetupWidget(self.uncSweep)
-        super(UncertSweepWidget, self).__init__(item.unccalc, parent)
+        self.sweepsetup = SweepSetupTable(self.uncSweep)
+        super().__init__(item.unccalc, parent)
 
         self.menu.removeAction(self.mnuSaveSamples.menuAction())
         self.actNewUnc = QtWidgets.QAction('New single calculation from sweep', self)
@@ -435,20 +442,27 @@ class UncertSweepWidget(page_uncertprop.UncertPropWidget):
         self.pgoutputsweep.back.connect(self.backbutton)
         self.stack.removeWidget(self.pgoutput)
         self.stack.addWidget(self.pgoutputsweep)
-        self.pginput.tab.insertTab(0, self.sweepsetup, 'Sweep')
-        if self.uncSweep.unccalc.longdescription == '':
-            self.pginput.tab.setCurrentIndex(0)
+        self.pginput.panel.insert_widget('Sweep', self.sweepsetup, 4)
+        self.pginput.panel.expand('Sweep')
 
     def funcchanged(self, row, fdict):
         ''' Sweep function has changed '''
-        super(UncertSweepWidget, self).funcchanged(row, fdict)
+        super().funcchanged(row, fdict)
         baseinputs = self.uncSweep.unccalc.get_baseinputs()
         self.sweepsetup.set_inptlist(baseinputs)
+        with suppress(AttributeError):  # May not be defined yet
+            self.actNewUnc.setEnabled(True)
+
+    def clearinput(self):
+        ''' Clear all the input/output values '''
+        self.sweepsetup.clear()
+        self.actNewUnc.setEnabled(False)
+        super().clearinput()
 
     def calculate(self):
         ''' Run the calculation '''
         valid = True
-        if not (self.pginput.funclist.isValid() and self.pginput.inputtable.isValid()):
+        if not self.pginput.isValid():
             QtWidgets.QMessageBox.warning(self, 'Uncertainty Calculator', 'Invalid Input Parameter!')
             valid = False
 
@@ -480,11 +494,11 @@ class UncertSweepWidget(page_uncertprop.UncertPropWidget):
 
     def get_report(self):
         ''' Get full report of curve fit, using page settings '''
-        return self.uncSweep.get_output().report_all(**gui_common.get_rptargs())
+        return self.uncSweep.get_output().report_all()
 
     def save_report(self):
         ''' Save full report, asking user for settings/filename '''
-        gui_widgets.savemarkdown(self.get_report())
+        gui_widgets.savereport(self.get_report())
 
 
 class UncertReverseSweepWidget(page_uncertprop.UncertPropWidget):
@@ -492,9 +506,9 @@ class UncertReverseSweepWidget(page_uncertprop.UncertPropWidget):
     def __init__(self, item, parent=None):
         self.uncRevSwp = item
         self.uncCalc = item.unccalc
-        self.sweepsetup = SweepSetupWidget(self.uncRevSwp)
+        self.sweepsetup = SweepSetupTable(self.uncRevSwp)
         self.targetsetup = page_reverse.TargetSetupWidget(self.uncCalc)
-        super(UncertReverseSweepWidget, self).__init__(self.uncCalc, parent=parent)
+        super().__init__(self.uncCalc, parent=parent)
 
         self.menu.removeAction(self.mnuSaveSamples.menuAction())
         self.actNewRev = QtWidgets.QAction('New single reverse from sweep', self)
@@ -509,22 +523,30 @@ class UncertReverseSweepWidget(page_uncertprop.UncertPropWidget):
         self.pgoutputrevsweep.back.connect(self.backbutton)
         self.stack.removeWidget(self.pgoutput)
         self.stack.addWidget(self.pgoutputrevsweep)
-        self.pginput.tab.insertTab(0, self.sweepsetup, 'Sweep')
-        self.pginput.tab.insertTab(0, self.targetsetup, 'Target')
-        if self.uncRevSwp.unccalc.longdescription == '':
-            self.pginput.tab.setCurrentIndex(0)
+        self.pginput.panel.insert_widget('Sweep', self.sweepsetup, 4)
+        self.pginput.panel.insert_widget('Reverse Target Value', self.targetsetup, 4)
 
     def funcchanged(self, row, fdict):
         ''' Function has changed '''
-        super(UncertReverseSweepWidget, self).funcchanged(row, fdict)
+        super().funcchanged(row, fdict)
         baseinputs = self.uncCalc.get_baseinputs()
         self.sweepsetup.set_inptlist(baseinputs)
         self.targetsetup.update_names()
+        with suppress(AttributeError):
+            self.actNewSwp.setEnabled(True)
+            self.actNewRev.setEnabled(True)
+
+    def clearinput(self):
+        ''' Clear all the input/output values '''
+        self.sweepsetup.clear()
+        self.actNewSwp.setEnabled(False)
+        self.actNewRev.setEnabled(False)
+        super().clearinput()
 
     def calculate(self):
         ''' Run the calculation '''
         valid = True
-        if not (self.pginput.funclist.isValid() and self.pginput.inputtable.isValid()):
+        if not self.pginput.isValid():
             QtWidgets.QMessageBox.warning(self, 'Uncertainty Calculator', 'Invalid Input Parameter!')
             valid = False
 
@@ -550,7 +572,7 @@ class UncertReverseSweepWidget(page_uncertprop.UncertPropWidget):
             valid = False
 
         if valid:
-            self.pgoutputrevsweep.txtOutput.setMarkdown(self.uncRevSwp.out.report_summary(**gui_common.get_rptargs()))
+            self.pgoutputrevsweep.txtOutput.setReport(self.uncRevSwp.out.report_summary())
             self.stack.setCurrentIndex(self.PG_OUTPUT)
             self.actSaveReport.setEnabled(True)
         else:
@@ -559,8 +581,8 @@ class UncertReverseSweepWidget(page_uncertprop.UncertPropWidget):
 
     def get_report(self):
         ''' Get full report of curve fit, using page settings '''
-        return self.uncRevSwp.get_output().report_all(**gui_common.get_rptargs())
+        return self.uncRevSwp.get_output().report_all()
 
     def save_report(self):
         ''' Save full report, asking user for settings/filename '''
-        gui_widgets.savemarkdown(self.get_report())
+        gui_widgets.savereport(self.get_report())

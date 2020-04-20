@@ -1,6 +1,6 @@
 ---
 title: Sandia Primary Standards Laboratory Uncertainty Calculator User's Guide
-date: January 8, 2020
+date: April 17, 2020
 author:
 - Sandia National Laboratories^[Sandia National Laboratories is a multimission laboratory managed and operated by National Technology and Engineering Solutions of Sandia, LLC., a wholly owned subsidiary of Honeywell International, Inc., for the U.S. Department of Energy’s National Nuclear Security Administration under contract DE-NA-0003525.]
 - uncertainty@sandia.gov
@@ -13,7 +13,7 @@ link-citations: true
 # Introduction
 
 The Sandia PSL Uncertainty Calculator software was developed by the Primary Standards Laboratory (PSL) at Sandia National Laboratories.
-After repeatedly writing individual bits of Python code to perform uncertainty propagation calculations for different systems, the decision was made to generalized and make it available to the PSL's customers as a tool for performing GUM and Monte Carlo uncertainty propagation on any measurement system.
+After repeatedly writing individual bits of Python code to perform uncertainty propagation calculations for different systems, the decision was made to generalize the code and make it available to the PSL's customers as a tool for performing GUM and Monte Carlo uncertainty propagation on any measurement system.
 The initial software versions were limited to GUM and Monte Carlo uncertainty propagation, and were primarily used primarily at the PSL and Sandia.
 The calculations had to be written in Python Code. Eventually, a simple user interface was added to remove the coding requirement.
 Additional features, such as risk analysis and evaluating uncertainty in curve fitting, were later added as more code was developed.
@@ -115,24 +115,24 @@ Along with constants "e" and "pi", several common functions are also recognized:
 Most Greek symbols are recognized by typing their names in English: "theta," "delta," etc. and will be displayed as symbols.
 After entering an expression, the field should render the expression as a math formula.
 If the field turns red, there was an error parsing the expression, which could mean a missing parenthesis, unrecognized function, or other error.
-Additional functions can be entered and calculated in parallel using the plus sign (**+**) and minus sign (**-**) buttons.
-These functions may be chained together, for example "f = a + b", and "g = 2*f".
+Additional functions can be entered and calculated in parallel using the right-click menu to add or remove model equations.
+These equations may be chained together, for example "f = a + b", and "g = 2*f".
 
-Once a function is entered, the variables in that function are extracted to fill in the names in the Measured Quantities table.
-In this table, the nominal value, measurement units, and a description of each variable can be entered.
-The uncertainties row for each variable can be expanded to show all the uncertainty components assigned to that variable.
-If a variable has more than one uncertainty component (e.g. a type A and type B component), use the plus sign (**+**) button to add additional components.
+Once a function is entered, the **Uncertainties** table is filled in with the variable names extracted from the measurement model equations.
+In this table, the nominal measured value, measurement units, and a description of each variable can be entered, along with one or more uncertainty components for each measurement variable.
+If a variable has more than one uncertainty component (e.g. a type A and type B component), right-click on the variable and select **Add uncertainty component.**
 When multiple components are present, the standard uncertainty of each component is root-sum-squared together to obtain a standard uncertainty for the variable used by the GUM equation, and the degrees of freedom are combined using the W-S formula.
 The Monte Carlo method will separately sample each component before combining.
 
-![Measured quantities table](figs/measuredqty.png){#fig:measuredqty}
+![Uncertainties table](figs/measuredqty.png){#fig:measuredqty}
 
-Normal and t distributions have rows for entering both a k value and a confidence percentage. Entering one value will recompute the other based on the entered degrees of freedom.
+The four **Param** columns change depending on what distribution is selected.
+Normal and t distributions have columns for entering uncertainty with a k value and a confidence percentage. Entering one value will recompute the other based on the entered degrees of freedom.
 Uniform distributions can be entered by using the half-width "a" parameter.
-For more information on what the parameters for each distribution are, press the question mark (**?**) button near the plot of the distribution.
+For more information on what the parameters for each distribution are, right-click the uncertainty row and select **Distribution Help**.
 The most common distributions are shown in the drop-down list box, but many others can be enabled in the **Preferences** menu.
-The distribution is converted to a standard uncertainty (shown in the Uncertainty Components table) for use in the GUM formula, while the Monte Carlo method directly samples the distribution.
-The Distribution tab also has a button to import distribution settings from a CSV file of sampled data or from another calculation in the program.
+The distribution is converted to a standard uncertainty for use in the GUM formula, while the Monte Carlo method directly samples each distribution.
+The right-click menu also has an option to import distribution settings from a CSV file of sampled data or from another calculation in the project.
 
 #### Relative Uncertainties
 
@@ -144,21 +144,21 @@ Manufacturer's specifications are often given in terms of "percent reading + per
 also be entered in the uncertainty field, where `X` denotes the desired percent and the value in parenthesis is the instrument range. For example, if an uncertainty is given
 as 1% reading + 5% range, when operating on the 100 V range, enter "1% + 5%range(100)". With a nominal value of 100 V, this expression will reduce to 6 V.
 
-
 ![Entering an uncertainty as a percent reading + percent range](figs/percent.png){#id .class width=3in #fig:uncertpercent}
 
 
 #### Correlated Uncertainties
 
-If the input variables are correlated, these can be entered on the **Correlations** tab (see {*@fig:correlation}).
+If the input variables are correlated, these can be entered on the **Correlations** section (see {*@fig:correlation}).
 Correlation coefficients are entered one pair at a time, and must be a value between -1 and +1.
+Right-click the table to add or remove correlation coefficients.
 
 ![Correlation coefficient entry table](figs/correlations.png){#fig:correlation}
 
 
 #### Entering Units
 
-The Measurement Model and Measured Quantites tables allow entry of measurement units.
+The Measurement Model and Uncertainties tables allow entry of measurement units.
 If omitted, units will be treated as dimensionless.
 Otherwise, the entered unit name will be interpreted as a measurement unit.
 Many common units and prefixes are recognized either as abbreviations or full names.
@@ -184,7 +184,7 @@ After clicking **OK**, the assigned distributions will be loaded into the uncert
 
 ![Importing measurement data into uncertainty propagation](figs/dataimporter.png){#fig:importing}
 
-Finally, the **Notes** tab contains a field for entering your own information to save with the calculation, and the **Settings** tab allows entry of the number of Monte Carlo samples and the random number generator seed.
+Finally, the **Notes** section contains a field for entering your own information to save with the calculation, and the **Settings** section allows entry of the number of Monte Carlo samples and the random number generator seed.
 A seed of "None" will be randomized on every run.
 
 
@@ -276,9 +276,9 @@ The Monte Carlo method reverses the measurement function and treats the function
 To do this, the Reverse Uncertainty calculator must account for the correlation between the model output and the original input variables.
 These correlation coefficients are be estimated using the sensitivity coefficients as described in the GUM [@GUM] C.3.6 note 3.
 
-The Reverse Uncertainty Propagation interface is similar to the standard uncertainty propagation interface, with the addition of a **Target** tab.
-This tab allows entry of the target (mean) value for the function and desired uncertainty for the function.
-The input variable to solve for is entered from the drop-down list. Any information about the solve-for variable in the Measured Quantities table is ignored.
+The Reverse Uncertainty Propagation interface is similar to the standard uncertainty propagation interface, with the addition of a **Target** section.
+This section allows entry of the target (mean) value for the function and desired uncertainty for the function.
+The input variable to solve for is entered from the drop-down list. Any information about the solve-for variable in the Uncertainties table is ignored.
 
 After clicking **Calculate**, the results will display.
 The GUM method shows the solved-for variable's uncertainty in terms of the function uncertainty.
@@ -290,11 +290,11 @@ The Monte Carlo method shows the results and a histogram of the reverse Monte Ca
 Uncertainty sweeps perform multiple forward or reverse uncertainty calculations over a range of inputs.
 The mean value or any parameter defining the uncertainty of any component may be swept over any range of values.
 
-The Sweep interface adds a **Sweep** tab where the sweep parameters can be defined.
-Press the Plus Sign (**+**) button to add a sweep parameter. A dialog box will appear allowing you to select the sweep parameter (mean, uncertainty, degrees of freedom, or correlation), and the variable to sweep.
+The Sweep interface adds a **Sweep** section where the sweep parameters can be defined.
+Right-click on the sweep table to add a sweep parameter as a column of the table. A dialog box will appear allowing you to select the sweep parameter (mean, uncertainty, degrees of freedom, or correlation), and the variable to sweep.
 If sweeping uncertainty, the uncertainty component and distribution parameter (such as *a* for uniform distributions) can be selected.
-A new column will appear in the Sweep table. The table values can be entered manually from the keyboard, or added as a range defined by a start, stop, and step using the Ellipses (**...**) button.
-Alternatively, the **Load Sweep Data** button can be pressed to add sweep data from a CSV file or the output of another calculation in the program.
+A new column will appear in the Sweep table. The table values can be entered manually from the keyboard, or added as a range defined by a start, stop, and step by selecting **Fill Column** from the right-click menu.
+Alternatively, the **Import Sweep List** can be selected from the right-click menu to add sweep data from a CSV file or the output of another calculation in the program.
 Multiple variables can be swept simultaneously.
 
 When the calculation is run, a summary output window displays. For reverse sweeps, this window includes a table and plot of required input uncertainty for each row of the Sweep table.
@@ -682,7 +682,7 @@ The components are given with tolerances, and thus are interpreted as uniform di
 
 To determine the time constant and its uncertainty using the calculator, set up a new Uncertainty Propagation calculation.
 Enter the measurement model name (`tau`) and expression (`R*(C1+C2)`) as shown in {*@fig:rcrisktau}.
-The Measured Quantities will fill in with the variable names.
+The Uncertainties table will fill in with the variable names.
 Enter "ms" in the units column to obtain the resulting time constant and uncertainty in milliseconds.
 
 ![Entering the time constant measurement model](figs/rcrisk_model.png){#fig:rcrisktau}
@@ -690,7 +690,7 @@ Enter "ms" in the units column to obtain the resulting time constant and uncerta
 Next, enter the nominal value for each component in the Nominal column.
 Enter units for resistance of "kohm" and for the two capacitors of "uF".
 One uncertainty component for each variable is added by default.
-For each of the variables, click the row in the Measured Quantities table, and change the uncertainty distribution for the uncertainty component to **uniform**.
+For each of the variables, click the row in the Uncertainties table, and change the uncertainty distribution for the uncertainty component to **uniform**.
 The "a" parameter is the half-width of the distribution. In this case, "a" can be entered as a percent ({*@fig:rcriskinput}).
 Optionally, add a description for each variable and the measurement model.
 
@@ -780,17 +780,17 @@ However, one variable can be sweept while solving the reverse uncertainty requir
 
 To enter this setup into the Calculator, add a **Reverse Sweep** to a new Project.
 Enter the measurement model and nominal quantities for mass and diameter.
-Next, enter the target uncertianty under the **Target** tab.
+Next, enter the target uncertianty under the **Target** section.
 The function to solve is **rho**, the target value is **14.967**, and target uncertainty is **0.02**. Note the k = 1 value should be entered here.
-Solve for the mass variable ({*@fig:densityrevsweep}), and then use the **Sweep** tab to set up a sweep of uncertainties on the diameter variable.
+Solve for the mass variable ({*@fig:densityrevsweep}), and then use the **Sweep** section to set up a sweep of uncertainties on the diameter variable.
 
 ![Configuring the density calculation](figs/revswp_model.png){#fig:densityrevsweep}
 
-Under the **Sweep** tab, press the Plus Sign (**+**) button to add a new sweep column. The Sweep Parameter is **Uncertainty**, variable is **d**.
+Under the **Sweep** section, press the Plus Sign (**+**) button to add a new sweep column. The Sweep Parameter is **Uncertainty**, variable is **d**.
 Because this diameter is a single standard normal uncertainty, there is only one option for component and parameter.
 After clicking **OK**, a new column is added to the Sweep table. Press the Ellipses (**...**) button to enter a range of values for diameter uncertainty to sweep.
 Set the range from 1 to 9 with count of 9.
-This value takes the same units as the diameter uncertainty component. Use the Measured Quantities tree to change the diameter uncertainty units to **um** to specify microns.
+This value takes the same units as the diameter uncertainty component. Use the Uncertainties table to change the diameter uncertainty units to **um** to specify microns.
 
 ![Entering sweep values](figs/revswp_sweep.png){#fig:sweepentry}
 

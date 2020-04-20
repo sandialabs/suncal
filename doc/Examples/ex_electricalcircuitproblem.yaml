@@ -36,7 +36,7 @@
       desc: Type B uncertainty of meter
       dist: normal
       name: meter
-      unc: .01% + .00001*100
+      unc: .01% + 0.001%range(100)
       units: kiloohm
     units: kiloohm
   - desc: Capacitor 2

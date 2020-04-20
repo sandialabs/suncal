@@ -123,7 +123,7 @@ def test_linefitgum():
     assert np.isclose(out.u_conf(30-T0), .0041, atol=.0001)
 
     # Check report for correctly formatted values
-    rpt = out.report_confpred_xval(10, k=1).string
+    rpt = out.report_confpred_xval(10, k=1).get_md()
     assert '-0.149' in rpt
     assert '0.0041' in rpt
 
@@ -200,9 +200,9 @@ def test_curvefitdate():
     arr = curvefit.Array(xdate, y)
     fit = curvefit.CurveFit(arr, xdates=True)
     out = fit.calculate()
-    r = out.lsq.report_confpred_xval('4-Oct-2018')
-    assert '4-Oct-2018' in r.string
-    assert '736917' not in r.string  # This is 4-Oct-2018 in ordinal date format as used internally.
+    r = out.lsq.report_confpred_xval('4-Oct-2018').get_md()
+    assert '4-Oct-2018' in r
+    assert '736917' not in r  # This is 4-Oct-2018 in ordinal date format as used internally.
 
 
 def test_ttest(capsys):

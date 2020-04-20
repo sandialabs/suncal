@@ -6,7 +6,8 @@ import numpy as np
 import suncal as uc
 from suncal import uncertainty
 from suncal import curvefit
-from suncal import output
+from suncal import report
+from suncal import uparser
 
 ureg = uncertainty.ureg
 
@@ -102,23 +103,23 @@ def test_load():
 
 def test_parse():
     ''' Test parsing units, wrapper function '''
-    assert uncertainty.get_units('meter') == ureg.meter
-    assert uncertainty.get_units('m/s^2') == ureg.meter/ureg.second**2
-    assert uncertainty.get_units(None) == ureg.dimensionless
-    assert uncertainty.get_units('') == ureg.dimensionless
+    assert uparser.parse_unit('meter') == ureg.meter
+    assert uparser.parse_unit('m/s^2') == ureg.meter/ureg.second**2
+    assert uparser.parse_unit(None) == ureg.dimensionless
+    assert uparser.parse_unit('') == ureg.dimensionless
 
 
 def test_print():
     ''' output module special handling for unit quantities '''
-    assert output.formatunit(ureg.dimensionless) == ''
-    assert output.formatunit(ureg.meter) == '  m'
-    assert output.formatunit(ureg.millivolt) == '  mV'
-    assert output.formatunit(ureg.cm, fullunit=True) == '  centimeter'
-    assert output.formatunit(ureg.cm) == '  cm'
-    assert output.formatunittex(ureg.cm, bracket=True) == r' $\left[ \mathrm{cm} \right]$'
-    assert output.formatunittex(ureg.cm**2, bracket=True) == r' $\left[ \mathrm{cm}^{2} \right]$'
-    assert output.formatter.f(1*ureg.cm) == '1.0  cm'
-    assert output.formatter.f(1*ureg.cm, fullunit=True) == '1.0  centimeter'
+    assert report.Unit(ureg.dimensionless).plaintext() == ''
+    assert report.Unit(ureg.meter).plaintext() == 'm'
+    assert report.Unit(ureg.millivolt).plaintext() == 'mV'
+    assert report.Unit(ureg.cm,).plaintext(abbr=False) == 'centimeter'
+    assert report.Unit(ureg.cm).plaintext() == 'cm'
+    assert report.Unit(ureg.cm).latex() == r'$\mathrm{cm}$'
+    assert report.Unit(ureg.cm**2).latex() == r'$\mathrm{cm}^{2}$'
+    assert report.Number(1*ureg.cm).string() == '1.0 cm'
+    assert report.Number(1*ureg.cm).string(abbr=False) == '1.0 centimeter'
 
 
 def test_power():
@@ -132,7 +133,7 @@ def test_power():
     u.seed = 8833293
     u.set_input('x', nom=4, std=.1)  # No units / dimensionless
     u.calculate()
-    
+
     mc = u.out.get_output(method='mc')
     gum = u.out.get_output(method='gum')
     assert mc.uncert.units == ureg.dimensionless

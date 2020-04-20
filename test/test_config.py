@@ -45,5 +45,5 @@ def test_default():
     s.setDefaults()
     assert s.getColormap('cmapscatter') == 'viridis'
     assert s.getColormap('cmapcontour') == 'viridis'
-    assert s.getFunc() == 'f = x + y'
+    assert s.getFunc() == 'f = x'
     assert s.getSamples() == 1000000

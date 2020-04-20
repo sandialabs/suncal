@@ -18,7 +18,7 @@ class DoubleLineEdit(QtWidgets.QWidget):
     editingFinished = QtCore.pyqtSignal()
 
     def __init__(self, value1=0, value2=0, label1='', label2=''):
-        super(DoubleLineEdit, self).__init__()
+        super().__init__()
         self.line1 = QtWidgets.QLineEdit(str(value1))
         self.line2 = QtWidgets.QLineEdit(str(value2))
         self.line1.setValidator(QtGui.QDoubleValidator(-1E99, 1E99, 15))
@@ -46,7 +46,7 @@ class SimpleRiskWidget(QtWidgets.QWidget):
     editingFinished = QtCore.pyqtSignal()
 
     def __init__(self):
-        super(SimpleRiskWidget, self).__init__()
+        super().__init__()
         self.tur = QtWidgets.QDoubleSpinBox()
         self.tur.setRange(0.1, 1000)
         self.tur.setValue(4.0)
@@ -101,7 +101,7 @@ class SimpleRiskWidget(QtWidgets.QWidget):
 class GuardBandFinderWidget(QtWidgets.QDialog):
     ''' Widget providing options for calculating a guard band '''
     def __init__(self, parent=None):
-        super(GuardBandFinderWidget, self).__init__(parent)
+        super().__init__(parent)
         self.setWindowTitle('Calculate Guard Band')
         self.pfa = QtWidgets.QRadioButton('Target PFA %')
         self.pfaval = QtWidgets.QDoubleSpinBox()
@@ -168,7 +168,7 @@ class GuardBandFinderWidget(QtWidgets.QDialog):
 class CostEntryWidget(QtWidgets.QDialog):
     ''' Widget for entering cost of FA and FR '''
     def __init__(self, parent=None):
-        super(CostEntryWidget, self).__init__(parent)
+        super().__init__(parent)
         self.setWindowTitle('Expected costs')
         self.costfa = QtWidgets.QDoubleSpinBox()
         self.costfr = QtWidgets.QDoubleSpinBox()
@@ -194,13 +194,13 @@ class CostEntryWidget(QtWidgets.QDialog):
 class RiskWidget(QtWidgets.QWidget):
     ''' Widget for risk calculations '''
     def __init__(self, item, parent=None):
-        super(RiskWidget, self).__init__(parent)
+        super().__init__(parent)
         assert isinstance(item, risk.Risk)
         self.urisk = item
         self.urisk.calculate()  # With risk, calculate just creates an output object
         self.plotlines = {}  # Saved lines in plot
         self.mode = QtWidgets.QComboBox()
-        self.mode.addItems(['Simple', 'Full'])  # TODO: Sweep mode??
+        self.mode.addItems(['Simple', 'Full'])
         self.montecarlo = QtWidgets.QComboBox()
         self.montecarlo.addItems(['Integral', 'Monte-Carlo'])
 
@@ -414,6 +414,9 @@ class RiskWidget(QtWidgets.QWidget):
     def replot_and_update(self):
         ''' Replot and update the text fields '''
         if self.mode.currentText() == 'Simple':
+            if ((self.simple.get_gbf() != 1.0 and self.urisk.get_gbf() == 1.0) or
+                (self.simple.get_gbf() == 1.0 and self.urisk.get_gbf() != 1.0)):
+                self.chkGB.setChecked(self.simple.get_gbf() != 1.0)
             self.urisk.set_itp(self.simple.get_itp())
             self.urisk.set_tur(self.simple.get_tur())
             self.urisk.set_gbf(self.simple.get_gbf())
@@ -541,14 +544,14 @@ class RiskWidget(QtWidgets.QWidget):
 
     def update_report(self):
         ''' Update label fields, recalculating risk values '''
-        self.txtOutput.setMarkdown(self.urisk.out.report(**gui_common.get_rptargs()))
+        self.txtOutput.setReport(self.urisk.out.report())
 
     def replot_mc(self):
         ''' Replot/report monte carlo method '''
-        rpt = self.urisk.out.report_montecarlo(fig=self.fig, **gui_common.get_rptargs())
+        rpt = self.urisk.out.report_montecarlo(fig=self.fig)
         self.fig.tight_layout()
         self.canvas.draw_idle()
-        self.txtOutput.setMarkdown(rpt)
+        self.txtOutput.setReport(rpt)
 
     def testprocclick(self):
         ''' Test Measurement or Process Distribution checkbox was clicked '''
@@ -643,11 +646,11 @@ class RiskWidget(QtWidgets.QWidget):
     def get_report(self):
         ''' Get full report of curve fit, using page settings '''
         mc = self.montecarlo.currentText() == 'Monte-Carlo'
-        return self.urisk.get_output().report_all(mc=mc, **gui_common.get_rptargs())
+        return self.urisk.get_output().report_all(mc=mc)
 
     def save_report(self):
         ''' Save full report, asking user for settings/filename '''
-        gui_widgets.savemarkdown(self.get_report())
+        gui_widgets.savereport(self.get_report())
 
     def importdist(self):
         ''' Use process distribution from the project or a file '''

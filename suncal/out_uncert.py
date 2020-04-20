@@ -3,11 +3,16 @@ The classes in this module hold the results of an Uncertainty Calculator calcula
 In addition to the raw calculated values, methods are available for generating
 formatted reports and plots.
 '''
+from contextlib import suppress
+from collections import namedtuple
 import sympy
 from scipy import stats
 import numpy as np
 
 from . import output
+from . import report
+from . import ureg
+from . import plotting
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
@@ -57,7 +62,7 @@ class BaseOutput(output.Output):
         self._method = method
         self.mean = kwargs.pop('mean')
         self.uncert = kwargs.pop('uncert')
-        self.units = kwargs.pop('units', output.ureg.dimensionless)
+        self.units = kwargs.pop('units', ureg.dimensionless)
         self.desc = kwargs.pop('desc', None)
         self.name = kwargs.pop('name', None)
         self.props = kwargs.pop('props', None)    # Proportions
@@ -82,16 +87,17 @@ class BaseOutput(output.Output):
 
             Keyword Arguments
             -----------------
-            See NumFormatter()
+            Arguments for Report object
 
             Returns
             -------
-            report: MDstring
+            report.Report
         '''
         hdr = ['Parameter', 'Value']
-        rowm = ['Mean', output.formatter.f(self.mean, matchto=self.uncert, **kwargs)]
-        rowu = ['Standard Uncertainty', output.formatter.f(self.uncert, **kwargs)]
-        r = output.md_table([rowm, rowu], hdr=hdr, **kwargs)
+        rowm = ['Mean', report.Number(self.mean, matchto=self.uncert)]
+        rowu = ['Standard Uncertainty', report.Number(self.uncert)]
+        r = report.Report(**kwargs)
+        r.table([rowm, rowu], hdr=hdr)
         return r
 
     def report_expanded(self, covlist=None, normal=False, **kwargs):
@@ -108,11 +114,12 @@ class BaseOutput(output.Output):
             -----------------
             covlistgum: list of float
                 GUM Coverage intervals to include in report as fraction (i.e. 0.99 for 99%)
-            See NumFormatter()
+
+            Other kwargs passed to report.Report
 
             Returns
             -------
-            report: MDstring
+            report.Report
         '''
         covlist = kwargs.get('covlistgum', covlist)
         if covlist is None:
@@ -123,13 +130,14 @@ class BaseOutput(output.Output):
         for cov in covlist:
             uncert, k = self.expanded(cov, normal=normal)
             row = ['{:.2f}%'.format(cov*100) if not isinstance(cov, str) else cov]
-            row.append(output.formatter.f(self.mean-uncert, matchto=uncert, **kwargs))
-            row.append(output.formatter.f(self.mean+uncert, matchto=uncert, **kwargs))
+            row.append(report.Number(self.mean-uncert, matchto=uncert, **kwargs))
+            row.append(report.Number(self.mean+uncert, matchto=uncert, **kwargs))
             row.append(format(k, '.3f'))
             row.append(format(self.degf, '.2f'))
-            row.append(output.formatter.f(uncert, **kwargs))
+            row.append(report.Number(uncert, **kwargs))
             rows.append(row)
-        r = output.md_table(rows, hdr, **kwargs)
+        r = report.Report(**kwargs)
+        r.table(rows, hdr)
         return r
 
     def report_warns(self, **kwargs):
@@ -137,12 +145,12 @@ class BaseOutput(output.Output):
 
             Returns
             -------
-            report: MDstring
+            report.Report
         '''
-        r = output.MDstring()
+        r = report.Report(**kwargs)
         if 'warns' in self.properties and self.properties.get('warns') is not None:
             for w in self.properties['warns']:
-                r += '- ' + w + '\n'
+                r.txt('- ' + w + '\n')
         return r
 
     def report_derivation(self, solve=True, **kwargs):
@@ -155,16 +163,15 @@ class BaseOutput(output.Output):
 
             Returns
             -------
-            report: MDstring
+            report.Report
         '''
-        N = kwargs.get('n', output.formatter.n) + 2  # Add a couple sigfigs since these are intermediate
+        N = kwargs.get('n', report.default_sigfigs) + 2  # Add a couple sigfigs since these are intermediate
 
         def combine(exprs, val):
             ''' Helper function for combining sympy expressions using multiple sympy.Eq()'s '''
-            try:
+            units = None
+            with suppress(AttributeError):
                 val, units = val.magnitude, val.units
-            except AttributeError:
-                units = None
             symexp = exprs[0]
             i = 1
             while i < len(exprs):
@@ -173,55 +180,56 @@ class BaseOutput(output.Output):
 
             if solve:
                 symexp = sympy.Eq(symexp, sympy.N(val, N), evaluate=False)
-                return output.sympyeqn_units(symexp, units, N=N, **kwargs)
+                return report.Math.from_sympy(symexp, units)
             else:
-                return output.sympyeqn(symexp)
+                return report.Math.from_sympy(symexp)
 
+        rpt = report.Report(**kwargs)
         if self._method != 'gum':
-            r = 'No derivation for {} method'.format(self.method)
-            return output.MDstring(r)
+            rpt.text('No derivation for {} method'.format(self.method))
+            return rpt
 
         if 'symbolic' not in self.properties:
-            r = 'No symbolic solution computed for function.'
-            return output.MDstring(r)
+            rpt.txt('No symbolic solution computed for function.')
+            return rpt
 
         symout = self.properties['symbolic']
-        r = output.MDstring('### Function:\n\n')
-        r += output.sympyeqn(symout['function']) + '\n\n'
+        rpt.hdr('Model Equation:', level=3)
+        rpt.sympy(symout['function'], end='\n\n')
 
-        r += 'GUM formula for combined uncertainty:\n\n'
-        uname = sympy.Symbol('u_'+str(self.name) if self.name != '' and self.name is not None else 'u_c')
-        uformula = symout['unc_formula']
-        if self.name != '':
-            uformula = sympy.Eq(uname, uformula, evaluate=False)
-        r += output.sympyeqn(uformula) + '\n\n'
-
-        r += '### Input Definitions:\n\n'
+        rpt.hdr('Input Definitions:', level=3)
         rows = []
         for var, val, uncert in zip(symout['var_symbols'], symout['var_means'], symout['var_uncerts']):
             vareqn = combine((var,), val)
-            uncsym = sympy.Symbol('u_{{{}}}'.format(str(var)))
-            unceqn = combine((uncsym,), uncert)
+            unceqn = combine((sympy.Symbol('u_{{{}}}'.format(str(var))),), uncert)
             rows.append([vareqn, unceqn])
-        r += output.md_table(rows, hdr=['Variable', 'Std. Uncertainty'], **kwargs)
+        rpt.table(rows, hdr=['Variable', 'Std. Uncertainty'])
 
         if 'covsymbols' in symout:
-            r += 'Correlation coefficients:\n'
+            rpt.txt('Correlation coefficients:\n\n')
             for var, cov in zip(symout['covsymbols'], symout['covvals']):
                 eq = var if not solve else sympy.Eq(var, cov).n(3)
-                r += output.sympyeqn(eq) + '\n\n'
+                rpt.sympy(eq, end='\n\n')
 
-        r += '### Sensitivity Coefficients:\n\n'
+        rpt.hdr('Sensitivity Coefficients:', level=3)
         for c, p1, p2, p3 in zip(symout['var_symbols'], symout['partials_raw'], symout['partials'], symout['partials_solved']):
-            r += combine((sympy.Symbol('c_{}'.format(c)), p1, p2), p3) + '\n\n'
+            rpt.add(combine((sympy.Symbol('c_{}'.format(c)), p1, p2), p3), '\n\n')
 
-        r += '### Simplified combined uncertainty:\n\n'
+        rpt.hdr('Combined uncertainty:', level=3)
+        uname = sympy.Symbol('u_'+str(self.name) if self.name != '' and self.name is not None else 'u_c')
+        uformula_cx = symout['unc_formula_sens']
+        uformula = symout['unc_formula']
+        uformula = sympy.Eq(uname, uformula, evaluate=False)
+        uformula_cx = sympy.Eq(uname, uformula_cx, evaluate=False)
+        rpt.sympy(uformula_cx, end='\n\n')
+        rpt.sympy(uformula, end='\n\n')
+
         uformula = symout['uncertainty']  # Simplified formula
-        r += combine((uname, uformula), symout['unc_val']) + '\n\n'
+        rpt.add(combine((uname, uformula), symout['unc_val']), '\n\n')
 
-        r += '### Effective degrees of freedom:\n\n'
-        r += combine((sympy.Symbol('nu_eff'), symout['degf']), symout['degf_val']) + '\n\n'
-        return r
+        rpt.hdr('Effective degrees of freedom:', level=3)
+        rpt.add(combine((sympy.Symbol('nu_eff'), symout['degf']), symout['degf_val']), '\n\n')
+        return rpt
 
     def get_pdf(self, x, **kwargs):
         ''' Get probability density function for this output.
@@ -263,7 +271,7 @@ class BaseOutput(output.Output):
         kwargs.setdefault('label', self.method)
         kwargs.setdefault('color', 'C1')
 
-        fig, ax = output.initplot(plot)
+        fig, ax = plotting.initplot(plot)
         mean = self.mean.magnitude
         uncert = self.uncert.magnitude
         units = self.units
@@ -272,7 +280,8 @@ class BaseOutput(output.Output):
         if self.name is not None:
             ax.set_xlabel(self.name)
         if units:
-            ax.set_xlabel(ax.get_xlabel() + output.formatunittex(units, bracket=True))
+            unitstr = report.Unit(units).latex(bracket=True)
+            ax.set_xlabel(ax.get_xlabel() + unitstr)
 
         if intervals:
             ilines, ilabels = [], []
@@ -300,7 +309,7 @@ class BaseOutput(output.Output):
 
             Returns
             -------
-            unc: float
+            uncertainty: float
                 Expanded uncertainty
             k: float
                 k-value associated with the expanded uncertainty
@@ -319,7 +328,8 @@ class BaseOutput(output.Output):
         else:
             d = max(1, min(self.degf, 1E6))   # Inf will return garbage. Use big number.
             k = stats.t.ppf(1-(1-cov)/2, d)   # Use half of interval for scipy to get both tails
-        return k*self.uncert, k
+        Expanded = namedtuple('Expanded', ['uncertainty', 'k'])
+        return Expanded(k*self.uncert, k)
 
 
 class BaseOutputMC(BaseOutput):
@@ -327,7 +337,7 @@ class BaseOutputMC(BaseOutput):
         generating pdf from histogram of samples.
     '''
     def __init__(self, method, **kwargs):
-        super(BaseOutputMC, self).__init__(method=method, **kwargs)
+        super().__init__(method=method, **kwargs)
         self.samples = kwargs.get('samples')
         if not hasattr(self.samples, 'units'):
             self.samples *= self.units
@@ -378,7 +388,7 @@ class BaseOutputMC(BaseOutput):
         title = self.properties['latex'] if 'latex' in self.properties else self.names
         title = '$' + title + '$'
         Y = self.samples.magnitude
-        unitstr = output.formatunittex(self.units, bracket=True)
+        unitstr = report.Unit(self.units).latex(bracket=True)
         step = len(Y)//div
         line = np.empty(div)
         steps = np.empty(div)
@@ -467,7 +477,7 @@ class BaseOutputMC(BaseOutput):
         kwargs.pop('intTypeGUMt', None)   # Not used by MC
         kwargs.pop('intervalsGUM', None)  # Not used by MC
 
-        fig, ax = output.initplot(plot)
+        fig, ax = plotting.initplot(plot)
         if hist:
             kwargs.setdefault('bins', 120)
             kwargs.setdefault('density', True)
@@ -492,7 +502,8 @@ class BaseOutputMC(BaseOutput):
         if self.name is not None:
             ax.set_xlabel(self.name)
         if units:
-            ax.set_xlabel(ax.get_xlabel() + output.formatunittex(units, bracket=True))
+            unitstr = report.Unit(self.units).latex(bracket=True)
+            ax.set_xlabel(ax.get_xlabel() + unitstr)
 
         if intervals:
             ilines, ilabels = [], []
@@ -519,12 +530,12 @@ class BaseOutputMC(BaseOutput):
         points: int
             Number of sample points to include for speed. Default is 100.
         '''
-        fig, ax = output.initplot(plot)
+        fig, ax = plotting.initplot(plot)
         if points is None:
             points = min(100, len(self.samples))
 
         thin = len(self.samples.magnitude)//points
-        output.probplot(self.samples[::thin].magnitude, ax=ax)
+        plotting.probplot(self.samples[::thin].magnitude, ax=ax)
 
     def expanded(self, cov=0.95, **kwargs):
         ''' Calculate expanded uncertainty with coverage intervals based on degf.
@@ -572,7 +583,8 @@ class BaseOutputMC(BaseOutput):
             quant = np.nanpercentile(self.samples.magnitude, q)*self.units
 
         k = ((quant[1]-quant[0])/(2*self.uncert)).magnitude
-        return quant[0], quant[1], k
+        Expanded = namedtuple('Expanded', ['minimum', 'maximum', 'k'])
+        return Expanded(quant[0], quant[1], k)
 
     def report_expanded(self, covlist=None, shortest=False, **kwargs):
         ''' Generate formatted report of expanded uncertainties
@@ -584,7 +596,7 @@ class BaseOutputMC(BaseOutput):
 
             Returns
             -------
-            report: MDstring
+            report.Report
         '''
         if covlist is None:
             covlist = [.99, .95, .90, .68]
@@ -598,17 +610,18 @@ class BaseOutputMC(BaseOutput):
                 row = ['{:.2f}%'.format(cov*100)]
             else:
                 row = [cov]
-            row.append(output.formatter.f(minval, matchto=self.uncert, **kwargs))
-            row.append(output.formatter.f(maxval, matchto=self.uncert, **kwargs))
+            row.append(report.Number(minval, matchto=self.uncert))
+            row.append(report.Number(maxval, matchto=self.uncert))
             row.append(format(kval, '.3f'))
             rows.append(row)
-        r = output.MDstring('Shortest Coverage Intervals\n' if shortest else 'Symmetric Coverage Intervals\n')
-        r += output.md_table(rows, hdr, **kwargs)
+        r = report.Report(**kwargs)
+        r.txt('Shortest Coverage Intervals\n' if shortest else 'Symmetric Coverage Intervals\n')
+        r.table(rows, hdr)
         return r
 
 
 class FuncOutput(output.Output):
-    ''' Class to hold output of all calculation methods (BaseOutputs list of GUM, MC, LSQ)
+    ''' Class to hold output of all calculation methods (BaseOutputs list of GUM, MC)
         for a single function.
 
         Parameters
@@ -698,14 +711,15 @@ class FuncOutput(output.Output):
 
             Keyword Arguments
             -----------------
-            See NumFormatter()
+            Passed to report.Report
         '''
         # rows are GUM, MC, LSQ, etc. Columns are means, uncertainties. Checks if baseoutput is CurveFit, and if so uses that format.
         hdr = ['Method', 'Mean', 'Standard Uncertainty']
         rows = []
         for out in self._baseoutputs:
-            rows.append([out.method, output.formatter.f(out.mean, matchto=out.uncert, **kwargs), output.formatter.f(out.uncert, **kwargs)])
-        r = output.md_table(rows, hdr, **kwargs)
+            rows.append([out.method, report.Number(out.mean, matchto=out.uncert), report.Number(out.uncert)])
+        r = report.Report(**kwargs)
+        r.table(rows, hdr)
         return r
 
     def report_summary(self, **kwargs):
@@ -713,7 +727,7 @@ class FuncOutput(output.Output):
 
             Keyword Arguments
             -----------------
-            See NumFormatter()
+            Passed to report.Report
         '''
         # rows are GUM, MC, LSQ, etc. Columns are means, uncertainties. Checks if baseoutput is CurveFit, and if so uses that format.
         conf = .95  # Level of confidence for expanded unceratinty
@@ -723,14 +737,15 @@ class FuncOutput(output.Output):
             row = [out.method]
             if out._method == 'mc':
                 umin, umax, k = out.expanded(conf)
-                rng95 = '[{}, {}]'.format(output.formatter.f(umin, matchto=out.uncert, **kwargs), output.formatter.f(umax, matchto=out.uncert, **kwargs))
-                row.extend([output.formatter.f(out.mean, matchto=out.uncert, **kwargs), output.formatter.f(out.uncert, **kwargs), rng95, format(k, '.3f'), '-'])
+                rng95 = ('(', report.Number(umin, matchto=out.uncert), ', ', report.Number(umax, matchto=out.uncert), ')')
+                row.extend([report.Number(out.mean, matchto=out.uncert), report.Number(out.uncert), rng95, format(k, '.3f'), '-'])
             else:
                 unc, k = out.expanded(conf)
-                rng95 = u'± {}'.format(output.formatter.f(unc, **kwargs))
-                row.extend([output.formatter.f(out.mean, matchto=out.uncert, **kwargs), output.formatter.f(out.uncert, **kwargs), rng95, format(k, '.3f'), format(out.degf, '.1f')])
+                rng95 = (u'± ', report.Number(unc))
+                row.extend([report.Number(out.mean, matchto=out.uncert), report.Number(out.uncert), rng95, format(k, '.3f'), format(out.degf, '.1f')])
             rows.append(row)
-        r = output.md_table(rows, hdr, **kwargs)
+        r = report.Report(**kwargs)
+        r.table(rows, hdr)
         return r
 
     def report_warns(self, **kwargs):
@@ -738,11 +753,11 @@ class FuncOutput(output.Output):
 
             Returns
             -------
-            report: MDstring
+            report.Report
         '''
-        r = output.MDstring()
+        r = report.Report(**kwargs)
         for out in self._baseoutputs:
-            r += out.report_warns(**kwargs)
+            r.append(out.report_warns(**kwargs))
         return r
 
     def report_expanded(self, covlist=None, normal=False, shortest=False, covlistgum=None, **kwargs):
@@ -762,21 +777,21 @@ class FuncOutput(output.Output):
 
             Keyword Arguments
             -----------------
-            See NumFormatter()
+            Passed to report.Report
 
             Returns
             -------
-            report: MDstring
+            report.Report
         '''
         if covlist is None:
             covlist = [.99, .95, .90, .68]
         if covlistgum is None:
             covlistgum = covlist
 
-        r = output.MDstring()
+        r = report.Report(**kwargs)
         for out in self._baseoutputs:
-            r += '### {}\n\n'.format(out.method)
-            r += out.report_expanded(covlist, normal=normal, shortest=shortest, covlistgum=covlistgum, **kwargs)
+            r.hdr(out.method, level=3)
+            r.append(out.report_expanded(covlist, normal=normal, shortest=shortest, covlistgum=covlistgum, **kwargs))
         return r
 
     def report_derivation(self, solve=True, **kwargs):
@@ -789,11 +804,11 @@ class FuncOutput(output.Output):
 
             Keyword Arguments
             -----------------
-            See NumFormatter()
+            Passed to report.Report
 
             Returns
             -------
-            report: MDstring
+            report.Report
         '''
         return self.gum.report_derivation(solve=solve, **kwargs)  # Only GUM method has derivation
 
@@ -821,25 +836,17 @@ class FuncOutput(output.Output):
 
             Keyword Arguments
             -----------------
-            See NumFormatter()
+            Passed to report.Report
         '''
         cols = ['Variable', 'Component', 'Standard Uncertainty', 'Deg. Freedom', 'Description']
         rows = []
         for i, inpt in enumerate(self.inputfunc.get_basevars()):
-            if len(inpt.uncerts) > 1:
-                rows.append([output.format_math(inpt.name), '',
-                             inpt.desc, output.formatter.f(inpt.stdunc(), **kwargs), format(inpt.degf(), '.1f')])
-                for u in inpt.uncerts:
-                    rows.append(['', output.format_math(u.name),
-                                 u.desc if u.desc != '' else '--', output.formatter.f(u.std(), **kwargs), format(u.degf, '.1f')])
-            elif len(inpt.uncerts) == 1:
-                u = inpt.uncerts[0]
-                rows.append([output.format_math(inpt.name),
-                             output.format_math(u.name),
-                             output.formatter.f(u.std(), **kwargs),
-                             format(inpt.degf(), '.1f'),
-                             u.desc if u.desc != '' else '--'])
-        r = output.md_table(rows, hdr=cols, **kwargs)
+            rows.append([report.Math(inpt.name), '', inpt.desc, report.Number(inpt.stdunc()), format(inpt.degf(), '.1f')])
+            for u in inpt.uncerts:
+                rows.append(['', report.Math(u.name),
+                             u.desc if u.desc != '' else '--', report.Number(u.std()), format(u.degf, '.1f')])
+        r = report.Report(**kwargs)
+        r.table(rows, hdr=cols)
         return r
 
     def report_inputs(self, **kwargs):
@@ -847,47 +854,48 @@ class FuncOutput(output.Output):
 
             Keyword Arguments
             -----------------
-            See NumFormatter()
+            Passed to report.Report
         '''
         rows = []
         cols = ['Variable', 'Mean', 'Std. Uncertainty', 'Deg. Freedom', 'Description']
         for i in self.inputfunc.get_basevars():
-            rows.append([output.format_math(i.name),
-                         output.formatter.f(i.mean(), matchto=i.stdunc(), **kwargs),
-                         output.formatter.f(i.stdunc(), **kwargs),
-                         output.formatter.f(i.degf(), **kwargs),
+            rows.append([report.Math(i.name),
+                         report.Number(i.mean(), matchto=i.stdunc()),
+                         report.Number(i.stdunc()),
+                         report.Number(i.degf()),
                          i.desc])
-        r = output.md_table(rows, hdr=cols, **kwargs)
+        r = report.Report(**kwargs)
+        r.table(rows, hdr=cols)
         return r
 
     def report_sens(self, **kwargs):
         ''' Report sensitivity coefficients '''
-        r = output.MDstring()
+        r = report.Report(**kwargs)
         inames = [i.name for i in self.inputfunc.get_basevars()]
 
         if (hasattr(self, 'gum') and hasattr(self, 'mc') and self.gum.sensitivity is not None and self.gum.props is not None and self.mc.sensitivity is not None and self.mc.props is not None):
             # Both GUM and MC in same tables
-            rows = [[output.format_math(name),
-                     output.formatter.f(sGUM, fmin=1, **kwargs),
+            rows = [[report.Math(name),
+                     report.Number(sGUM, fmin=1),
                      format(pGUM, '.2f')+'%',
-                     output.formatter.f(sMC, fmin=1, **kwargs),
+                     report.Number(sMC, fmin=1),
                      format(pMC, '.2f')+'%']
                     for name, sGUM, pGUM, sMC, pMC in zip(inames, self.gum.sensitivity, self.gum.props, self.mc.sensitivity, self.mc.props)]
             if hasattr(self.gum, 'residprops') and self.gum.residprops != 0:
                 rows.append(['Correlations', '', format(self.gum.residprops, '.2f')+'%', '', ''])
-            r += output.md_table(rows, hdr=['Variable', 'GUM Sensitivity', 'GUM Proportion', 'MC Sensitivity', 'MC Proportion'], **kwargs)
+            r.table(rows, hdr=['Variable', 'GUM Sensitivity', 'GUM Proportion', 'MC Sensitivity', 'MC Proportion'])
 
         elif hasattr(self, 'gum') and self.gum.sensitivity is not None and self.gum.props is not None:
-            rows = [[name, output.formatter.f(sGUM, fmin=1, **kwargs), format(pGUM, '.2f')+'%']
+            rows = [[name, report.Number(sGUM, fmin=1), format(pGUM, '.2f')+'%']
                     for name, sGUM, pGUM in zip(inames, self.gum.sensitivity, self.gum.props)]
             if hasattr(self, 'residprops') and self.gum.residprops != 0:
                 rows.append(['Correlations', '', format(self.residprops, '.2f')+'%', '', ''])
-            r += output.md_table(rows, hdr=['Variable', 'GUM Sensitivity', 'GUM Proportion'], **kwargs)
+            r.table(rows, hdr=['Variable', 'GUM Sensitivity', 'GUM Proportion'])
 
         elif hasattr(self, 'mc') and self.mc.sensitivity is not None and self.mc.props is not None:
-            rows = [[name, output.formatter.f(sMC, fmin=1, **kwargs), format(pMC, '.2f')+'%']
+            rows = [[name, report.Number(sMC, fmin=1), format(pMC, '.2f')+'%']
                     for name, sMC, pMC in zip(inames, self.mc.sensitivity, self.mc.props)]
-            r += output.md_table(rows, hdr=['Variable', 'MC Sensitivity', 'MC Proportion'], **kwargs)
+            r.table(rows, hdr=['Variable', 'MC Sensitivity', 'MC Proportion'])
         return r
 
     def report_validity(self, conf=.95, ndig=1, **kwargs):
@@ -906,23 +914,24 @@ class FuncOutput(output.Output):
             GUM Supplement 1, Section 8
             NPL Report DEM-ES-011, Chapter 8
         '''
-        r = '### Comparison to Monte Carlo {:.2f}% Coverage\n\n'.format(conf*100)
+        r = report.Report(**kwargs)
+        r.hdr('Comparison to Monte Carlo {:.2f}% Coverage'.format(conf*100), level=3)
         if not hasattr(self, 'gum') or not hasattr(self, 'mc'):
-            r += 'GUM and Monte Carlo result not run. No validity check can be made.'
+            r.txt('GUM and Monte Carlo result not run. No validity check can be made.')
         else:
             valid, params = self.validate_gum(ndig=ndig, conf=conf, full=True)
-            deltastr = output.formatter.f(params['delta'], fmin=1, **kwargs)
-            r += u'{:d} significant digit{}. δ = {}.\n\n'.format(ndig, 's' if ndig > 1 else '', deltastr)
+            deltastr = report.Number(params['delta'], fmin=1)
+            r.txt(u'{:d} significant digit{}. δ = {}.\n\n'.format(ndig, 's' if ndig > 1 else '', deltastr))
 
             rows = []
             hdr = ['{:.2f}% Coverage'.format(conf*100), 'Lower Limit', 'Upper Limit']
-            rows.append(['GUM', output.formatter.f(params['gumlo'], matchto=params['dlow'], **kwargs), output.formatter.f(params['gumhi'], matchto=params['dhi'], **kwargs)])
-            rows.append(['MC', output.formatter.f(params['mclo'], matchto=params['dlow'], **kwargs), output.formatter.f(params['mchi'], matchto=params['dhi'], **kwargs)])
-            rows.append(['abs(GUM - MC)', output.formatter.f(params['dlow'], matchto=params['dlow'], **kwargs), output.formatter.f(params['dhi'], matchto=params['dhi'], **kwargs)])
+            rows.append(['GUM', report.Number(params['gumlo'], matchto=params['dlow']), report.Number(params['gumhi'], matchto=params['dhi'])])
+            rows.append(['MC', report.Number(params['mclo'], matchto=params['dlow']), report.Number(params['mchi'], matchto=params['dhi'])])
+            rows.append(['abs(GUM - MC)', report.Number(params['dlow'], matchto=params['dlow']), report.Number(params['dhi'], matchto=params['dhi'])])
             rows.append([u'abs(GUM - MC) < δ', '<font color="green">PASS</font>' if params['dlow'] < params['delta'] else '<font color="red">FAIL</font>',
                                           '<font color="green">PASS</font>' if params['dhi'] < params['delta'] else '<font color="red">FAIL</font>'])
-            r += output.md_table(rows, hdr=hdr, **kwargs)
-        return output.MDstring(r)
+            r.table(rows, hdr=hdr)
+        return r
 
     def plot_pdf(self, plot=None, **kwargs):
         ''' Plot probability density function of all methods
@@ -943,11 +952,12 @@ class FuncOutput(output.Output):
             -------
             ax: matplotlib axis
         '''
-        fig, ax = output.initplot(plot)
+        fig, ax = plotting.initplot(plot)
         for b in self._baseoutputs:
             kwargs['label'] = b.method
             b.plot_pdf(plot=ax, **kwargs)
-        ax.set_xlabel(output.format_math(self.name) + output.formatunittex(self._baseoutputs[0].units, bracket=True))
+        unitstr = report.Unit(self._baseoutputs[0].units).latex(bracket=True)
+        ax.set_xlabel(report.Math(self.name).latex() + unitstr)
         ax.legend(loc='best', fontsize=10)
         return ax
 
@@ -1035,13 +1045,13 @@ class CalcOutput(output.Output):
 
             Keyword Arguments
             -----------------
-            See NumFormatter()
+            Passed to report.Report
         '''
-        r = output.MDstring()
+        r = report.Report(**kwargs)
         for f in self.foutputs:
             if f.inputfunc.show:
-                r += output.format_math(f.inputfunc.full_func()) + '\n\n'
-                r += f.report(**kwargs)
+                r.sympy(f.inputfunc.full_func(), end='\n\n')
+                r.append(f.report(**kwargs))
         return r
 
     def report_summary(self, **kwargs):
@@ -1049,11 +1059,11 @@ class CalcOutput(output.Output):
 
             Keyword Arguments
             -----------------
-            See NumFormatter()
+            Passed to report.Report
         '''
         r = self.report_summary_table(**kwargs)
-        r += self.report_summary_plot(**kwargs)
-        r += self.report_warns(**kwargs)
+        r.append(self.report_summary_plot(**kwargs))
+        r.append(self.report_warns(**kwargs))
         return r
 
     def report_summary_table(self, **kwargs):
@@ -1061,13 +1071,13 @@ class CalcOutput(output.Output):
 
             Keyword Arguments
             -----------------
-            See NumFormatter()
+            Passed to report.Report
         '''
-        r = output.MDstring()
+        r = report.Report()
         for f in self.foutputs:
             if f.inputfunc.show:
-                r += output.format_math(f.inputfunc.full_func()) + '\n'
-                r += f.report_summary(**kwargs)
+                r.sympy(f.inputfunc.full_func(), end='<br>\n\n')
+                r.append(f.report_summary(**kwargs))
         return r
 
     def report_summary_plot(self, **kwargs):
@@ -1075,14 +1085,15 @@ class CalcOutput(output.Output):
 
             Keyword Arguments
             -----------------
-            See NumFormatter()
+            Passed to report.Report
         '''
-        with mpl.style.context(output.mplcontext):
+        with mpl.style.context(plotting.mplcontext):
+            # TODO: suppress this plot from showing twice in jupyter
             plt.ioff()
             fig = plt.figure()
             self.plot_pdf(plot=fig)
-        r = output.MDstring()
-        r.add_fig(fig)
+        r = report.Report()
+        r.plot(fig)
         return r
 
     def report_all(self, **kwargs):
@@ -1108,12 +1119,12 @@ class CalcOutput(output.Output):
             mchistparams: dict
                 Parameters for Monte Carlo histogram plot
         '''
-        with mpl.style.context(output.mplcontext):
+        with mpl.style.context(plotting.mplcontext):
             plt.ioff()
-            r = output.MDstring()
+            r = report.Report(**kwargs)
             if kwargs.get('summary', True):
-                r += '## Summary\n\n'
-                r += self.report_summary_table(**kwargs)
+                r.hdr('Summary', level=2)
+                r.append(self.report_summary_table(**kwargs))
             if kwargs.get('outputs', True):
                 fig = plt.figure()
                 params = kwargs.get('outplotparams', {})
@@ -1122,33 +1133,33 @@ class CalcOutput(output.Output):
                     self.plot_outputscatter(plot=fig, **params.get('plotargs', {}))
                 else:
                     self.plot_pdf(plot=fig, **params.get('plotargs', {}))
-                r.add_fig(fig)
+                r.plot(fig)
             if kwargs.get('inputs', True):
-                r += '## Standardized Input Values\n\n'
-                r += self.report_inputs(**kwargs)
-                r += '---\n\n'
+                r.hdr('Standardized Input Values', level=2)
+                r.append(self.report_inputs(**kwargs))
+                r.div()
             if kwargs.get('components', True):
-                r += '## Uncertainty Components\n\n'
-                r += self.report_components(**kwargs)
-                r += '---\n\n'
+                r.hdr('Uncertainty Budget', level=2)
+                r.append(self.report_components(**kwargs))
+                r.div()
             if kwargs.get('sens', True):
-                r += '## Sensitivity Coefficients\n\n'
-                r += self.report_sens(**kwargs)
-                r += '---\n\n'
+                r.hdr('Sensitivity Coefficients', level=2)
+                r.append(self.report_sens(**kwargs))
+                r.div()
             if kwargs.get('expanded', True):
                 params = kwargs.get('expandedparams', {'intervalsgum': None, 'intervalsmc': None, 'norm': False, 'shortest': False})
-                r += '## Expanded Uncertainties\n\n'
-                r += self.report_expanded(covlist=params.get('intervalsmc', [0.95]),
-                                          normal=params.get('norm', False), shortest=params.get('shortest', False),
-                                          covlistgum=params.get('intervalsgum', None), **kwargs)
+                r.hdr('Expanded Uncertainties', level=2)
+                r.append(self.report_expanded(covlist=params.get('intervalsmc', [0.95]),
+                                              normal=params.get('norm', False), shortest=params.get('shortest', False),
+                                              covlistgum=params.get('intervalsgum', None), **kwargs))
             if kwargs.get('gumderv', True) and hasattr(self.foutputs[0], 'gum'):
                 solve = kwargs.get('gumvalues', False)
-                r += '## GUM Derivation\n\n'
-                r += self.report_derivation(solve=solve, **kwargs)
+                r.hdr('GUM Derivation', level=2)
+                r.append(self.report_derivation(solve=solve, **kwargs))
             if kwargs.get('gumvalid', True) and hasattr(self.foutputs[0], 'gum') and hasattr(self.foutputs[0], 'mc'):
                 ndig = kwargs.get('gumvaliddig', 2)
-                r += '## GUM Validity\n\n'
-                r += self.report_validity(ndig=ndig, **kwargs)
+                r.hdr('GUM Validity', level=2)
+                r.append(self.report_validity(ndig=ndig, **kwargs))
             if kwargs.get('mchist', True) and hasattr(self.foutputs[0], 'mc'):
                 params = kwargs.get('mchistparams', {})
                 fig = plt.figure()
@@ -1157,33 +1168,33 @@ class CalcOutput(output.Output):
                     self.plot_xscatter(plot=fig, **plotparams)
                 else:
                     self.plot_xhists(plot=fig, **plotparams)
-                r += '## Monte Carlo Inputs\n\n'
-                r.add_fig(fig)
+                r.hdr('Monte Carlo Inputs', level=2)
+                r.plot(fig)
             if kwargs.get('mcconv', True) and hasattr(self.foutputs[0], 'mc'):
                 relative = kwargs.get('mcconvnorm', False)
                 fig = plt.figure()
                 self.plot_converge(fig, relative=relative)
-                r += '## Monte Carlo Convergence\n\n'
-                r.add_fig(fig)
+                r.hdr('Monte Carlo Convergence', level=2)
+                r.plot(fig)
         return r
 
     def report_func(self, **kwargs):
         ''' Report a list of functions in the calculator '''
-        r = output.MDstring()
+        r = report.Report(**kwargs)
         for f in self.foutputs:
             if f.inputfunc.show:
-                r += output.format_math(f.inputfunc.full_func()) + '\n\n'
+                r.sympy(f.inputfunc.full_func(), end='\n\n')
         return r
 
     def report_warns(self, **kwargs):
         ''' Report warnings raised during calculation '''
-        r = output.MDstring()
+        r = report.Report(**kwargs)
         if self.warns:   # Calculator-level warnings
             for w in self.warns:
-                r += '- ' + w + '\n'
+                r.txt('- ' + w + '\n')
 
         for f in self.foutputs:
-            r += f.report_warns(**kwargs)
+            r.append(f.report_warns(**kwargs))
         return r
 
     def report_expanded(self, covlist=None, normal=False, shortest=False, covlistgum=None, **kwargs):
@@ -1203,23 +1214,25 @@ class CalcOutput(output.Output):
 
             Keyword Arguments
             -----------------
-            See NumFormatter()
+            Passed to report.Report
 
             Returns
             -------
-            report: MDstring
+            report.Report
         '''
         if covlist is None:
             covlist = [.99, .95, .90, .68]
         if covlistgum is None:
             covlistgum = covlist
 
-        r = output.MDstring()
-        for f in self.foutputs:
+        r = report.Report()
+        for i, f in enumerate(self.foutputs):
             if f.inputfunc.show:
                 if len(self.foutputs) > 1:
-                    r += output.format_math(f.inputfunc.full_func()) + '\n\n'
-                r += f.report_expanded(covlist, normal=normal, shortest=shortest, covlistgum=covlistgum, **kwargs)
+                    if i > 0:
+                        r.div()
+                    r.sympy(f.inputfunc.full_func(), end='\n\n')
+                r.append(f.report_expanded(covlist, normal=normal, shortest=shortest, covlistgum=covlistgum, **kwargs))
         return r
 
     def report_components(self, **kwargs):
@@ -1227,26 +1240,19 @@ class CalcOutput(output.Output):
 
             Keyword Arguments
             -----------------
-            See NumFormatter()
+            Passed to report.Report
         '''
         cols = ['Variable', 'Component', 'Description', 'Standard Uncertainty', 'Deg. Freedom']
         rows = []
         for i, inpt in enumerate(self.ucalc.get_baseinputs()):
-            if len(inpt.uncerts) > 1:
-                rows.append([output.format_math(inpt.name), '-',
-                             inpt.desc if inpt.desc else '--', output.formatter.f(inpt.stdunc(), **kwargs), format(inpt.degf(), '.1f')])
+            rows.append([report.Math(inpt.name), '-',
+                         inpt.desc if inpt.desc else '--', report.Number(inpt.stdunc()), format(inpt.degf(), '.1f')])
 
-                for u in inpt.uncerts:
-                    rows.append(['-', output.format_math(u.name),
-                                 u.desc if u.desc else '--', output.formatter.f(u.std(), **kwargs), format(u.degf, '.1f')])
-            elif len(inpt.uncerts) == 1:
-                u = inpt.uncerts[0]
-                rows.append([output.format_math(inpt.name),
-                             output.format_math(u.name),
-                             u.desc if u.desc else '--',
-                             output.formatter.f(u.std(), **kwargs),
-                             format(inpt.degf(), '.1f')])
-        r = output.md_table(rows, hdr=cols, **kwargs)
+            for u in inpt.uncerts:
+                rows.append(['-', report.Math(u.name),
+                             u.desc if u.desc else '--', report.Number(u.std()), format(u.degf, '.1f')])
+        r = report.Report(**kwargs)
+        r.table(rows, hdr=cols)
         return r
 
     def report_derivation(self, solve=True, **kwargs):
@@ -1259,17 +1265,17 @@ class CalcOutput(output.Output):
 
             Keyword Arguments
             -----------------
-            See NumFormatter()
+            Passed to report.Report
 
             Returns
             -------
-            report: MDstring
+            report.Report
         '''
-        r = output.MDstring()
+        r = report.Report()
         for f in self.foutputs:
             if f.inputfunc.show:
-                r += f.report_derivation(solve=solve, **kwargs)
-                r += '---\n\n'
+                r.append(f.report_derivation(solve=solve, **kwargs))
+                r.div()
         return r
 
     def report_validity(self, conf=.95, ndig=1, **kwargs):
@@ -1288,13 +1294,13 @@ class CalcOutput(output.Output):
             GUM Supplement 1, Section 8
             NPL Report DEM-ES-011, Chapter 8
         '''
-        r = output.MDstring()
+        r = report.Report(**kwargs)
         for f in self.foutputs:
             if f.inputfunc.show:
                 if len(self.foutputs) > 1:
-                    r += output.format_math(f.inputfunc.full_func()) + '\n\n'
-                r += f.report_validity(conf=conf, ndig=ndig, **kwargs)
-                r += '---\n\n'
+                    r.sympy(f.inputfunc.full_func(), end='\n\n')
+                r.append(f.report_validity(conf=conf, ndig=ndig, **kwargs))
+                r.div()
         return r
 
     def report_inputs(self, **kwargs):
@@ -1302,17 +1308,18 @@ class CalcOutput(output.Output):
 
             Keyword Arguments
             -----------------
-            See NumFormatter()
+            Passed to report.Report
         '''
         rows = []
         cols = ['Variable', 'Mean', 'Std. Uncertainty', 'Deg. Freedom', 'Description']
         for i in self.ucalc.get_baseinputs():  # Merge all functions together
-            rows.append([output.format_math(i.name),
-                         output.formatter.f(i.mean(), matchto=i.stdunc(), **kwargs),
-                         output.formatter.f(i.stdunc(), **kwargs),
-                         output.formatter.f(i.degf(), **kwargs),
+            rows.append([report.Math(i.name),
+                         report.Number(i.mean(), matchto=i.stdunc()),
+                         report.Number(i.stdunc()),
+                         report.Number(i.degf()),
                          i.desc if i.desc != '' else '--'])
-        r = output.md_table(rows, hdr=cols, **kwargs)
+        r = report.Report(**kwargs)
+        r.table(rows, hdr=cols)
         return r
 
     def report_allinputs(self, **kwargs):
@@ -1320,16 +1327,17 @@ class CalcOutput(output.Output):
 
             Keyword Arguments
             -----------------
-            See NumFormatter()
+            Passed to report.Report
         '''
-        r = output.MDstring('## Inputs\n\n')
-        r += self.report_inputs(**kwargs)
-        r += '\n---\n\n'
-        r += '## Uncertainty Components\n\n'
-        r += self.report_components(**kwargs)
-        r += '\n---\n\n'
-        r += '## Sensitivity Coefficients\n\n'
-        r += self.report_sens(**kwargs)
+        r = report.Report(**kwargs)
+        r.hdr('Input Measurements', level=2)
+        r.append(self.report_inputs(**kwargs))
+        r.div()
+        r.hdr('Uncertainty Budget', level=2)
+        r.append(self.report_components(**kwargs))
+        r.div()
+        r.hdr('Sensitivity Coefficients', level=2)
+        r.append(self.report_sens(**kwargs))
         return r
 
     def report_sens(self, **kwargs):
@@ -1337,14 +1345,14 @@ class CalcOutput(output.Output):
 
             Keyword Arguments
             -----------------
-            See NumFormatter()
+            Passed to report.Report
         '''
-        r = output.MDstring()
+        r = report.Report(**kwargs)
         for f in self.foutputs:
             if f.inputfunc.show:
                 if len(self.foutputs) > 1:
-                    r += output.format_math(f.inputfunc.full_func()) + '\n\n'
-                r += f.report_sens(**kwargs)
+                    r.sympy(f.inputfunc.full_func(), end='\n\n')
+                r.append(f.report_sens(**kwargs))
         return r
 
     def plot_pdf(self, plot=None, **kwargs):
@@ -1395,7 +1403,7 @@ class CalcOutput(output.Output):
         showleg = kwargs.pop('legend', True)
         [kwargs.pop(k, None) for k in ['points', 'inpts', 'overlay', 'cmap', 'cmapmc', 'equal_scale']]  # Ignore these in pdf plot
 
-        fig, ax = output.initplot(plot)
+        fig, ax = plotting.initplot(plot)
         fig.clf()
         fig.subplots_adjust(**dfltsubplots)
         if len(funcs) == 0: return fig
@@ -1434,11 +1442,11 @@ class CalcOutput(output.Output):
 
             ax.ticklabel_format(style='sci', axis='x', scilimits=(-4, 4), useOffset=False)
             ax.set_ylabel('Probability Density')
-            unitstr = output.formatunittex(units, bracket=True)
+            unitstr = report.Unit(units).latex(bracket=True)
             if labelmode == 'desc' and func.mc.desc is not None:
                 ax.set_xlabel(func.mc.desc + unitstr)
             elif func.name:
-                ax.set_xlabel(output.format_math(func.name) + unitstr)
+                ax.set_xlabel(report.Math(func.name).latex() + unitstr)
             else:
                 ax.set_xlabel(unitstr)
 
@@ -1496,7 +1504,7 @@ class CalcOutput(output.Output):
         cmapmc = kwargs.get('cmapmc', 'viridis')
         overlay = overlay and showgum and showmc
 
-        fig, ax = output.initplot(plot)
+        fig, ax = plotting.initplot(plot)
         fig.clf()
         fig.subplots_adjust(**dfltsubplots)
 
@@ -1534,8 +1542,8 @@ class CalcOutput(output.Output):
                             axgum.set_xlabel(self.foutputs[f1].desc)
                             axgum.set_ylabel(self.foutputs[f2].desc)
                         else:
-                            axgum.set_xlabel('$' + self.foutputs[f1].inputfunc.get_latex() + '$' + output.formatunittex(self.foutputs[f1].units, bracket=True))
-                            axgum.set_ylabel('$' + self.foutputs[f2].inputfunc.get_latex() + '$' + output.formatunittex(self.foutputs[f2].units, bracket=True))
+                            axgum.set_xlabel('$' + self.foutputs[f1].inputfunc.get_latex() + '$' + report.Unit(self.foutputs[f1].units).latex(bracket=True))
+                            axgum.set_ylabel('$' + self.foutputs[f2].inputfunc.get_latex() + '$' + report.Unit(self.foutputs[f2].units).latex(bracket=True))
                         axgum.ticklabel_format(style='sci', axis='x', scilimits=(-4, 4), useOffset=False)
                         axgum.ticklabel_format(style='sci', axis='y', scilimits=(-4, 4), useOffset=False)
 
@@ -1553,16 +1561,14 @@ class CalcOutput(output.Output):
                         else:
                             axmc.contour(counts, 10, extent=[xbins.min(), xbins.max(), ybins.min(), ybins.max()], cmap=plt.get_cmap(cmapmc))
                     else:
-                        try:
+                        with suppress(ValueError):  # Raises in case where len(x) != len(y) when one output is constant
                             axmc.plot(x[:points], y[:points], marker='.', ls='', markersize=2, color=color, zorder=0)
-                        except ValueError:  # Case where len(x) != len(y) when one output is constant
-                            pass
                     if labelmode == 'desc':
                         axmc.set_xlabel(self.foutputs[f1].mc.desc)
                         axmc.set_ylabel(self.foutputs[f2].mc.desc)
                     else:
-                        axmc.set_xlabel('$' + self.foutputs[f1].inputfunc.get_latex() + '$' + output.formatunittex(self.foutputs[f1].units, bracket=True))
-                        axmc.set_ylabel('$' + self.foutputs[f2].inputfunc.get_latex() + '$' + output.formatunittex(self.foutputs[f2].units, bracket=True))
+                        axmc.set_xlabel('$' + self.foutputs[f1].inputfunc.get_latex() + '$' + report.Unit(self.foutputs[f1].units).latex(bracket=True))
+                        axmc.set_ylabel('$' + self.foutputs[f2].inputfunc.get_latex() + '$' + report.Unit(self.foutputs[f2].units).latex(bracket=True))
                     axmc.ticklabel_format(style='sci', axis='x', scilimits=(-4, 4), useOffset=False)
                     axmc.ticklabel_format(style='sci', axis='y', scilimits=(-4, 4), useOffset=False)
 
@@ -1608,7 +1614,7 @@ class CalcOutput(output.Output):
         bins = max(3, kwargs.get('bins', 200))
         labelmode = kwargs.get('labelmode', 'name')
 
-        fig, ax = output.initplot(plot)
+        fig, ax = plotting.initplot(plot)
 
         # fig.clf() doesn't reset subplots_adjust parameters that change on tight_layout.
         # Reset them here or we can get strange exceptions about negative width while
@@ -1621,12 +1627,12 @@ class CalcOutput(output.Output):
             if len(inpts) == 0: return fig
             variables = [variables[i] for i in inpts]
 
-        axs = output.axes_grid(len(variables), fig)
+        axs = plotting.axes_grid(len(variables), fig)
         for ax, inpt in zip(axs, variables):
             ax.hist(inpt.sampledvalues.magnitude, bins=bins, density=True, color=color, ec=color, histtype='bar', label=inpt.name)
             ax.ticklabel_format(style='sci', axis='x', scilimits=(-4, 4), useOffset=False)
             ax.yaxis.set_visible(False)
-            unitstr = output.formatunittex(inpt.sampledvalues.units, bracket=True)
+            unitstr = report.Unit(inpt.sampledvalues.units).latex(bracket=True)
             if labelmode == 'desc':
                 ax.set_xlabel(inpt.desc + unitstr)
             else:
@@ -1666,7 +1672,7 @@ class CalcOutput(output.Output):
         bins = max(3, kwargs.get('bins', 200))
         labelmode = kwargs.get('labelmode', 'name')
 
-        fig, ax = output.initplot(plot)
+        fig, ax = plotting.initplot(plot)
         fig.clf()
         fig.subplots_adjust(**dfltsubplots)
 
@@ -1693,10 +1699,8 @@ class CalcOutput(output.Output):
 
                 x = variables[col].sampledvalues.magnitude
                 y = variables[row].sampledvalues.magnitude
-                xunit = '{:~L}'.format(variables[col].units)
-                yunit = '{:~L}'.format(variables[row].units)
-                xunit = ' [${}$]'.format(xunit) if xunit else ''
-                yunit = ' [${}$]'.format(yunit) if yunit else ''
+                xunit = report.Unit(variables[col].units).latex(bracket=True)
+                yunit = report.Unit(variables[row].units).latex(bracket=True)
 
                 if contour:
                     counts, ybins, xbins = np.histogram2d(y, x, bins=bins)
@@ -1734,7 +1738,7 @@ class CalcOutput(output.Output):
                 Number of points to plot
         '''
         rows = len(self.foutputs)
-        fig, ax = output.initplot(plot)
+        fig, ax = plotting.initplot(plot)
         fig.clf()
         fig.subplots_adjust(**dfltsubplots)
         cols = 2

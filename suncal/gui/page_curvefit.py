@@ -1,5 +1,6 @@
 ''' Page for fitting curve to experimental data '''
 
+from contextlib import suppress
 from PyQt5 import QtWidgets, QtGui, QtCore
 import numpy as np
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
@@ -7,7 +8,8 @@ from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as Navigatio
 from matplotlib.figure import Figure
 import matplotlib.dates as mdates
 
-from .. import output
+from .. import report
+from .. import plotting
 from . import gui_common
 from . import gui_widgets
 from . import page_dataimport
@@ -16,7 +18,7 @@ from . import page_dataimport
 class OrderWidget(QtWidgets.QWidget):
     ''' Widget for showing label and spinbox for polynomial order '''
     def __init__(self, parent=None):
-        super(OrderWidget, self).__init__(parent=parent)
+        super().__init__(parent=parent)
         self.label = QtWidgets.QLabel('Order:')
         self.order = QtWidgets.QSpinBox()
         self.order.setRange(2, 12)  # 12 is arbitrary limit
@@ -35,10 +37,11 @@ class OrderWidget(QtWidgets.QWidget):
 class ModelWidget(QtWidgets.QWidget):
     ''' Widget for configuring the fit model (line, poly, etc.) '''
     def __init__(self, fitcalc, parent=None):
-        super(ModelWidget, self).__init__(parent=parent)
+        super().__init__(parent=parent)
         self.fitcalc = fitcalc
         self.use_ux = False
-        self.customfunc, self.customexpr, self.customargs = None, None, []
+        self.customfunc = None
+        self.customargs = []
 
         self.cmbModel = QtWidgets.QComboBox()
         self.cmbModel.addItems(['Line', 'Polynomial', 'Exponential', 'Exponential Decay', 'Exponential Decay (rate)', 'Log', 'Logistic Growth', 'Custom'])
@@ -124,7 +127,7 @@ class ModelWidget(QtWidgets.QWidget):
             self.tblGuess.setVisible(False)
 
         expr = self.fitcalc.expr
-        imgbuf = output.sympy_to_buf(expr)
+        imgbuf = report.Math.from_sympy(expr).svg_buf()
         px = QtGui.QPixmap()
         px.loadFromData(imgbuf.getvalue())
         self.lblEquation.setPixmap(px)
@@ -132,9 +135,9 @@ class ModelWidget(QtWidgets.QWidget):
     def update_custom(self, showhide=True):
         ''' Update the custom curve-fit model expression '''
         try:
-            self.customfunc, self.customexpr, self.customargs = self.fitcalc.check_expr(self.custom.text())
+            self.customfunc, _, self.customargs = self.fitcalc.parse_math(self.custom.text())
         except ValueError:
-            self.customfunc, self.customexpr, self.customargs = None, None, []
+            self.customfunc, _, self.customargs = None, None, []
             self.lblEquation.setText('<font color="red">Invalid Expression. Must contain "x" variable and at least one fit parameter.</font>')
         else:
             self.lblEquation.setText('')
@@ -214,7 +217,7 @@ class SettingsWidget(QtWidgets.QWidget):
     absolutesigmachange = QtCore.pyqtSignal()
 
     def __init__(self, fitcalc, parent=None):
-        super(SettingsWidget, self).__init__(parent=parent)
+        super().__init__(parent=parent)
         self.fitcalc = fitcalc
         self.chkLSQ = QtWidgets.QCheckBox('Least Squares Analytical')
         self.chkMC = QtWidgets.QCheckBox('Monte Carlo')
@@ -258,18 +261,12 @@ class SettingsWidget(QtWidgets.QWidget):
     def calcupdate(self):
         ''' Save settings to model object '''
 
-        try:
+        with suppress(ValueError):
             samp = int(self.txtSamples.text())
-        except ValueError:
-            pass
-        else:
             self.fitcalc.samples = samp
 
-        try:
+        with suppress(ValueError):
             seed = int(self.txtSeed.text())
-        except ValueError:
-            pass
-        else:
             self.fitcalc.seed = seed
 
 
@@ -278,7 +275,7 @@ class PageInputCurveFit(QtWidgets.QWidget):
     COLWIDTH = 75
 
     def __init__(self, fitcalc, parent=None):
-        super(PageInputCurveFit, self).__init__(parent)
+        super().__init__(parent)
         self.fitcalc = fitcalc
         self.useUX = False
         self.btnCalculate = QtWidgets.QPushButton('Calculate')
@@ -364,6 +361,8 @@ class PageInputCurveFit(QtWidgets.QWidget):
 
         self.fitcalc.arr.x = x
         self.fitcalc.arr.y = y
+        self.fitcalc.arr.clear_uyestimate()
+        self.fitcalc.arr.clear()  # Clear MC samples
 
         uy = self.table.get_column(2)[mask]
         if all(~np.isfinite(uy)):
@@ -371,6 +370,8 @@ class PageInputCurveFit(QtWidgets.QWidget):
             self.fitcalc.arr.uy_estimate = None
         else:
             self.fitcalc.arr.uy = uy
+            # Prevent inf/nan values.. use a really small uncertainty
+            self.fitcalc.arr.uy[~np.isfinite(self.fitcalc.arr.uy)] = 1E-20
 
         if self.useUX:
             ux = self.table.get_column(3)[mask]
@@ -379,6 +380,7 @@ class PageInputCurveFit(QtWidgets.QWidget):
                 self.fitcalc.arr.ux = np.zeros(len(x))
             else:
                 self.fitcalc.arr.ux = ux
+                self.fitcalc.arr.ux[~np.isfinite(self.fitcalc.arr.ux)] = 1E-20
         else:
             ux = None
             self.fitcalc.arr.ux = np.zeros(len(x))
@@ -420,27 +422,27 @@ class PageInputCurveFit(QtWidgets.QWidget):
                     self.table.setRowCount(i+1)
 
             if arrvals.x is not None:
-                for i in range(len(arrvals.x)):
+                for i, x in enumerate(arrvals.x):
                     checkrow(i)
-                    self.table.setItem(i, 0, QtWidgets.QTableWidgetItem(str(arrvals.x[i])))
+                    self.table.setItem(i, 0, QtWidgets.QTableWidgetItem(str(x)))
 
             if arrvals.y is not None:
-                for i in range(len(arrvals.y)):
+                for i, y in enumerate(arrvals.y):
                     checkrow(i)
-                    self.table.setItem(i, 1, QtWidgets.QTableWidgetItem(str(arrvals.y[i])))
+                    self.table.setItem(i, 1, QtWidgets.QTableWidgetItem(str(y)))
 
             if arrvals.uy is not None and len(arrvals.uy) > 0:
-                for i in range(len(arrvals.uy)):
+                for i, uy in enumerate(arrvals.uy):
                     checkrow(i)
-                    self.table.setItem(i, 2, QtWidgets.QTableWidgetItem(str(arrvals.uy[i])))
+                    self.table.setItem(i, 2, QtWidgets.QTableWidgetItem(str(uy)))
 
             if arrvals.ux is not None and len(arrvals.ux) > 0:
                 self.useUX = True
                 self.table.setColumnCount(4)
                 self.table.setHorizontalHeaderItem(3, QtWidgets.QTableWidgetItem('u(x)'))
-                for i in range(len(arrvals.ux)):
+                for i, ux in enumerate(arrvals.ux):
                     checkrow(i)
-                    self.table.setItem(i, 3, QtWidgets.QTableWidgetItem(str(arrvals.ux[i])))
+                    self.table.setItem(i, 3, QtWidgets.QTableWidgetItem(str(ux)))
             self.table.blockSignals(False)
             self.table.resizeColumnsToContents()
             self.update_arr()
@@ -457,7 +459,7 @@ class MethodSelectWidget(QtWidgets.QWidget):
     changed = QtCore.pyqtSignal()
 
     def __init__(self, parent=None):
-        super(MethodSelectWidget, self).__init__(parent=parent)
+        super().__init__(parent=parent)
         self.label = QtWidgets.QLabel('Uncertainty Calculation Method:')
         self.chkLSQ = QtWidgets.QCheckBox('Least Squares Analytical')
         self.chkLSQ.setChecked(True)
@@ -516,7 +518,7 @@ class IntervalWidget(QtWidgets.QWidget):
     changed = QtCore.pyqtSignal()
 
     def __init__(self, x1=0, x2=1, xdate=False):
-        super(IntervalWidget, self).__init__()
+        super().__init__()
         self.xdate = xdate
         self.x1 = QtWidgets.QLineEdit(str(x1))
         self.x2 = QtWidgets.QLineEdit(str(x2))
@@ -558,10 +560,10 @@ class IntervalWidget(QtWidgets.QWidget):
 class PageOutputCurveFit(QtWidgets.QWidget):
     ''' Output page for curve fit calculation '''
     namelookup = {'lsq': 'Least Squares', 'gum': 'GUM', 'mc': 'Monte Carlo', 'mcmc': 'Markov-Chain Monte Carlo'}
-    methodlookup = dict([(v, k) for k, v in namelookup.items()])
+    methodlookup = dict((v, k) for k, v in namelookup.items())
 
     def __init__(self, parent=None):
-        super(PageOutputCurveFit, self).__init__(parent)
+        super().__init__(parent)
         self.output = None
         self.btnBack = QtWidgets.QPushButton('Back')
 
@@ -717,7 +719,7 @@ class PageOutputCurveFit(QtWidgets.QWidget):
 
     def update(self):
         ''' Update the view based on output and controls '''
-        r = output.MDstring()
+        r = report.Report()
         self.fig.clf()
 
         try:
@@ -737,14 +739,14 @@ class PageOutputCurveFit(QtWidgets.QWidget):
             conf = float(kstr[:-1]) / 100  # Without the % sign, as decimal
 
         if self.outSelect.currentText() == 'Fit Plot':
-            r += '### Fit Parameters\n\n'
-            r += self.output.report(**gui_common.get_rptargs())
-            r += output.format_math(self.output._baseoutputs[0].expr(subs=True)) + '\n\n'
-            r += '### Goodness of Fit\n\n'
-            r += self.output.report_fit() + '\n\n'
+            r.hdr('Fit Parameters', level=3)
+            r.append(self.output.report())
+            r.sympy(self.output._baseoutputs[0].expr(subs=True), end='\n\n')
+            r.hdr('Goodness of Fit', level=3)
+            r.append(self.output.report_fit(), end='\n\n')
 
             methods = self.methodselect.get_selected_methods()
-            axs = output.axes_grid(len(methods), self.fig, maxcols=2)
+            axs = plotting.axes_grid(len(methods), self.fig, maxcols=2)
             for ax, m in zip(axs, methods):
                 out = getattr(self.output, m)
                 out.plot_points(ax=ax, ls='', marker='o')
@@ -770,7 +772,7 @@ class PageOutputCurveFit(QtWidgets.QWidget):
                 xmin = min(np.nanmin(xdata), np.nanmin(xvalues))
                 xmax = max(np.nanmax(xdata), np.nanmax(xvalues))
                 x = np.linspace(xmin, xmax, num=200)
-                r += out.report_confpred_xval(xval=self.xvals.get_columntext(0), k=k, conf=conf, **gui_common.get_rptargs())
+                r.append(out.report_confpred_xval(xval=self.xvals.get_columntext(0), k=k, conf=conf))
             else:
                 x = np.linspace(min(xdata), max(xdata), num=200)
 
@@ -798,8 +800,9 @@ class PageOutputCurveFit(QtWidgets.QWidget):
             ax = self.fig.add_subplot(1, 1, 1)
             if t1 != t2:
                 out.plot_interval_uncert(t1, t2, ax=ax, k=k, conf=conf)
-                r += out.report_interval_uncert(t1, t2, k=k, conf=conf, plot=False) + '\n\n---\n\n'
-            r += out.report_interval_uncert_eqns()
+                r.append(out.report_interval_uncert(t1, t2, k=k, conf=conf, plot=False), end='\n\n')
+                r.div()
+            r.append(out.report_interval_uncert_eqns())
 
         elif self.outSelect.currentText() == 'Residuals':
             out = getattr(self.output, method)
@@ -826,7 +829,7 @@ class PageOutputCurveFit(QtWidgets.QWidget):
             ax4.set_xlabel('Theoretical quantiles')
             ax4.set_ylabel('Ordered sample values')
             self.fig.tight_layout()
-            r += out.report_residtable(k=k, conf=conf, **gui_common.get_rptargs())
+            r.append(out.report_residtable(k=k, conf=conf))
 
         elif self.outSelect.currentText() == 'Correlations':
             out = getattr(self.output, method)
@@ -838,8 +841,8 @@ class PageOutputCurveFit(QtWidgets.QWidget):
             if len(params) >= 2:
                 out.plot_outputscatter(fig=self.fig, params=params)
 
-            r += '## Correlation Matrix:\n\n'
-            r += out.report_correlation()
+            r.hdr('Correlation Matrix:', level=2)
+            r.append(out.report_correlation())
 
         elif 'Monte Carlo' in self.outSelect.currentText():
             mcmc = 'Markov-Chain' in self.outSelect.currentText()
@@ -851,13 +854,13 @@ class PageOutputCurveFit(QtWidgets.QWidget):
             else:
                 out.plot_samples(fig=self.fig, inpts=params)
 
-            r += output.format_math(out.expr()) + '\n\n'
-            r += out.report(**gui_common.get_rptargs())
+            r.sympy(out.expr(), end='\n\n')
+            r.append(out.report())
             if mcmc:
-                r += '### Acceptance Rate\n\n'
-                r += out.report_acceptance()
+                r.hdr('Acceptance Rate', level=3)
+                r.append(out.report_acceptance())
 
-        self.txtOutput.setMarkdown(r)
+        self.txtOutput.setReport(r)
         self.canvas.draw_idle()
 
     def set_output(self, output):
@@ -876,7 +879,7 @@ class PageOutputCurveFit(QtWidgets.QWidget):
         self.blockSignals(True)
         self.methodselect.update_methods(**methods)
         self.cmbMethod.clear()
-        self.cmbMethod.addItems([self.namelookup[i] for i, v in methods.items() if v])
+        self.cmbMethod.addItems(self.namelookup[i] for i, v in methods.items() if v)
         self.paramlist.addItems(self.output.pnames)
         self.paramlist.selectAll()
         self.outSelect.blockSignals(True)
@@ -914,7 +917,7 @@ class PageOutputCurveFit(QtWidgets.QWidget):
 class CurveFitWidget(QtWidgets.QWidget):
     ''' Main widget for calculating uncertainty in curve fitting '''
     def __init__(self, item, parent=None):
-        super(CurveFitWidget, self).__init__(parent)
+        super().__init__(parent)
         self.fitcalc = item
         self.pginput = PageInputCurveFit(self.fitcalc)
         self.pgoutput = PageOutputCurveFit()
@@ -1107,20 +1110,20 @@ class CurveFitWidget(QtWidgets.QWidget):
             k = None
             conf = float(kstr[:-1]) / 100  # Without the % sign, as decimal
 
-        report = output.MDstring()
+        r = report.Report()
         out = self.fitcalc.get_output()
         if out:
             if self.pgoutput.outSelect.currentText() == 'Prediction':
                 xvals = self.pgoutput.xvals.get_columntext(0)
-                report = self.fitcalc.get_output().report_all(xval=xvals, k=k, conf=conf, **gui_common.get_rptargs())
+                r = self.fitcalc.get_output().report_all(xval=xvals, k=k, conf=conf)
             elif self.pgoutput.outSelect.currentText() == 'Interval':
                 x1 = float(self.pgoutput.interval.x1.text()) if not self.fitcalc.out.xdates else self.pgoutput.interval.xdate1.date().toPyDate().strftime('%d-%b-%Y')
                 x2 = float(self.pgoutput.interval.x2.text()) if not self.fitcalc.out.xdates else self.pgoutput.interval.xdate2.date().toPyDate().strftime('%d-%b-%Y')
-                report = self.fitcalc.get_output().report_all(interval=(x1, x2), k=k, conf=conf, **gui_common.get_rptargs())
+                r = self.fitcalc.get_output().report_all(interval=(x1, x2), k=k, conf=conf)
             else:
-                report = self.fitcalc.get_output().report_all(k=k, conf=conf, **gui_common.get_rptargs())
-        return report
+                r = self.fitcalc.get_output().report_all(k=k, conf=conf)
+        return r
 
     def save_report(self):
         ''' Save full report of curve fit, asking user for settings/filename '''
-        gui_widgets.savemarkdown(self.get_report())
+        gui_widgets.savereport(self.get_report())

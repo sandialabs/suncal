@@ -1,5 +1,12 @@
 # Change History
 
+## Version 1.3.4
+
+- Improved output reporting system. Adds right-click option to output reports for changing significant figures and number formats.
+- Flattened uncertainty entry user interface and improved keyboard navigation
+- GUI enhancements and fixes
+
+
 ## Version 1.3.3
 
 - GUI enhancements and fixes

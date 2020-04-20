@@ -5,12 +5,13 @@ from pint import DimensionalityError, UndefinedUnitError
 
 from . import gui_common
 from .. import ureg
+from .. import report
 
 
 class UnitsConverter(QtWidgets.QDialog):
     ''' Dialog for parsing and converting units. '''
     def __init__(self, parent=None):
-        super(UnitsConverter, self).__init__(parent=parent)
+        super().__init__(parent=parent)
         self.setWindowTitle('Units Converter')
         self.valuein = QtWidgets.QLineEdit('1.0')
         self.valueout = QtWidgets.QLabel('1.0')
@@ -74,9 +75,9 @@ class UnitsConverter(QtWidgets.QDialog):
             self.dimin.setText('---')
             uin = None
         else:
-            gui_common.setLabelTex(self.namein, format(uin, 'L'))
-            gui_common.setLabelTex(self.abbrin, format(uin, '~L'))
-            gui_common.setLabelTex(self.dimin, format(uin.dimensionality, 'L'))
+            gui_common.setLabelTex(self.namein, report.Unit(uin, abbr=False).latex(escape=False))
+            gui_common.setLabelTex(self.abbrin, report.Unit(uin, abbr=True).latex(escape=False))
+            gui_common.setLabelTex(self.dimin, report.Unit(uin.dimensionality).latex(escape=False))
 
         try:
             uout = ureg.parse_units(self.unitout.text())
@@ -87,9 +88,9 @@ class UnitsConverter(QtWidgets.QDialog):
             self.abbrout.setText('---')
             self.dimout.setText('---')
         else:
-            gui_common.setLabelTex(self.nameout, format(uout, 'L'))
-            gui_common.setLabelTex(self.abbrout, format(uout, '~L'))
-            gui_common.setLabelTex(self.dimout, format(uout.dimensionality, 'L'))
+            gui_common.setLabelTex(self.nameout, report.Unit(uout, abbr=False).latex(escape=False))
+            gui_common.setLabelTex(self.abbrout, report.Unit(uout, abbr=True).latex(escape=False))
+            gui_common.setLabelTex(self.dimout, report.Unit(uout.dimensionality).latex(escape=False))
 
         if uin is not None and uout is not None:
             try:

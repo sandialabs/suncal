@@ -16,7 +16,7 @@ import numpy as np
 
 import suncal as uc
 from suncal import project
-from suncal import output
+from suncal import report
 from suncal import reverse
 from suncal import risk
 from suncal import curvefit
@@ -41,38 +41,30 @@ def main_setup(args=None):
         _, fmt = os.path.splitext(str(args.o.name))
         fmt = fmt[1:]  # remove '.'
 
-    if fmt in [None, 'txt']:
-        math = 'text'
-        fig = 'text'
+    if args.verbose > 1:
+        r = u.report_all()
+    elif args.verbose > 0:
+        r = u.report_summary()
     else:
-        math = 'mpl'
-        fig = 'svg'
+        r = u.report_short()
 
-    with output.report_format(math=math, fig=fig):
-        if args.verbose > 1:
-            r = u.report_all()
-        elif args.verbose > 0:
-            r = u.report_summary()
-        else:
-            r = u.report_short()
+    if fmt == 'docx':
+        r.save_docx(args.o.name)
+        return
+    elif fmt == 'odt':
+        r.save_odt(args.o.name)
+        return
+    elif fmt == 'pdf':
+        r.save_pdf(args.o.name)
+        return
+    elif fmt == 'html':
+        strreport = r.get_html(mathfmt='latex', figfmt='svg')
+    elif fmt == 'md':
+        strreport = r.get_md(mathfmt='latex', figfmt='svg')
+    else:
+        strreport = r.get_md(mathfmt='text', figfmt='text')
 
-        if fmt == 'docx':
-            r.save_docx(args.o.name)
-            return
-        elif fmt == 'odt':
-            r.save_odt(args.o.name)
-            return
-        elif fmt == 'pdf':
-            r.save_pdf(args.o.name)
-            return
-        elif fmt == 'html':
-            strreport = r.get_html()
-        elif fmt == 'md':
-            strreport = r.get_md()
-        else:
-            strreport = str(r)
-
-        args.o.write(strreport)
+    args.o.write(strreport)
 
 
 def main_unc(args=None):
@@ -104,7 +96,7 @@ def main_unc(args=None):
     if args.uncerts is not None:
         for uncert in args.uncerts:
             var, *uncargs = uncert.split(';')
-            uncargs = dict([u.split('=') for u in uncargs])
+            uncargs = dict(u.split('=') for u in uncargs)
             keys = uncargs.keys()
             for key in keys:
                 uncargs[key.strip()] = uncargs.pop(key)
@@ -122,7 +114,7 @@ def main_unc(args=None):
             mcmin, mcmax, mck = func.out.mc.expanded(.95)
             vals = [func.out.gum.mean.magnitude, func.out.gum.uncert.magnitude, gumexp.magnitude, gumk,
                     func.out.mc.mean.magnitude, func.out.mc.uncert.magnitude, mcmin.magnitude, mcmax.magnitude, mck]
-            args.o.write(', '.join(['{:.9g}'.format(v) if isinstance(v, float) else '{:.9g}'.format(v) for v in vals]))  # expanded() returns length-1 arrays
+            args.o.write(', '.join('{:.9g}'.format(v) if isinstance(v, float) else '{:.9g}'.format(v) for v in vals))  # expanded() returns length-1 arrays
             args.o.write('\n')
 
     else:    # Print a formatted report
@@ -130,38 +122,31 @@ def main_unc(args=None):
         if args.o and hasattr(args.o, 'name') and args.o.name != '<stdout>':
             _, fmt = os.path.splitext(str(args.o.name))
             fmt = fmt[1:]  # remove '.'
-        if fmt in [None, 'txt']:
-            math = 'text'
-            fig = 'text'
+
+        if args.verbose > 1:
+            r = u.out.report_all()
+        elif args.verbose > 0:
+            r = u.out.report_summary()
         else:
-            math = 'mpl'
-            fig = 'svg'
+            r = u.out.report()
 
-        with output.report_format(math=math, fig=fig):
-            if args.verbose > 1:
-                r = u.out.report_all()
-            elif args.verbose > 0:
-                r = u.out.report_summary()
-            else:
-                r = u.out.report()
+        if fmt == 'docx':
+            r.save_docx(args.o.name)
+            return
+        elif fmt == 'odt':
+            r.save_odt(args.o.name)
+            return
+        elif fmt == 'pdf':
+            r.save_pdf(args.o.name)
+            return
+        elif fmt == 'html':
+            strreport = r.get_html(mathfmt='latex', figfmt='svg')
+        elif fmt == 'md':
+            strreport = r.get_md(mathfmt='latex', figfmt='svg')
+        else:
+            strreport = r.get_md(mathfmt='text', figfmt='text')
 
-            if fmt == 'docx':
-                r.save_docx(args.o.name)
-                return
-            elif fmt == 'odt':
-                r.save_odt(args.o.name)
-                return
-            elif fmt == 'pdf':
-                r.save_pdf(args.o.name)
-                return
-            elif fmt == 'html':
-                strreport = r.get_html()
-            elif fmt == 'md':
-                strreport = r.get_md()
-            else:
-                strreport = r.get_md()
-
-            args.o.write(strreport)
+        args.o.write(strreport)
 
 
 def main_reverse(args=None):
@@ -191,7 +176,7 @@ def main_reverse(args=None):
     if args.uncerts is not None:
         for uncert in args.uncerts:
             var, *uncargs = uncert.split(';')
-            uncargs = dict([u.split('=') for u in uncargs])
+            uncargs = dict(u.split('=') for u in uncargs)
             keys = uncargs.keys()
             for key in keys:
                 uncargs[key.strip()] = uncargs.pop(key)
@@ -206,7 +191,7 @@ def main_reverse(args=None):
     if args.s:   # Print out short-format results
         vals = [out.gumdata['i'], out.gumdata['u_i'],
                 out.mcdata['i'], out.mcdata['u_i']]
-        args.o.write(', '.join(['{:.9g}'.format(v) for v in vals]))
+        args.o.write(', '.join('{:.9g}'.format(v) for v in vals))
         args.o.write('\n')
 
     else:    # Print a formatted report
@@ -214,38 +199,31 @@ def main_reverse(args=None):
         if args.o and hasattr(args, 'name') and args.o.name != '<stdout>':
             _, fmt = os.path.splitext(str(args.o.name))
             fmt = fmt[1:]  # remove '.'
-        if fmt in [None, 'txt']:
-            math = 'text'
-            fig = 'text'
+
+        if args.verbose > 1:
+            r = u.out.report_all()
+        elif args.verbose > 0:
+            r = u.out.report_summary()
         else:
-            math = 'mpl'
-            fig = 'svg'
+            r = u.out.report()
 
-        with output.report_format(math=math, fig=fig):
-            if args.verbose > 1:
-                r = u.out.report_all()
-            elif args.verbose > 0:
-                r = u.out.report_summary()
-            else:
-                r = u.out.report()
+        if fmt == 'docx':
+            r.save_docx(args.o.name)
+            return
+        elif fmt == 'odt':
+            r.save_odt(args.o.name)
+            return
+        elif fmt == 'pdf':
+            r.save_pdf(args.o.name)
+            return
+        elif fmt == 'html':
+            strreport = r.get_html(mathfmt='latex', figfmt='svg')
+        elif fmt == 'md':
+            strreport = r.get_md(mathfmt='latex', figfmt='svg')
+        else:
+            strreport = r.get_md(mathfmt='text', figfmt='text')
 
-            if fmt == 'docx':
-                r.save_docx(args.o.name)
-                return
-            elif fmt == 'odt':
-                r.save_odt(args.o.name)
-                return
-            elif fmt == 'pdf':
-                r.save_pdf(args.o.name)
-                return
-            elif fmt == 'html':
-                strreport = r.get_html()
-            elif fmt == 'md':
-                strreport = r.get_md()
-            else:
-                strreport = str(r)
-
-            args.o.write(strreport)
+        args.o.write(strreport)
 
 
 def main_risk(args=None):
@@ -306,39 +284,32 @@ def main_risk(args=None):
         if args.o and hasattr(args, 'name') and args.o.name != '<stdout>':
             _, fmt = os.path.splitext(str(args.o.name))
             fmt = fmt[1:]  # remove '.'
-        if fmt in [None, 'txt']:
-            math = 'text'
-            fig = 'text'
+
+        if args.verbose > 0:
+            r = out.report_all()
         else:
-            math = 'mpl'
-            fig = 'svg'
+            r = out.report()
 
-        with output.report_format(math=math, fig=fig):
-            if args.verbose > 0:
-                r = out.report_all()
-            else:
-                r = out.report()
+        fmt = str(args.f)
+        if args.o and hasattr(args.o, 'name') and args.o.name != '<stdout>':
+            _, fmt = os.path.splitext(str(args.o.name))
+            fmt = fmt[1:]  # remove '.'
 
-            fmt = str(args.f)
-            if args.o and hasattr(args.o, 'name') and args.o.name != '<stdout>':
-                _, fmt = os.path.splitext(str(args.o.name))
-                fmt = fmt[1:]  # remove '.'
-
-            if fmt == 'docx':
-                r.save_docx(args.o.name)
-                return
-            elif fmt == 'odt':
-                r.save_odt(args.o.name)
-                return
-            elif fmt == 'pdf':
-                r.save_pdf(args.o.name)
-                return
-            elif fmt == 'html':
-                strreport = r.get_html()
-            elif fmt == 'md':
-                strreport = r.get_md()
-            else:
-                strreport = str(r)
+        if fmt == 'docx':
+            r.save_docx(args.o.name)
+            return
+        elif fmt == 'odt':
+            r.save_odt(args.o.name)
+            return
+        elif fmt == 'pdf':
+            r.save_pdf(args.o.name)
+            return
+        elif fmt == 'html':
+            strreport = r.get_html(mathfmt='latex', figfmt='svg')
+        elif fmt == 'md':
+            strreport = r.get_md(mathfmt='latex', figfmt='svg')
+        else:
+            strreport = r.get_md(mathfmt='text', figfmt='text')
 
             args.o.write(strreport)
 
@@ -366,13 +337,13 @@ def main_curvefit(args=None):
 
     arr = curvefit.Array(x, y, ux, uy)
     fit = curvefit.CurveFit(arr, args.model, polyorder=args.order)
-    methods = dict([(m, True) for m in args.methods])
+    methods = dict((m, True) for m in args.methods)
     fit.calculate(**methods)
 
     if args.s:
         for base in fit.out._baseoutputs:
-            args.o.write(', '.join(['{:.9g}'.format(m) for m in base.coeffs]) + '\n')
-            args.o.write(', '.join(['{:.9g}'.format(m) for m in base.sigmas]) + '\n')
+            args.o.write(', '.join('{:.9g}'.format(m) for m in base.coeffs) + '\n')
+            args.o.write(', '.join('{:.9g}'.format(m) for m in base.sigmas) + '\n')
 
     else:
         fmt = args.f
@@ -380,35 +351,27 @@ def main_curvefit(args=None):
             _, fmt = os.path.splitext(str(args.o.name))
             fmt = fmt[1:]  # remove '.'
 
-        if fmt in [None, 'txt']:
-            math = 'text'
-            fig = 'text'
+        if args.verbose > 1:
+            r = fit.out.report_all()
+        elif args.verbose > 0:
+            r = fit.out.report_summary()
         else:
-            math = 'mpl'
-            fig = 'svg'
-
-        with output.report_format(math=math, fig=fig):
-            if args.verbose > 1:
-                r = fit.out.report_all()
-            elif args.verbose > 0:
-                r = fit.out.report_summary()
-            else:
-                r = fit.out.report()
-            if fmt == 'docx':
-                r.save_docx(args.o.name)
-                return
-            elif fmt == 'odt':
-                r.save_odt(args.o.name)
-                return
-            elif fmt == 'pdf':
-                r.save_pdf(args.o.name)
-                return
-            elif fmt == 'html':
-                strreport = r.get_html()
-            elif fmt == 'md':
-                strreport = r.get_md()
-            else:
-                strreport = str(r)
+            r = fit.out.report()
+        if fmt == 'docx':
+            r.save_docx(args.o.name)
+            return
+        elif fmt == 'odt':
+            r.save_odt(args.o.name)
+            return
+        elif fmt == 'pdf':
+            r.save_pdf(args.o.name)
+            return
+        elif fmt == 'html':
+            strreport = r.get_html(mathfmt='latex', figfmt='svg')
+        elif fmt == 'md':
+            strreport = r.get_md(mathfmt='latex', figfmt='svg')
+        else:
+            strreport = r.get_md(mathfmt='text', figfmt='text')
 
             args.o.write(strreport)
 

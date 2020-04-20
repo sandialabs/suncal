@@ -17,7 +17,7 @@ class TTableDialog(QtWidgets.QDialog):
         and solve for the third.
     '''
     def __init__(self, parent=None):
-        super(TTableDialog, self).__init__(parent=parent)
+        super().__init__(parent=parent)
         self.setWindowTitle('T-table')
         self.cmbSolveFor = QtWidgets.QComboBox()
         self.cmbSolveFor.addItems(['Coverage Factor', 'Confidence', 'Degrees of Freedom'])

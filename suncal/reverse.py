@@ -7,6 +7,9 @@ import logging
 
 from . import uncertainty
 from . import output
+from . import report
+from . import uparser
+from . import plotting
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
@@ -71,7 +74,7 @@ class UncertReverse(uncertainty.UncertCalc):
     '''
     def __init__(self, function=None, inputs=None, samples=1000000, seed=None, name='reverse', solvefor=None,
                  units=None, targetnom=None, targetunc=None, fidx=-1):
-        super(UncertReverse, self).__init__(function=function, inputs=inputs, samples=samples, seed=seed, name=name, units=units)
+        super().__init__(function=function, inputs=inputs, samples=samples, seed=seed, name=name, units=units)
         self.reverseparams = {}
         if solvefor is not None:
             self.set_reverse(solvefor, targetnom, targetunc, fidx)
@@ -117,8 +120,8 @@ class UncertReverse(uncertainty.UncertCalc):
         if var not in function.get_basenames():
             raise ValueError('Undefined solvefor variable {}'.format(var))
 
-        req_nom *= uncertainty.get_units(function.outunits)
-        req_uncert *= uncertainty.get_units(function.outunits)
+        req_nom *= uparser.parse_unit(function.outunits)
+        req_uncert *= uparser.parse_unit(function.outunits)
         solvefor_units = function.get_basemeans()[var].units
 
         # Calculate GUM symbolically then solve for uncertainty component
@@ -132,8 +135,14 @@ class UncertReverse(uncertainty.UncertCalc):
 
         u_ivar = sympy.Symbol('u_'+var)  # Symbol for unknown uncertainty we're solving for
         u_ovar = sympy.Symbol('u_'+fname)
-        u_iexpr = sympy.solve(sympy.Eq(u_ovar, ucombined), u_ivar)[1]  # Solve for u_i, keep positive solution
-        u_iexpr = u_iexpr.subs({var: var_f})  # Replace var with var_f
+
+        try:
+            u_iexpr = sympy.solve(sympy.Eq(u_ovar, ucombined), u_ivar)[1]  # Solve for u_i, keep positive solution
+        except IndexError:
+            # Will fail with no solution for model f = x due to sqrt(x**2) not simplifying.
+            u_iexpr = u_ovar
+        else:
+            u_iexpr = u_iexpr.subs({var: var_f})  # Replace var with var_f
         u_ival = u_iexpr.subs(function.get_basemeans())
         inpts = function.get_basemeans()
         inpts.pop(var)
@@ -225,7 +234,7 @@ class UncertReverse(uncertainty.UncertCalc):
 
     def get_config(self):
         ''' Get configuration dictionary for calculation '''
-        d = super(UncertReverse, self).get_config()
+        d = super().get_config()
         d['mode'] = 'reverse'
         d['reverse'] = self.reverseparams
         return d
@@ -257,50 +266,65 @@ class ReverseOutput(output.Output):
 
             Keyword Arguments
             -----------------
-            See NumFormatter()
+            Passed to report.Report
         '''
-        s = output.MDstring()
+        rpt = report.Report(**kwargs)
         if self.gumdata and gum:
             ui = self.gumdata['u_i']
             i = self.gumdata['i']
 
-            s += '## GUM reverse uncertainty\n\n'
-            s += output.format_math(sympy.Eq(self.gumdata['fname'], self.gumdata['f']))
-            s += '\n\n Combined uncertainty:\n\n'
-            s += output.format_math(sympy.Eq(self.gumdata['ucname'], self.gumdata['u_c']))
-            s += '\n\nsolved for uncertainty of input:\n\n'
-            s += output.format_math(sympy.Eq(self.gumdata['u_iname'], self.gumdata['u_iexpr']))
-            s += u'\n\n For output value of {} ± {} (k=1),\n'.format(output.formatter.f(self.gumdata['f_required'], matchto=self.gumdata['uf_required'], **kwargs), output.formatter.f(self.gumdata['uf_required'], **kwargs))
+            rpt.hdr('GUM reverse uncertainty', level=2)
+            rpt.sympy(sympy.Eq(self.gumdata['fname'], self.gumdata['f']))
+            rpt.txt('\n\n Combined uncertainty:\n\n')
+            rpt.sympy(sympy.Eq(self.gumdata['ucname'], self.gumdata['u_c']))
+            rpt.txt('\n\nsolved for uncertainty of input:\n\n')
+            rpt.sympy(sympy.Eq(self.gumdata['u_iname'], self.gumdata['u_iexpr']))
+            rpt.add(u'\n\n For output value of ',
+                    report.Number(self.gumdata['f_required'], matchto=self.gumdata['uf_required']),
+                    ' ± ',
+                    report.Number(self.gumdata['uf_required']),
+                    ' (k=1),\n')
             if i is None or ui is None:
-                s += u'No real solution found\n\n'
+                rpt.txt(u'No real solution found\n\n')
             else:
-                s += u'required input value is {} ± {} (k=1).\n\n'.format(output.formatter.f(i, matchto=ui, **kwargs), output.formatter.f(ui, **kwargs))
+                rpt.add('required input value is ',
+                        report.Number(i, matchto=ui),
+                        ' ± ',
+                        report.Number(ui),
+                        ' (k=1).\n\n')
 
         if self.mcdata and mc:
             if self.gumdata and gum:
-                s += '\n\n----\n\n'
-            s += '## Monte Carlo reverse uncertainty\n\n'
+                rpt.div()
+            rpt.hdr('Monte Carlo reverse uncertainty', level=2)
             i = self.mcdata['i']
             ui = self.mcdata['u_i']
             if i is None or ui is None:
-                s += u'No real solution found\n\n'
+                rpt.txt('No real solution found\n\n')
             else:
-                s += u'For output value of {} ± {} (k=1), '.format(output.formatter.f(self.mcdata['f_required'], matchto=self.mcdata['uf_required'], **kwargs), output.formatter.f(self.mcdata['uf_required'], **kwargs))
-                s += u'required input value is: {} ± {} (k=1).\n\n'.format(output.formatter.f(i, matchto=ui, **kwargs), output.formatter.f(ui, **kwargs))
-        return s
+                rpt.add('For output value of ',
+                        report.Number(self.mcdata['f_required'], matchto=self.mcdata['uf_required']),
+                        ' ± ',
+                        report.Number(self.mcdata['uf_required']),
+                        ' (k=1), required input value is: ',
+                        report.Number(i, matchto=ui),
+                        ' ± ',
+                        report.Number(ui),
+                        ' (k=1).\n\n')
+        return rpt
 
     def report_summary(self, **kwargs):
         r = self.report(**kwargs)
-        with mpl.style.context(output.mplcontext):
+        with mpl.style.context(plotting.mplcontext):
             plt.ioff()
             fig = plt.figure()
             self.plot_pdf(fig)
-            r.add_fig(fig)
+            r.plot(fig)
         return r
 
     def plot_pdf(self, plot=None, **kwargs):
         ''' Plot PDF/Histogram of the reverse calculation '''
-        fig, ax = output.initplot(plot)
+        fig, ax = plotting.initplot(plot)
         mccolor = kwargs.pop('mccolor', 'C0')
         gumcolor = kwargs.pop('gumcolor', 'C1')
 

@@ -9,29 +9,51 @@ from . import gui_common
 from . import page_uncertprop
 
 
-class TargetSetupWidget(QtWidgets.QWidget):
+class TargetSetupWidget(QtWidgets.QTableWidget):
     ''' Widget for entering target value, uncertainty for reverse calculations '''
+    COL_NAME = 0
+    COL_VALUE = 1
+    COL_CNT = 2
+
+    ROW_FUNC = 0
+    ROW_TARG = 1
+    ROW_TUNC = 2
+    ROW_SOLVEFOR = 3
+    ROW_CNT = 4
+
     def __init__(self, ucalc, parent=None):
-        super(TargetSetupWidget, self).__init__(parent=parent)
+        super().__init__(parent=parent)
         self.ucalc = ucalc
+
+        self.setColumnCount(self.COL_CNT)
+        self.setRowCount(self.ROW_CNT)
+        self.setHorizontalHeaderLabels(['Parameter', 'Value'])
+        self.setStyleSheet(page_uncertprop.TABLESTYLE)
+        self.verticalHeader().hide()
+        self.setSizePolicy(QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Minimum)
+        self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        
+        self.setItem(self.ROW_FUNC, self.COL_NAME, gui_widgets.ReadOnlyTableItem('Function'))
+        self.setItem(self.ROW_TARG, self.COL_NAME, gui_widgets.ReadOnlyTableItem('Target Value'))
+        self.setItem(self.ROW_TUNC, self.COL_NAME, gui_widgets.ReadOnlyTableItem('Target Uncertainty'))
+        self.setItem(self.ROW_SOLVEFOR, self.COL_NAME, gui_widgets.ReadOnlyTableItem('Solve For'))
 
         self.cmbFunction = QtWidgets.QComboBox()
         self.txtTarget = QtWidgets.QLineEdit('0.0')
         self.txtTargetUnc = QtWidgets.QLineEdit('0.0')
         self.cmbSolveFor = QtWidgets.QComboBox()
+        self.setCellWidget(self.ROW_FUNC, self.COL_VALUE, self.cmbFunction)
+        self.setCellWidget(self.ROW_SOLVEFOR, self.COL_VALUE, self.cmbSolveFor)
+        self.setCellWidget(self.ROW_TARG, self.COL_VALUE, self.txtTarget)
+        self.setCellWidget(self.ROW_TUNC, self.COL_VALUE, self.txtTargetUnc)
         self.update_names()
+        self.resizeColumnsToContents()
 
         validator = QtGui.QDoubleValidator(-1E99, 1E99, 4)
         validator.setNotation(QtGui.QDoubleValidator.StandardNotation | QtGui.QDoubleValidator.ScientificNotation)
         self.txtTarget.setValidator(validator)
         self.txtTargetUnc.setValidator(validator)
-
-        layout = QtWidgets.QFormLayout()
-        layout.addRow('Function:', self.cmbFunction)
-        layout.addRow('Target Value:', self.txtTarget)
-        layout.addRow('Target Uncertainty:', self.txtTargetUnc)
-        layout.addRow('Solve For:', self.cmbSolveFor)
-        self.setLayout(layout)
 
         fidx = max(self.ucalc.reverseparams.get('func', 0), 0)
         self.cmbFunction.setCurrentIndex(fidx)
@@ -43,6 +65,11 @@ class TargetSetupWidget(QtWidgets.QWidget):
         self.cmbSolveFor.currentIndexChanged.connect(self.update_values)
         self.txtTarget.editingFinished.connect(self.update_values)
         self.txtTargetUnc.editingFinished.connect(self.update_values)
+        self.fixSize()
+    
+    def fixSize(self):
+        height = max(self.horizontalHeader().height()+20, self.verticalHeader().length() + self.horizontalHeader().height())
+        self.setFixedHeight(height)
 
     def update_names(self):
         ''' Function/variable names have changed. Change entries in comboboxes to match. '''
@@ -72,7 +99,7 @@ class PageReverseOutput(QtWidgets.QWidget):
     back = QtCore.pyqtSignal()
 
     def __init__(self, uncCalc, parent=None):
-        super(PageReverseOutput, self).__init__(parent)
+        super().__init__(parent)
         self.txtOutput = gui_widgets.MarkdownTextEdit()
         self.btnBack = QtWidgets.QPushButton('Back')
         self.btnBack.clicked.connect(self.goback)
@@ -96,7 +123,7 @@ class UncertReverseWidget(page_uncertprop.UncertPropWidget):
         assert isinstance(item, reverse.UncertReverse)
         self.uncReverse = item  # Needed for funcchanged which gets called during super()
         self.revsetup = TargetSetupWidget(self.uncReverse)
-        super(UncertReverseWidget, self).__init__(item, parent)
+        super().__init__(item, parent)
 
         self.menu.removeAction(self.mnuSaveSamples.menuAction())
         self.actNewUnc = QtWidgets.QAction('New forward calculation from model', self)
@@ -109,21 +136,18 @@ class UncertReverseWidget(page_uncertprop.UncertPropWidget):
         self.pgoutputrev.back.connect(self.backbutton)
         self.stack.removeWidget(self.pgoutput)
         self.stack.addWidget(self.pgoutputrev)
-        self.pginput.tab.insertTab(0, self.revsetup, 'Target')
-        if self.uncReverse.longdescription != '':
-            self.pginput.tab.setCurrentIndex([self.pginput.tab.tabText(i) for i in range(self.pginput.tab.count())].index('Notes'))
-        else:
-            self.pginput.tab.setCurrentIndex(0)
+        self.pginput.panel.insert_widget('Reverse Target Value', self.revsetup, 4)
+        self.pginput.panel.expand('Reverse Target Value')
 
     def funcchanged(self, row, fdict):
         ''' Function has changed '''
-        super(UncertReverseWidget, self).funcchanged(row, fdict)
+        super().funcchanged(row, fdict)
         self.revsetup.update_names()
 
     def calculate(self):
         ''' Run the calculation '''
         valid = True
-        if not (self.pginput.funclist.isValid() and self.pginput.inputtable.isValid()):
+        if not self.pginput.isValid():
             QtWidgets.QMessageBox.warning(self, 'Uncertainty Calculator', 'Invalid Input Parameter!')
             valid = False
 
@@ -146,7 +170,7 @@ class UncertReverseWidget(page_uncertprop.UncertPropWidget):
             valid = False
 
         if valid:
-            self.pgoutputrev.txtOutput.setMarkdown(self.uncReverse.out.report_summary(**gui_common.get_rptargs()))
+            self.pgoutputrev.txtOutput.setReport(self.uncReverse.out.report_summary())
             self.stack.setCurrentIndex(self.PG_OUTPUT)
             self.actSaveReport.setEnabled(True)
             self.mnuSaveSamples.setEnabled(True)
@@ -157,8 +181,8 @@ class UncertReverseWidget(page_uncertprop.UncertPropWidget):
 
     def get_report(self):
         ''' Get full report of curve fit, using page settings '''
-        return self.uncReverse.get_output().report_all(**gui_common.get_rptargs())
+        return self.uncReverse.get_output().report_all()
 
     def save_report(self):
         ''' Save full report, asking user for settings/filename '''
-        gui_widgets.savemarkdown(self.get_report())
+        gui_widgets.savereport(self.get_report())

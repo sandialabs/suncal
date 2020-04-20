@@ -1,19 +1,21 @@
 ''' Output reports for curve fitting calculations '''
 
+from collections import namedtuple
 import sympy
 from scipy import stats
 from scipy import interpolate
 import numpy as np
+from contextlib import suppress
 from dateutil.parser import parse
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 
+from . import report
 from . import output
 from . import out_uncert
+from . import plotting
 from .ttable import t_factor
-
-mpl.style.use('bmh')
 
 
 class CurveFitOutput(output.Output):
@@ -55,7 +57,7 @@ class CurveFitOutput(output.Output):
 
             Keyword Arguments
             -----------------
-            See NumFormatter()
+            See report.Report
         '''
         # rows are GUM, MC, LSQ, etc. Columns are means, uncertainties. Checks if baseoutput is CurveFit, and if so uses that format.
         hdr = ['Method']
@@ -68,27 +70,27 @@ class CurveFitOutput(output.Output):
         for out in self._baseoutputs:
             row = [out.method]
             for c, s in zip(out.coeffs, out.sigmas):
-                row.extend([output.formatter.f(c, matchto=s, fmin=0, **kwargs), output.formatter.f(s, **kwargs)])
+                row.extend([report.Number(c, matchto=s, fmin=0), report.Number(s)])
             rows.append(row)
 
-        r = output.MDstring()
-        r += output.sympyeqn(self._baseoutputs[0].expr(subs=False)) + '\n\n'
-        r += output.md_table(rows, hdr)
+        r = report.Report(**kwargs)
+        r.sympy(self._baseoutputs[0].expr(subs=False), end='\n\n')
+        r.table(rows, hdr)
         return r
 
     def report_summary(self, k=2, conf=None, **kwargs):
         ''' Report a summary of curve fit, including table of parameters and plot of fit line for each method '''
         r = self.report(**kwargs)
-        with mpl.style.context(output.mplcontext):
+        with mpl.style.context(plotting.mplcontext):
             plt.ioff()
             fig = plt.figure()
-            axes = output.axes_grid(len(self._baseoutputs), fig, maxcols=2)
+            axes = plotting.axes_grid(len(self._baseoutputs), fig, maxcols=2)
             for ax, out in zip(axes, self._baseoutputs):
                 out.plot_summary(ax=ax, k=k, conf=conf, **kwargs)
                 if len(self._baseoutputs) > 1:
                     ax.set_title(out.method)
             fig.tight_layout()
-        r.add_fig(fig)
+        r.plot(fig)
         return r
 
     def report_fit(self, **kwargs):
@@ -97,65 +99,73 @@ class CurveFitOutput(output.Output):
         '''
         rows = []
         for out in self._baseoutputs:
-            rows.append([out.method, '{:.5f}'.format(out.properties['r']), '{:.5f}'.format(out.properties['r']**2),
-                         '{:.5g}'.format(out.properties['Syx']), '{:.5g}'.format(out.properties['F'])])
-        r = output.md_table(rows, ['Method', 'r', 'r-squared', 'Standard Error (Syx)', 'F-value'], **kwargs)
+            rows.append([out.method, report.Number(out.properties['r'], fmt='decimal'), report.Number(out.properties['r']**2, fmt='decimal'),
+                         report.Number(out.properties['Syx']), report.Number(out.properties['F'], fmt='auto')])
+        r = report.Report(**kwargs)
+        r.table(rows, ['Method', 'r', 'r-squared', 'Standard Error (Syx)', 'F-value'])
         return r
 
     def report_all(self, xval=None, interval=None, k=2, conf=None, **kwargs):
         ''' Report all info on curve fit, including summary, residual plots, and correlations '''
-        r = output.MDstring('## Curve Fit Results\n\n')
+        r = report.Report(**kwargs)
+        r.hdr('Curve Fit Results', level=2)
         if interval is not None:
-            r += self.report(**kwargs) + '\n\n' # Report, but don't plot here
-            r += self.report_fit(**kwargs) + '\n\n'
+            r.append(self.report(**kwargs))
+            r.txt('\n\n')
+            r.append(self.report_fit(**kwargs))
+            r.txt('\n\n')
             for out in self._baseoutputs:
                 if len(self._baseoutputs) > 1:
-                    r += '### Method: {}\n\n'.format(out.method)
-                r += out.report_interval_uncert(t1=interval[0], t2=interval[1], k=k, conf=conf, **kwargs) + '\n\n'  # Includes plot
-                r += out.report_interval_uncert_eqns(**kwargs) + '\n\n'
+                    r.hdr('Method: {}'.format(out.method))
+                r.append(out.report_interval_uncert(t1=interval[0], t2=interval[1], k=k, conf=conf, **kwargs))  # Includes plot
+                r.txt('\n\n')
+                r.append(out.report_interval_uncert_eqns(**kwargs))
+                r.txt('\n\n')
 
         elif xval is not None:
-            r += self.report(**kwargs)  # Report, but don't plot here
-            r += self.report_fit(**kwargs) + '\n\n'
+            r.append(self.report(**kwargs))  # Report, but don't plot here
+            r.append(self.report_fit(**kwargs))
+            r.txt('\n\n')
             for out in self._baseoutputs:
                 if len(self._baseoutputs) > 1:
-                    r += '### Method: {}\n\n'.format(out.method)
-                r += out.report_confpred_xval(xval, plot=True, k=k, conf=conf, **kwargs)
+                    r.hdr('Method: {}'.format(out.method), level=2)
+                r.append(out.report_confpred_xval(xval, plot=True, k=k, conf=conf, **kwargs))
 
         else:
-            r += self.report_summary(k=k, conf=conf, **kwargs)
-            r += self.report_fit(**kwargs) + '\n\n'
+            r.append(self.report_summary(k=k, conf=conf, **kwargs))
+            r.append(self.report_fit(**kwargs))
+            r.txt('\n\n')
             for out in self._baseoutputs:
                 if len(self._baseoutputs) > 1:
-                    r += '### Method: {}\n\n'.format(out.method)
-                r += out.report_confpred(**kwargs)
+                    r.hdr('Method: {}'.format(out.method), level=2)
+                r.append(out.report_confpred(**kwargs))
 
-        r += '---\n\n'
-        r += '### Residuals\n\n'
-        r += self.report_residuals(k=k, conf=conf, **kwargs)
+        r.div()
+        r.hdr('Residuals', level=3)
+        r.append(self.report_residuals(k=k, conf=conf, **kwargs))
         return r
 
     def report_residuals(self, **kwargs):
         ''' Report of residual values for each method '''
-        r = output.MDstring()
+        r = report.Report(**kwargs)
         for out in self._baseoutputs:
             if len(self._baseoutputs) > 1:
-                r += '### Method: {}\n\n'.format(out.method)
-            r += out.report_residuals(**kwargs)
+                r.hdr('Method: {}'.format(out.method), level=3)
+            r.append(out.report_residuals(**kwargs))
         return r
 
     def report_correlation(self, **kwargs):
         ''' Report table and plot of correlations between fit parameters for each method '''
-        r = output.MDstring()
+        r = report.Report(**kwargs)
         with mpl.style.context(output.mplcontext):
             plt.ioff()
             for out in self._baseoutputs:
                 if len(self._baseoutputs) > 1:
-                    r += '### Method: {}\n\n'.format(out.method)
-                r += out.report_correlation(**kwargs)
+                    r.hdr('Method: {}'.format(out.method), level=3)
+                r.append(out.report_correlation(**kwargs))
                 fig = plt.figure()
                 out.plot_outputscatter(fig=fig)
-                r.add_fig(fig)
+                r.plot(fig)
         return r
 
     def get_dists(self):
@@ -212,7 +222,7 @@ class CurveFitMethodOutput(output.Output):
             Interpret x values as date in ordinal format
     '''
     def __init__(self, method, **kwargs):
-        super(CurveFitMethodOutput, self).__init__()
+        super().__init__()
         self._method = method
         self.coeffs = kwargs.get('coeffs')
         self.sigmas = kwargs.get('sigmas')
@@ -248,16 +258,17 @@ class CurveFitMethodOutput(output.Output):
 
             Keyword Arguments
             -----------------
-            See NumFormatter()
+            See report.Report
 
             Returns
             -------
-            report: MDstring
+            report.Report
         '''
         hdr = ['Parameter'] + self.pnames
-        rowm = ['Mean'] + [output.formatter.f(m, matchto=u, **kwargs) for m, u in zip(self.coeffs, self.sigmas)]
-        rowu = ['Standard Uncertainty'] + [output.formatter.f(u, **kwargs) for u in self.sigmas]
-        r = output.md_table([rowm, rowu], hdr=hdr, **kwargs)
+        rowm = ['Mean'] + [report.Number(m, matchto=u) for m, u in zip(self.coeffs, self.sigmas)]
+        rowu = ['Standard Uncertainty'] + [report.Number(u) for u in self.sigmas]
+        r = report.Report(**kwargs)
+        r.table([rowm, rowu], hdr=hdr)
         return r
 
     def _x(self, dates=False):
@@ -384,7 +395,8 @@ class CurveFitMethodOutput(output.Output):
             mins.append(mn)
             maxs.append(mx)
             ks.append(k)
-        return mins, maxs, ks
+        Expanded = namedtuple('Expanded', ['minimum', 'maximum', 'k'])
+        return Expanded(mins, maxs, ks)
 
     def get_pdf(self, x, idx=0, **kwargs):
         ''' Get probability density function for this output.
@@ -595,13 +607,14 @@ class CurveFitMethodOutput(output.Output):
         hdr = ['Parameter'] + self.pnames
         rows = []
         for idx, row in enumerate(self.properties['cor']):
-            rows.append([self.pnames[idx]] + [format(v, '.6f') for v in row])
-        r = output.md_table(rows, hdr=hdr, **kwargs)
+            rows.append([self.pnames[idx]] + [report.Number(v) for v in row])
+        r = report.Report(**kwargs)
+        r.table(rows, hdr=hdr)
         return r
 
     def report_residuals(self, **kwargs):
         ''' Report a plot of residuals, histogram, and normal-probability '''
-        with mpl.style.context(output.mplcontext):
+        with mpl.style.context(plotting.mplcontext):
             plt.ioff()
             fig = plt.figure()
             ax = fig.add_subplot(2, 2, 1)
@@ -627,14 +640,14 @@ class CurveFitMethodOutput(output.Output):
             ax4.set_xlabel('Theoretical quantiles')
             ax4.set_ylabel('Ordered sample values')
             fig.tight_layout()
-        r = output.MDstring()
-        r.add_fig(fig)
-        r += self.report_residtable()
+        r = report.Report(**kwargs)
+        r.plot(fig)
+        r.append(self.report_residtable(**kwargs))
         return r
 
     def report_residtable(self, k=2, conf=None, **kwargs):
         ''' Report table of measured values and their residuals '''
-        r = output.MDstring()
+        r = report.Report(**kwargs)
         kstr = '(k={})'.format(k) if conf is None else '({:.4g}%)'.format(conf*100)
         hdr = ['Measured x', 'Measured y', 'Predicted y', 'Residual', 'Confidence Band {}'.format(kstr), 'Prediction Band {}'.format(kstr)]
         x, y, _, _ = self.properties.get('data')
@@ -648,25 +661,25 @@ class CurveFitMethodOutput(output.Output):
         for i in range(len(x)):
             confband = self.u_conf(x[i], k=k, conf=conf)
             rows.append(['{}'.format(xstring[i]),
-                         output.formatter.f(y[i], matchto=confband, **kwargs),
-                         output.formatter.f(self.y(x[i]), matchto=confband, **kwargs),
-                         output.formatter.f(resid[i], matchto=confband, **kwargs),
-                         output.formatter.f(confband, **kwargs),
-                         output.formatter.f(self.u_pred(x[i], k=k, conf=conf), **kwargs)])
-        r += output.md_table(rows, hdr=hdr)
+                         report.Number(y[i], matchto=confband),
+                         report.Number(self.y(x[i]), matchto=confband),
+                         report.Number(resid[i], matchto=confband),
+                         report.Number(confband),
+                         report.Number(self.u_pred(x[i], k=k, conf=conf))])
+        r.table(rows, hdr=hdr)
         return r
 
     def report_confpred(self, **kwargs):
         ''' Report equations for confidence and prediction intervals, only for line fit. '''
-        r = output.MDstring()
+        r = report.Report(**kwargs)
         if self.properties['fitname'] == 'line':
-            r += 'Confidence interval:\n\n'
-            r += output.sympyeqn(self.expr_uconf(subs=False)) + '\n\n'
-            r += output.sympyeqn(self.expr_uconf(subs=True)) + '\n\n'
-            r += '---\n\n'
-            r += 'Prediction interval:\n\n'
-            r += output.sympyeqn(self.expr_upred(subs=False)) + '\n\n'
-            r += output.sympyeqn(self.expr_upred(subs=True)) + '\n\n'
+            r.txt('Confidence interval:\n\n')
+            r.sympy(self.expr_uconf(subs=False), end='\n\n')
+            r.sympy(self.expr_uconf(subs=True), '\n\n')
+            r.div()
+            r.txt('Prediction interval:\n\n')
+            r.sympy(self.expr_upred(subs=False), end='\n\n')
+            r.sympy(self.expr_upred(subs=True), end='\n\n')
         return r
 
     def report_confpred_xval(self, xval, k=2, conf=None, plot=False, mode=None, **kwargs):
@@ -690,15 +703,12 @@ class CurveFitMethodOutput(output.Output):
         x = []
         for val in xval:
             if self.xdates:
-                try:
+                with suppress(AttributeError, ValueError):
                     x.append(mdates.date2num(parse(val)))
-                except (AttributeError, ValueError):
-                    pass
             else:
-                try:
+                with suppress(ValueError):
                     x.append(float(val))
-                except ValueError:
-                    pass
+
         x = np.asarray(x)
         y = self.y(x)
         uconf = self.u_conf(x, k=k, conf=conf)
@@ -707,13 +717,13 @@ class CurveFitMethodOutput(output.Output):
         hdr = ['x', 'y', 'confidence interval {}'.format(kstr), 'prediction interval {}'.format(kstr)]
         rows = []
         for i in range(len(x)):
-            yi, yconfminus, yconfplus, ypredminus, ypredplus = output.formatter.f_array([y[i], y[i]-uconf[i], y[i]+uconf[i], y[i]-upred[i], y[i]+upred[i]], fmin=2, **kwargs)
-            rows.append([str(xval[i]), yi, '±{} [{}, {}]'.format(output.formatter.f(uconf[i], fmin=2, **kwargs), yconfminus, yconfplus),
-                         '±{} [{}, {}]'.format(output.formatter.f(upred[i], fmin=2, **kwargs), ypredminus, ypredplus)])
+            yi, yconfminus, yconfplus, ypredminus, ypredplus = report.Number.number_array([y[i], y[i]-uconf[i], y[i]+uconf[i], y[i]-upred[i], y[i]+upred[i]], fmin=2, **kwargs)
+            rows.append([str(xval[i]), yi, '±{} [{}, {}]'.format(report.Number(uconf[i], fmin=2), yconfminus, yconfplus),
+                         '±{} [{}, {}]'.format(report.Number(upred[i], fmin=2), ypredminus, ypredplus)])
 
-        r = output.MDstring()
+        r = report.Report(**kwargs)
         if plot:
-            with mpl.style.context(output.mplcontext):
+            with mpl.style.context(plotting.mplcontext):
                 xx = self._full_xrange(np.nanmin(x), np.nanmax(x))
                 fig, ax = plt.subplots()
                 self.plot_points(ax=ax, marker='o', ls='')
@@ -723,9 +733,9 @@ class CurveFitMethodOutput(output.Output):
                 ax.set_xlabel(self.properties['axnames'][0])
                 ax.set_ylabel(self.properties['axnames'][1])
                 ax.legend(loc='best')
-                r.add_fig(fig)
-        r += output.md_table(rows, hdr=hdr)
-        r += self.report_confpred(**kwargs)
+                r.plot(fig)
+        r.table(rows, hdr=hdr)
+        r.append(self.report_confpred(**kwargs))
         return r
 
     def plot_pred(self, x=None, ax=None, absolute=False, k=1, conf=None, mode=None, **kwargs):
@@ -987,7 +997,7 @@ class CurveFitMethodOutput(output.Output):
         inpts = kwargs.pop('inpts', list(range(len(self._baseparams))))
         fig.clf()
         fig.subplots_adjust(**out_uncert.dfltsubplots)
-        axs = output.axes_grid(len(inpts), fig)
+        axs = plotting.axes_grid(len(inpts), fig)
 
         for ax, inptnum in zip(axs, inpts):
             samples = self._baseparams[inptnum].samples
@@ -1015,17 +1025,17 @@ class CurveFitMethodOutput(output.Output):
             t1str = mdates.num2date(t1).strftime('%d-%b-%Y')
             t2str = mdates.num2date(t2).strftime('%d-%b-%Y')
         else:
-            t1str, t2str = output.formatter.f_array([t1, t2], thresh=8)
+            t1str, t2str = report.Number.number_array([t1, t2], thresh=8)
 
         value, uncert = self.uncert_interval(t1, t2)
-        r = output.MDstring('For the interval {} to {}:\n\n'.format(t1str, t2str))
-        r += 'Value = {} ± {} (k={:.3g}{})'.format(output.formatter.f(value, fmin=2),
-              output.formatter.f(uncert*k, fmim=2), k, confstr)
+        r = report.Report(**kwargs)
+        r.txt('For the interval {} to {}:\n\n'.format(t1str, t2str))
+        r.add('Value = ', report.Number(value, fmin=2), ' ± ', report.Number(uncert*k, fmin=2), '(k={:.3g}{})'.format(k, confstr))
         if plot:
             with mpl.style.context(output.mplcontext):
                 fig, ax = plt.subplots()
                 self.plot_interval_uncert(t1, t2, ax=ax, k=k, conf=conf, mode=kwargs.get('mode', self.predmode))
-                r.add_fig(fig)
+                r.plot(fig)
         return r
 
     def report_interval_uncert_eqns(self, subs=False, n=4, **kwargs):
@@ -1033,28 +1043,22 @@ class CurveFitMethodOutput(output.Output):
         params = self.expr_interval()
         b, bbar, ub, ubbar, uy, Syx, uc = sympy.symbols('b bbar u_b u_bbar u_y S_yx u_c')
 
-        r = output.MDstring()
-        r += 'Correction function: '
-        r += output.sympyeqn(sympy.Eq(b, self.expr(subs=False, full=False))) + '\n\n'
-        r += 'Mean correction: '
-        r += output.sympyeqn(sympy.Eq(bbar, params['bbar_expr'])) + '\n\n'
+        r = report.Report(**kwargs)
+        r.add('Correction function: ', sympy.Eq(b, self.expr(subs=False, full=False)), '\n\n')
+        r.add('Mean correction: ', sympy.Eq(bbar, params['bbar_expr']), '\n\n')
         if subs:
-            r += '$=$ ' + output.sympyeqn(params['bbar']) + '\n\n'
-        r += 'Variance in mean correction: '
-        r += output.sympyeqn(sympy.Eq(ubbar**2, params['ubbar_expr'])) + '\n\n'
+            r.add(report.Math('='), params['bbar'], '\n\n')
+        r.add('Variance in mean correction: ', sympy.Eq(ubbar**2, params['ubbar_expr']), '\n\n')
         if subs:
-            r += '$=$ ' + output.sympyeqn(params['ubbar']) + '\n\n'
-        r += 'Variance in correction: '
-        r += output.sympyeqn(sympy.Eq(ub**2, params['ub_expr'])) + '\n\n'
+            r.add(report.Math('='), params['ubbar'], '\n\n')
+        r.add('Variance in correction: ', sympy.Eq(ub**2, params['ub_expr']), '\n\n')
         if subs:
             if params['ub'] is not None:
-                r += '$=$ ' + output.sympyeqn(params['ub']) + '\n\n'
+                r.add(report.Math('='),  params['ub'], '\n\n')
             else:
-                r += '  (integrated numerically.)\n\n'
-        r += 'Other variance: '
-        r += output.sympyeqn(sympy.Eq(uy**2, Syx**2)) + '\n\n'
-        r += 'Total uncertainty for interval: '
-        r += output.sympyeqn(sympy.Eq(uc, sympy.sqrt(ubbar**2 + ub**2 + uy**2))) + '\n\n'
+                r.txt('  (integrated numerically.)\n\n')
+        r.add('Other variance: ', sympy.Eq(uy**2, Syx**2), '\n\n')
+        r.add('Total uncertainty for interval: ', sympy.Eq(uc, sympy.sqrt(ubbar**2 + ub**2 + uy**2)), '\n\n')
         return r
 
     def plot_outputscatter(self, params=None, fig=None, MCcontour=False, **kwargs):
@@ -1141,10 +1145,8 @@ class CurveFitMethodOutput(output.Output):
         resid = resid / sy  # Normalized
 
         if hist:
-            try:
+            with suppress(ValueError):  # Can raise if resids has only one value or is empty
                 ax.hist(self.properties['resids'], **kwargs)
-            except ValueError:
-                pass   # Can except if resids has only one value or is empty
         else:
             # Default to no line, points only
             if 'ls' not in kwargs and 'linestyle' not in kwargs:
@@ -1220,11 +1222,8 @@ class CurveFitMethodOutput(output.Output):
         if showfit and any(np.isfinite(resid)):
             fitargs = kwargs.get('fitargs', {})
             fitargs.setdefault('ls', ':')
-            try:
+            with suppress(np.linalg.linalg.LinAlgError):
                 p = np.polyfit(resid, Fi, deg=1)
-            except np.linalg.linalg.LinAlgError:
-                pass  # Couldn't find a fit
-            else:
                 x = np.linspace(resid.min(), resid.max(), num=10)
                 ax.plot(x, np.poly1d(p)(x), **fitargs)
 
@@ -1239,7 +1238,7 @@ class CurveFitMethodOutput(output.Output):
         inpts = kwargs.pop('inpts', list(range(len(self.coeffs))))
         fig.clf()
         fig.subplots_adjust(**out_uncert.dfltsubplots)
-        axs = output.axes_grid(len(inpts), fig)
+        axs = plotting.axes_grid(len(inpts), fig)
 
         for ax, inptnum in zip(axs, inpts):
             samples = self._baseparams[inptnum].samples.magnitude
@@ -1259,7 +1258,8 @@ class CurveFitMethodOutput(output.Output):
             rows = []
             for p, v in zip(self.pnames, self.properties['acceptance']):
                 rows.append([p, '{:.2f}%'.format(v*100)])
-            r = output.md_table(rows, hdr=hdr)
+            r = report.Report(**kwargs)
+            r.table(rows, hdr=hdr)
         return r
 
     def test_t(self, pidx=0, nominal=0, conf=.95, verbose=False):

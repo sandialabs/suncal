@@ -7,7 +7,7 @@ dependencies:
     - sympy==1.3               # Sympy 1.4 does not work with Pyinstaller 3.4.
     - numpy==1.16.4
     - matplotlib-base==3.1.1   # Install -base to avoid duplicating pyqt
-    - setuptools>=40
+    - setuptools==44.0
     - pyyaml==5.1
     - markdown==3.1
     - pint==0.9

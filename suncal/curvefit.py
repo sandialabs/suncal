@@ -7,6 +7,7 @@ CurveFitParam objects specify a single coefficient from a CurveFit as the value
 of interest to pull, for example the slope value, into an UncertCalc instance.
 '''
 
+from collections import namedtuple
 import inspect
 import numpy as np
 import sympy
@@ -21,6 +22,9 @@ from . import out_uncert
 from . import uarray
 from . import uparser
 from .uarray import Array  # Explicitly import Array so it can be accessed via curvefit.Array
+
+
+Fit = namedtuple('Fit', ['coeff', 'covariance'])
 
 
 class CurveFit(object):
@@ -156,14 +160,14 @@ class CurveFit(object):
             if polyorder < 1 or polyorder > 12:
                 raise ValueError('Polynomial order out of range')
             varnames = [chr(ord('a')+i) for i in range(polyorder+1)]
-            self.expr = sympy.sympify('+'.join([v+'*x**{}'.format(i) for i, v in enumerate(varnames)]))
+            self.expr = sympy.sympify('+'.join(v+'*x**{}'.format(i) for i, v in enumerate(varnames)))
 
             # variable *args must have initial guess for scipy
             if self.p0 is None:
                 self.p0 = np.ones(polyorder+1)
         else:
             # actual expression as string
-            func, self.expr, _ = self.check_expr(self.fitname)
+            func, self.expr, _ = self.parse_math(self.fitname)
 
         self.func = func
 
@@ -192,7 +196,7 @@ class CurveFit(object):
         return self.expr
 
     @classmethod
-    def check_expr(cls, expr):
+    def parse_math(cls, expr):
         ''' Check expr string for a valid curvefit function including an x variable
             and at least one fit parameter.
 
@@ -205,16 +209,17 @@ class CurveFit(object):
             argnames: list of strings
                 Names of arguments (except x) to function
         '''
-        uparser.check_expr(expr)  # Will raise if not valid expression
+        uparser.parse_math(expr)  # Will raise if not valid expression
         symexpr = sympy.sympify(expr)
-        argnames = sorted([str(s) for s in symexpr.free_symbols])
+        argnames = sorted(str(s) for s in symexpr.free_symbols)
         if 'x' not in argnames:
             raise ValueError('Expression must contain "x" variable.')
         argnames.remove('x')
         if len(argnames) == 0:
             raise ValueError('Expression must contain one or more parameters to fit.')
         func = sympy.lambdify(['x'] + argnames, symexpr, 'numpy')  # Make sure to specify 'numpy' so nans are returned instead of complex numbers
-        return func, symexpr, argnames
+        ParsedMath = namedtuple('ParsedMath', ['function', 'sympyexpr', 'argnames'])
+        return ParsedMath(func, symexpr, argnames)
 
     def clear(self):
         ''' Clear the sampled points '''
@@ -245,7 +250,6 @@ class CurveFit(object):
                 Calculate Monte Carlo method
             mcmc: bool
                 Calculate Markov-Chain Monte Carlo method
-
             samples: int
                 Number of Monte Carlo samples
 
@@ -326,7 +330,7 @@ class CurveFit(object):
             This is what linefit() method does behind the scenes, this function allows the
             same behavior for GUM and Monte Carlo.
         '''
-        pcoeff, _ = self.fitfunc(self.arr.x, self.arr.y, None, None)
+        pcoeff, _ = self.fitfunc(self.arr.x, self.arr.y, ux=None, uy=None)
         uy = np.sqrt(np.sum((self.func(self.arr.x, *pcoeff) - self.arr.y)**2)/(len(self.arr.x) - len(pcoeff)))
         uy = np.full(len(self.arr.x), uy)
         return uy
@@ -350,7 +354,7 @@ class CurveFit(object):
 
         self.samplecoeffs = np.zeros((samples, self.numparams))
         for i in range(samples):
-            self.samplecoeffs[i], _ = self.fitfunc(self.arr.xsamples[:, i], self.arr.ysamples[:, i], None, None)
+            self.samplecoeffs[i], _ = self.fitfunc(self.arr.xsamples[:, i], self.arr.ysamples[:, i], ux=None, uy=None)
 
         coeff = self.samplecoeffs.mean(axis=0)
         sigma = self.samplecoeffs.std(axis=0, ddof=1)
@@ -572,7 +576,7 @@ class CurveFit(object):
         self.run_uyestimate()
         uy = self.arr.uy if self.arr.uy_estimate is None else self.arr.uy_estimate
 
-        coeff, cov, grad = uarray._GUM(lambda x, y: self.fitfunc(x, y, None, None)[0], self.arr.x, self.arr.y, self.arr.ux, uy)
+        coeff, cov, grad = uarray._GUM(lambda x, y: self.fitfunc(x, y, ux=None, uy=None)[0], self.arr.x, self.arr.y, self.arr.ux, uy)
         sigmas = np.sqrt(np.diag(cov))
         resids = (self.arr.y - self.func(self.arr.x, *coeff))
         degf = len(self.arr.x) - len(coeff)
@@ -659,21 +663,19 @@ class CurveFit(object):
 
     @classmethod
     def from_config(cls, config):
-        fit = config['curve']
-        order = config.get('order', 2)
-        name = config.get('name', None)
-        desc = config.get('desc', '')
-        p0 = config.get('p0', None)
-        odr = config.get('odr', None)
-        seed = config.get('seed', None)
-        xdates = config.get('xdates', False)
-        absolute_sigma = config.get('abssigma', True)
-        x = np.asarray(config.get('arrx'), dtype=float)
-        y = np.asarray(config.get('arry'), dtype=float)
-        ux = config.get('arrux', 0.)
-        uy = config.get('arruy', 0.)
-        arr = Array(x, y, ux=ux, uy=uy)
-        newfit = cls(arr, fit, polyorder=order, name=name, desc=desc, p0=p0, odr=odr, seed=seed, xdates=xdates, absolute_sigma=absolute_sigma)
+        arr = Array(np.asarray(config.get('arrx'), dtype=float),
+                    np.asarray(config.get('arry'), dtype=float),
+                    ux=config.get('arrux', 0.),
+                    uy=config.get('arruy', 0.))
+        newfit = cls(arr, config['curve'],
+                     polyorder=config.get('order', 2),
+                     name=config.get('name', None),
+                     desc=config.get('desc', ''),
+                     p0=config.get('p0', None),
+                     odr=config.get('odr', None),
+                     seed=config.get('seed', None),
+                     xdates=config.get('xdates', False),
+                     absolute_sigma=config.get('abssigma', True))
         newfit.xname = config.get('xname', 'x')
         newfit.yname = config.get('yname', 'y')
         return newfit
@@ -741,7 +743,7 @@ class CurveFitParam(uncertainty.InputFunc):
         self.ftype = 'array'
         self.sampledvalues = None
         self.report = True
-        self.units = uncertainty.get_units(units)
+        self.units = uparser.parse_unit(units)
         self.outputs = {}
 
     def __str__(self):
@@ -841,10 +843,6 @@ class CurveFitParam(uncertainty.InputFunc):
     def get_latex(self):
         ''' Get LaTeX representation of this function '''
         return sympy.latex(sympy.Symbol(self.name))
-
-    def get_symbol(self):
-        ''' Get sympy representation of name '''
-        return sympy.Symbol(self.name)
 
     def calculate(self, **kwargs):
         ''' Calculate all available methods.
@@ -1151,7 +1149,8 @@ def odrfit(func, x, y, ux, uy, p0=None, absolute_sigma=True):
         cov = mout.cov_beta
     else:
         cov = mout.cov_beta*mout.res_var
-    return mout.beta, cov
+    ODR = namedtuple('ODR', ['coeff', 'covariance'])
+    return ODR(mout.beta, cov)
 
 
 def genfit(func, x, y, ux, uy, p0=None, method=None, bounds=(-np.inf, np.inf), odr=None, absolute_sigma=True):
@@ -1183,9 +1182,9 @@ def genfit(func, x, y, ux, uy, p0=None, method=None, bounds=(-np.inf, np.inf), o
         return odrfit(func, x, y, ux, uy, p0=p0, absolute_sigma=absolute_sigma)
     else:
         if uy is None or all(uy == 0):
-            return scipy.optimize.curve_fit(func, x, y, p0=p0, bounds=bounds)
+            return Fit(*scipy.optimize.curve_fit(func, x, y, p0=p0, bounds=bounds))
         else:
-            return scipy.optimize.curve_fit(func, x, y, sigma=uy, absolute_sigma=absolute_sigma, p0=p0, bounds=bounds)
+            return Fit(*scipy.optimize.curve_fit(func, x, y, sigma=uy, absolute_sigma=absolute_sigma, p0=p0, bounds=bounds))
 
 
 def genlinefit(x, y, ux, uy, absolute_sigma=True):
@@ -1287,7 +1286,7 @@ def linefit(x, y, sig, absolute_sigma=True):
         chi2 = sum(((y-a-b*x)/sig)**2)/(len(x)-2)
         siga, sigb, cov = np.sqrt(siga**2*chi2), np.sqrt(sigb**2*chi2), cov*chi2
     #rab = -sxoss * sigb / siga  # Correlation can be computed this way
-    return np.array([b, a]), np.array([[sigb**2, cov], [cov, siga**2]])
+    return Fit(np.array([b, a]), np.array([[sigb**2, cov], [cov, siga**2]]))
 
 
 def linefitYork(x, y, sigx=None, sigy=None, rxy=None, absolute_sigma=True):
@@ -1390,4 +1389,4 @@ def linefitYork(x, y, sigx=None, sigy=None, rxy=None, absolute_sigma=True):
         # See note in scipy.optimize.curve_fit for absolute_sigma parameter.
         chi2 = sum(((y-a-b*x)*np.sqrt(w))**2)/(len(x)-2)
         siga, sigb, cov = np.sqrt(siga**2*chi2), np.sqrt(sigb**2*chi2), cov*chi2
-    return np.array([b, a]), np.array([[sigb**2, cov], [cov, siga**2]])
+    return Fit(np.array([b, a]), np.array([[sigb**2, cov], [cov, siga**2]]))

@@ -1,4 +1,4 @@
-from setuptools import setup, find_packages
+from setuptools import setup
 
 version = {}
 with open('suncal/version.py', 'r') as f:

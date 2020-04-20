@@ -3,10 +3,11 @@
 Main Window for PSL Uncertainty Calculator GUI
 '''
 import sys
+from contextlib import suppress
 from PyQt5 import QtWidgets, QtGui, QtCore
 
-from .. import output
 from .. import project
+from .. import report
 from .. import version
 from .. import uncertainty as uc
 from .. import dataset
@@ -33,7 +34,7 @@ from . import page_units
 class ToolButton(QtWidgets.QToolButton):
     ''' Button for selecting project components. ToolButton with text and icon. '''
     def __init__(self, text='', icon=None, parent=None):
-        super(ToolButton, self).__init__(parent=parent)
+        super().__init__(parent=parent)
         self.setIconSize(QtCore.QSize(32, 32))
         self.setFixedSize(84, 84)
         self.setText(text)
@@ -47,14 +48,14 @@ class CalculationsListWidget(QtWidgets.QListWidget):
     itemRenamed = QtCore.pyqtSignal(int, str)  # Index, new text string
 
     def __init__(self, parent=None):
-        super(CalculationsListWidget, self).__init__(parent=parent)
+        super().__init__(parent=parent)
         # Credit for editfinished signal:
         # https://falsinsoft.blogspot.com/2013/11/qlistwidget-and-item-edit-event.html
         self.itemDelegate().closeEditor.connect(self.ListWidgetEditEnd)
 
     def addItem(self, mode, label):
         ''' Override addItem to automatically add an icon and make editable '''
-        super(CalculationsListWidget, self).addItem(label)
+        super().addItem(label)
         item = self.item(self.count()-1)
         item.setFlags(item.flags() | QtCore.Qt.ItemIsEditable)
         iconame = {'uncertainty': 'target',
@@ -90,7 +91,7 @@ class ProjectDockWidget(QtWidgets.QWidget):
     remcomponent = QtCore.pyqtSignal(int)
 
     def __init__(self, parent=None):
-        super(ProjectDockWidget, self).__init__(parent=parent)
+        super().__init__(parent=parent)
         self.projectlist = CalculationsListWidget()
         self.btnadd = QtWidgets.QToolButton()
         self.btnrem = QtWidgets.QToolButton()
@@ -128,7 +129,7 @@ class InsertCalcWidget(QtWidgets.QWidget):
     newcomp = QtCore.pyqtSignal(str)
 
     def __init__(self, parent=None):
-        super(InsertCalcWidget, self).__init__(parent=parent)
+        super().__init__(parent=parent)
         self.btnUnc = ToolButton('Uncertainty\nPropagation', gui_common.load_icon('target'))
         self.btnCurve = ToolButton('Curve Fit', gui_common.load_icon('curvefit'))
         self.btnRisk = ToolButton('Risk\nAnalysis', gui_common.load_icon('risk'))
@@ -175,19 +176,17 @@ class InsertCalcWidget(QtWidgets.QWidget):
 
 class MainGUI(QtWidgets.QMainWindow):
     ''' Main GUI holds the project, stack of project component widgets, insert component widget, and menus '''
-    opencsvfolder = QtCore.QStandardPaths.standardLocations(QtCore.QStandardPaths.HomeLocation)[0]
     openconfigfolder = QtCore.QStandardPaths.standardLocations(QtCore.QStandardPaths.HomeLocation)[0]
 
     PG_TOP_INSERT = 0   # topstack index for insert and project page
     PG_TOP_PROJECT = 1
 
     def __init__(self, parent=None):
-        super(MainGUI, self).__init__(parent)
+        super().__init__(parent)
         self.setWindowTitle('Sandia PSL Uncertainty Calculator - v' + version.__version__)
         gui_widgets.centerWindow(self, 1200, 900)
 
         self.project = project.Project()  # New empty project
-        self.components = []  # List of dict storing component info
 
         # project dock
         self.projdock = QtWidgets.QDockWidget('Project Components', self)
@@ -390,10 +389,8 @@ class MainGUI(QtWidgets.QMainWindow):
     def changepage(self, index):
         ''' Change the current component page '''
         if index > -1:
-            try:
+            with suppress(AttributeError):
                 self.projstack.currentWidget().get_menu().menuAction().setVisible(False)
-            except AttributeError:
-                pass  # No current widget in stack
 
             self.projstack.setCurrentIndex(index)
             self.topstack.setCurrentIndex(self.PG_TOP_PROJECT)
@@ -416,6 +413,7 @@ class MainGUI(QtWidgets.QMainWindow):
         fname, self.openconfigfolder = QtWidgets.QFileDialog.getOpenFileName(caption='Select file to open', directory=self.openconfigfolder)
         if fname:
             self.newproject()
+            oldproject = self.project  # just in case things go wrong...
             self.project = project.Project.from_configfile(fname)
             if self.project is not None:
                 for i in range(self.project.count()):
@@ -451,7 +449,7 @@ class MainGUI(QtWidgets.QMainWindow):
                 self.topstack.setCurrentIndex(self.PG_TOP_PROJECT)
             else:
                 QtWidgets.QMessageBox.warning(self, 'Uncertainty Calculator', 'Error loading file!')
-                self.newproject()  # Don't leave project = None
+                self.project = oldproject
 
     def newproject(self):
         ''' Clear/new project '''
@@ -495,20 +493,20 @@ class MainGUI(QtWidgets.QMainWindow):
 
     def save_report(self):
         ''' Save report of all items in project '''
-        r = output.MDstring()
+        r = report.Report()
         for i in range(self.project.count()):
-            r += '# {}\n\n'.format(self.project.items[i].name)
+            r.hdr(self.project.items[i].name, level=1)
             widget = self.projstack.widget(i)
             try:
                 wreport = widget.get_report()
             except AttributeError:
                 wreport = None
             if wreport is None:
-                r += 'Calculation not run\n\n'
+                r.txt('Calculation not run\n\n')
             else:
-                r += wreport
-                r += '---\n\n'
-        gui_widgets.savemarkdown(r)
+                r.append(wreport)
+                r.div()
+        gui_widgets.savereport(r)
 
     def closeEvent(self, event):
         ''' Window is being closed. Verify. '''

@@ -8,7 +8,7 @@ from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as Navigatio
 
 from .. import dist_explore
 from .. import distributions
-from .. import output
+from .. import report
 from .. import uparser
 from . import gui_common
 from . import gui_widgets
@@ -30,7 +30,7 @@ class DistEntry(QtWidgets.QWidget):
     changeDist = QtCore.pyqtSignal(str)
 
     def __init__(self, name='', dist=None, parent=None):
-        super(DistEntry, self).__init__(parent)
+        super().__init__(parent)
         if dist is None:
             dist = distributions.get_distribution('normal')
         self.dist = dist
@@ -81,7 +81,7 @@ class DistEntry(QtWidgets.QWidget):
         ''' Name was changed. Check if it's an expression or base variable '''
         name = self.get_name()
         try:
-            expr = uparser.check_expr(name)
+            expr = uparser.parse_math(name)
         except ValueError:
             self.txtName.blockSignals(True)
             self.txtName.setText('ERROR')
@@ -105,7 +105,7 @@ class DistEntry(QtWidgets.QWidget):
 class DistDialog(QtWidgets.QDialog):
     ''' Dialog for editing distribution parameters '''
     def __init__(self, name, dist, parent=None):
-        super(DistDialog, self).__init__(parent=parent)
+        super().__init__(parent=parent)
         self.name = name
         self.dist = dist
         args = self.dist.get_config()
@@ -147,7 +147,7 @@ class DistDialog(QtWidgets.QDialog):
         self.fig.clf()
         ax = self.fig.add_subplot(1, 1, 1)
         ax.plot(xx, yy)
-        ax.set_xlabel(output.format_math(self.name))
+        ax.set_xlabel(report.Math(self.name).latex())
         self.fig.tight_layout()
         self.canvas.draw_idle()
 
@@ -158,7 +158,7 @@ class DistributionListWidget(QtWidgets.QWidget):
     changed = QtCore.pyqtSignal(str)
 
     def __init__(self, parent=None):
-        super(DistributionListWidget, self).__init__(parent=parent)
+        super().__init__(parent=parent)
         self.pagelayout = QtWidgets.QVBoxLayout()
         self.setLayout(self.pagelayout)
         self.pagelayout.addStretch()  # Stretch is always last item in layout
@@ -213,7 +213,7 @@ class DistributionListWidget(QtWidgets.QWidget):
 class DistWidget(QtWidgets.QWidget):
     ''' Page widget for distribution explorer '''
     def __init__(self, item, parent=None):
-        super(DistWidget, self).__init__(parent)
+        super().__init__(parent)
         assert isinstance(item, dist_explore.DistExplore)
         self.distexplore = item
 
@@ -311,8 +311,8 @@ class DistWidget(QtWidgets.QWidget):
                 fitdist = 'normal'
 
             self.distexplore.out.plot_hist(name, plot=self.fig, fitdist=fitdist, qqplot=qq, coverage=self.chkCoverage.isChecked())
-            self.txtOutput.setMarkdown(self.distexplore.out.report_single(name, **gui_common.get_rptargs()))
-            self.fig.suptitle(output.format_math(name))
+            self.txtOutput.setReport(self.distexplore.out.report_single(name))
+            self.fig.suptitle(report.Math(name).latex())
             self.canvas.draw_idle()
         else:
             self.txtOutput.setText('Sample a variable to see statistics.')
@@ -352,8 +352,8 @@ class DistWidget(QtWidgets.QWidget):
         fitdist = None if fitdist == 'None' else fitdist
         qq = self.chkProbPlot.isChecked()
         cov = self.chkCoverage.isChecked()
-        return self.distexplore.get_output().report_all(fitdist=fitdist, coverage=cov, qqplot=qq, **gui_common.get_rptargs())
+        return self.distexplore.get_output().report_all(fitdist=fitdist, coverage=cov, qqplot=qq)
 
     def save_report(self):
         ''' Save full report, asking user for settings/filename '''
-        gui_widgets.savemarkdown(self.get_report())
+        gui_widgets.savereport(self.get_report())

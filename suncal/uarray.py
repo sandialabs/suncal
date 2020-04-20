@@ -21,10 +21,10 @@ See examples folder example usage.
 
 import numpy as np
 import scipy.stats as stat
-import sympy
 
 from . import uncertainty
 from . import out_uncert
+from . import uparser
 
 
 class Array(object):
@@ -99,6 +99,9 @@ class Array(object):
         self.xsamples = None
         self.ysamples = None
 
+    def clear_uyestimate(self):
+        self.uy_estimate = None
+
     def save_file(self, fname):
         ''' Save array to file (x, y, uy, ux) '''
         arr = np.vstack((self.x, self.y))
@@ -115,22 +118,6 @@ class Array(object):
         ''' Return numpy array of x, y, uy, ux columns '''
         arr = np.vstack((self.x, self.y, self.uy, self.ux)).transpose()
         return arr
-
-    def repeatabality(self):
-        ''' Repeatability of each measurement in the array, assuming each data point
-            is an average of multiple measurements.
-
-            sqrt(avg(variances))
-        '''
-        return np.sqrt(np.mean(self.uy**2))
-
-    def reproducibility(self):
-        ''' Reproducibility of measurements in the array, assuming each data point
-            is an average of multiple measurements.
-
-            std(y)
-        '''
-        return np.std(self.y, ddof=1)
 
 
 class ArrayFunc(uncertainty.InputFunc):
@@ -152,11 +139,11 @@ class ArrayFunc(uncertainty.InputFunc):
     def __init__(self, function=None, arr=None, name=None, units=None, desc='', seed=None):
         if isinstance(arr, Array):
             arr = [arr]
-        super(ArrayFunc, self).__init__(function, variables=arr, name=name, desc=desc)
+        super().__init__(function, variables=arr, name=name, desc=desc)
         self.ftype = 'array'
         self.seed = seed
         self._degf = np.inf
-        self.units = uncertainty.get_units(units)
+        self.units = uparser.parse_unit(units)
         self.outputs = {}
 
     @property
@@ -164,13 +151,9 @@ class ArrayFunc(uncertainty.InputFunc):
         ''' Get nominal value of array '''
         return self.mean() * self.units
 
-    def get_symbol(self):
-        ''' Get sympy representation of array name '''
-        return sympy.Symbol(self.name)
-
     def clear(self):
         ''' Clear sampled values '''
-        super(ArrayFunc, self).clear()
+        super().clear()
         self.outputs = {}
 
     def calculate(self, **kwargs):
@@ -198,7 +181,7 @@ class ArrayFunc(uncertainty.InputFunc):
             np.random.seed(self.seed)
         samples = kwargs.get('samples', 5000)
         sens = kwargs.get('sensitivity', False)
-        return super(ArrayFunc, self).calc_MC(samples=samples, sensitivity=sens)
+        return super().calc_MC(samples=samples, sensitivity=sens)
 
     def calc_GUM(self, correlation=None):
         ''' Calculate uncertainty using GUM method.
@@ -260,7 +243,7 @@ class ArrayThresh(ArrayFunc):
     def __init__(self, arr=None, name=None, desc='', thresh=0, edge='first', units=None, seed=None):
         self.thresh = thresh
         self.edge = edge
-        super(ArrayThresh, self).__init__(function=self._function, arr=arr, name=name, desc=desc, units=units, seed=seed)
+        super().__init__(function=self._function, arr=arr, name=name, desc=desc, units=units, seed=seed)
 
     def _function(self, x, y):
         ''' Wrap getedge function. '''

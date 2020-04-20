@@ -30,7 +30,7 @@
     name: Z
     units: ohm
   inputs:
-  - desc: ''
+  - desc: 'Current'
     mean: 19.661
     name: J
     uncerts:
@@ -38,10 +38,11 @@
       desc: Type A uncertainty from IVdata.csv
       dist: normal
       name: typeA
-      unc: 9.471008394041335e-06
+      unc: 9.471008394041335e-03
+      k: 1
       units: milliampere
     units: milliampere
-  - desc: ''
+  - desc: 'Phase'
     mean: 1.0445
     name: theta
     uncerts:
@@ -50,9 +51,10 @@
       dist: normal
       name: typeA
       unc: 0.0007520638270785368
+      k: 1
       units: radian
     units: radian
-  - desc: ''
+  - desc: 'Voltage'
     mean: 4.999
     name: V
     uncerts:
@@ -61,6 +63,7 @@
       dist: normal
       name: typeA
       unc: 0.0032093613071761794
+      k: 1
       units: volt
     units: volt
   mode: uncertainty

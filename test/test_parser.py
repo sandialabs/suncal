@@ -7,53 +7,53 @@ import numpy
 
 import suncal.uparser as uparser
 
-def test_check_expr_ok():
-    ''' Test check_expr. These should evaluate ok, no exception raised. '''
-    uparser.check_expr('1+1')
-    uparser.check_expr('2*6+cos(30)', fns=['cos'])
-    uparser.check_expr('2**2')
-    uparser.check_expr('(10+5)/3')
-    uparser.check_expr('a+b')
-    uparser.check_expr('sqrt(-1)*sqrt(-1)')  # Complex not supported, but this evaluates to real
+def test_parse_math_ok():
+    ''' Test parse_math. These should evaluate ok, no exception raised. '''
+    uparser.parse_math('1+1')
+    uparser._parse_math('2*6+cos(30)', fns=['cos'])
+    uparser.parse_math('2**2')
+    uparser.parse_math('(10+5)/3')
+    uparser.parse_math('a+b')
+    uparser.parse_math('sqrt(-1)*sqrt(-1)')  # Complex not supported, but this evaluates to real
 
 
-def test_check_expr_fail():
-    ''' Test check_expr. These should raise ValueError. '''
+def test_parse_math_fail():
+    ''' Test parse_math. These should raise ValueError. '''
     with pytest.raises(ValueError):
-        uparser.check_expr('import os')   # imports disabled
-
-    with pytest.raises(ValueError):
-        uparser.check_expr('print("ABC")')  # builtin functions disabled
+        uparser.parse_math('import os')   # imports disabled
 
     with pytest.raises(ValueError):
-        uparser.check_expr('import(os)')  # Syntax error
+        uparser.parse_math('print("ABC")')  # builtin functions disabled
 
     with pytest.raises(ValueError):
-        uparser.check_expr('os.system("ls")')  # non-allowed function
+        uparser.parse_math('import(os)')  # Syntax error
 
     with pytest.raises(ValueError):
-        uparser.check_expr('().__class__')     # Hack to get at base classes
+        uparser.parse_math('os.system("ls")')  # non-allowed function
 
     with pytest.raises(ValueError):
-        uparser.check_expr('sin(pi)', fns=None)  # No fn list given, sin not allowed
+        uparser.parse_math('().__class__')     # Hack to get at base classes
 
     with pytest.raises(ValueError):
-        uparser.check_expr('lambda x: x+1')   # Lambdas disabled
+        uparser._parse_math('sin(pi)', fns=None)  # No fn list given, sin not allowed
 
     with pytest.raises(ValueError):
-        uparser.check_expr('def x(): pass')   # Function def disabled
+        uparser.parse_math('lambda x: x+1')   # Lambdas disabled
 
     with pytest.raises(ValueError):
-        uparser.check_expr('numpy.pi')  # Attributes disabled
+        uparser.parse_math('def x(): pass')   # Function def disabled
 
     with pytest.raises(ValueError):
-        uparser.check_expr('2*f', name='f')  # Name parameter, can't be recursive
+        uparser.parse_math('numpy.pi')  # Attributes disabled
 
     with pytest.raises(ValueError):
-        uparser.check_expr('#a+b')  # comments are ok, but here there's no expression before it
+        uparser.parse_math('2*f', name='f')  # Name parameter, can't be recursive
 
     with pytest.raises(ValueError):
-        uparser.check_expr('sqrt(-1)')  # Imaginary numbers not supported
+        uparser.parse_math('#a+b')  # comments are ok, but here there's no expression before it
+
+    with pytest.raises(ValueError):
+        uparser.parse_math('sqrt(-1)')  # Imaginary numbers not supported
 
 
 def test_call():

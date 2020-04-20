@@ -18,8 +18,7 @@ def test_file(capsys):
     fname = 'test/ex_expansion.yaml'
     u = project.Project.from_configfile(fname)
     u.calculate()
-    with output.report_format('text', 'text'):
-        report = str(u.report_short())
+    report = u.report_short().get_md(mathfmt='text', figfmt='text')
     cli.main_setup([fname])
     report2, err = capsys.readouterr()
     assert report == report2
@@ -34,23 +33,20 @@ def test_uc(capsys):
     u.correlate_vars('a', 'b', .6)
     u.correlate_vars('c', 'b', -.3)
     out = u.calculate()
-    with output.report_format('text', 'text'):
-        report = str(out.report())
+    report = out.report().get_md(mathfmt='text', figfmt='text')
 
     cli.main_unc(['f=a*b+c', '--variables', 'a=10', 'b=5', 'c=3', '--uncerts', 'a; std=1', 'b; dist=uniform; a=.5', 'c; unc=3; k=2', '--correlate', 'a; b; .6', 'c; b; -.3'])
     report2, err = capsys.readouterr()
     assert report == report2
 
     # HTML format
-    with output.report_format('mpl', 'svg'):
-        reporthtml = out.report().get_html()
+    reporthtml = out.report().get_html(mathfmt='latex', figfmt='svg')
     cli.main_unc(['f=a*b+c', '--variables', 'a=10', 'b=5', 'c=3', '--uncerts', 'a; std=1', 'b; dist=uniform; a=.5', 'c; unc=3; k=2', '--correlate', 'a; b; .6', 'c; b; -.3', '-f', 'html'])
     report2html, err = capsys.readouterr()
     assert reporthtml == report2html
 
     # MD format
-    with output.report_format('mpl', 'svg'):
-        reportmd = out.report().get_md()
+    reportmd = out.report().get_md(mathfmt='latex', figfmt='svg')
     cli.main_unc(['f=a*b+c', '--variables', 'a=10', 'b=5', 'c=3', '--uncerts', 'a; std=1', 'b; dist=uniform; a=.5', 'c; unc=3; k=2', '--correlate', 'a; b; .6', 'c; b; -.3', '-f', 'md'])
     report2md, err = capsys.readouterr()
     assert reportmd == report2md
@@ -76,16 +72,14 @@ def test_rev(capsys):
     u.set_input('k', nom=k)
     u.add_required_inputs()
     out = u.calculate()
-    with output.report_format('text', 'text'):
-        report = str(out.report())
+    report = out.report().get_md(mathfmt='text', figfmt='text')
 
     cli.main_reverse(['rho=w/(k*d**2*h)', '--target={}'.format(rho), '--targetunc={}'.format(urho), '--solvefor=w', '--variables', 'h=.5', 'd=.25', 'k=12.870369', '--uncerts', 'h; std=.0005', 'd; std=.0005'])
     report2, err = capsys.readouterr()
     assert report == report2
 
-    # HTML format
-    with output.report_format('mpl', 'svg'):
-        reporthtml = out.report().get_html()
+    # html format
+    reporthtml = out.report().get_html(mathfmt='latex', figfmt='svg')
     cli.main_reverse(['rho=w/(k*d**2*h)', '--target={}'.format(rho), '--targetunc={}'.format(urho), '--solvefor=w', '--variables', 'h=.5', 'd=.25', 'k=12.870369', '--uncerts', 'h; std=.0005', 'd; std=.0005', '-f', 'html'])
     report2html, err = capsys.readouterr()
     assert reporthtml == report2html
@@ -99,8 +93,7 @@ def test_risk(capsys):
     u.set_testdist(distributions.get_distribution('normal', loc=0, scale=1))
     u.set_guardband(.2, .2)
     u.calculate()
-    with output.report_format('text', 'text'):
-        report = str(u.out.report())
+    report = u.out.report().get_md(mathfmt='text', figfmt='text')
     cli.main_risk(['--procdist', 'loc=0; scale=4', '--testdist', 'loc=0; scale=1', '-LL', '-1', '-UL', '1', '-GBL', '.2', '-GBU', '.2'])
     report2, err = capsys.readouterr()
     assert report == report2
@@ -110,8 +103,7 @@ def test_risk(capsys):
     u.set_procdist(distributions.get_distribution('normal', loc=0, scale=4))
     u.set_testdist(None)
     u.calculate()
-    with output.report_format('text', 'text'):
-        report = str(u.out.report())
+    report = u.out.report().get_md(mathfmt='text', figfmt='text')
     cli.main_risk(['--procdist', 'loc=0; scale=4', '-LL', '-1', '-UL', '1'])
     report2, err = capsys.readouterr()
     assert report == report2
@@ -121,8 +113,7 @@ def test_risk(capsys):
     u.set_procdist(distributions.get_distribution('uniform', a=2))
     u.set_testdist(distributions.get_distribution('normal', loc=0, scale=0.5))
     u.calculate()
-    with output.report_format('text', 'text'):
-        report = str(u.out.report())
+    report = u.out.report().get_md(mathfmt='text', figfmt='text')
     cli.main_risk([ '--procdist', 'dist=uniform; a=2; median=0', '--testdist', 'loc=0; scale=.5', '-LL', '-1', '-UL', '1'])
     report2, err = capsys.readouterr()
     assert report == report2
@@ -132,8 +123,7 @@ def test_risk(capsys):
     u.set_procdist(distributions.get_distribution('normal', loc=0, scale=4))
     u.set_testdist(distributions.get_distribution('normal', loc=0, scale=1))
     u.calculate()
-    with output.report_format('text', 'text'):
-        report = str(u.out.report_all())
+    report = u.out.report_all().get_md(mathfmt='text', figfmt='text')
     cli.main_risk(['--procdist', 'loc=0; scale=4', '--testdist', 'loc=0; scale=1', '-LL', '-1', '-UL', '1', '-v'])
     report2, err = capsys.readouterr()
     assert report == report2
@@ -146,8 +136,7 @@ def test_curve(capsys):
     arr = curvefit.Array(x, y)
     fit = curvefit.CurveFit(arr)
     fit.calculate(gum=True, lsq=True)
-    with output.report_format('text', 'text'):
-        report = str(fit.out.report())
+    report = fit.out.report().get_md(mathfmt='text', figfmt='text')
 
     x = ['{}'.format(k) for k in x]
     y = ['{}'.format(k) for k in y]

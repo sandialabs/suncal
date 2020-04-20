@@ -3,6 +3,7 @@
 '''
 
 from collections import namedtuple
+from contextlib import suppress
 import numpy as np
 
 from PyQt5 import QtWidgets, QtCore
@@ -32,7 +33,7 @@ class ProjectTreeDists(QtWidgets.QTreeWidget):
     loaddata = QtCore.pyqtSignal(object)  # Emit the data array or dictionary
 
     def __init__(self, project=None, parent=None):
-        super(ProjectTreeDists, self).__init__(parent=parent)
+        super().__init__(parent=parent)
         self.project = project
         self.setMinimumWidth(250)
         self.setIconSize(QtCore.QSize(32, 32))
@@ -45,11 +46,8 @@ class ProjectTreeDists(QtWidgets.QTreeWidget):
             for i in range(self.project.count()):
                 mode = self.project.get_mode(i)
                 if mode in ['uncertainty', 'reverse', 'curvefit', 'data']:
-                    try:
+                    with suppress(AttributeError):
                         distdict = self.project.items[i].get_output().get_dists()  # Pass no args to get names
-                    except AttributeError:
-                        pass
-                    else:
                         item = QtWidgets.QTreeWidgetItem([names[i]])
                         item.setIcon(0, gui_common.load_icon(gui_common.iconname[mode]))
                         self.addTopLevelItem(item)
@@ -101,7 +99,7 @@ class ProjectTreeArrays(QtWidgets.QTreeWidget):
     loaddata = QtCore.pyqtSignal(object)  # Emit the actual data array
 
     def __init__(self, project, parent=None):
-        super(ProjectTreeArrays, self).__init__(parent=parent)
+        super().__init__(parent=parent)
         self.project = project
         self.csvitems = []
         self.setMinimumWidth(250)
@@ -115,11 +113,8 @@ class ProjectTreeArrays(QtWidgets.QTreeWidget):
             for i in range(self.project.count()):
                 mode = self.project.get_mode(i)
                 if mode in ['sweep', 'reversesweep', 'data']:
-                    try:
+                    with suppress(AttributeError):
                         dsets = self.project.items[i].get_output().get_dataset()  # No args to get names
-                    except AttributeError:
-                        pass
-                    else:
                         item = QtWidgets.QTreeWidgetItem([names[i]])
                         item.setIcon(0, gui_common.load_icon(gui_common.iconname[mode]))
                         self.addTopLevelItem(item)
@@ -171,11 +166,8 @@ class ProjectTreeArrays(QtWidgets.QTreeWidget):
 
         else:
             calc = item.data(0, self.ROLE_CALC)
-            try:
+            with suppress(AttributeError):  # Could be top-level item
                 data = calc.get_output().get_dataset(item.data(0, self.ROLE_NAME))
-            except AttributeError:
-                pass  # Could be top-level item
-            else:
                 self.loaddata.emit(data)
 
 
@@ -190,7 +182,7 @@ class DistributionSelectWidget(QtWidgets.QDialog):
     NROWS = 6
 
     def __init__(self, project=None, singlecol=True, coloptions=None, enablecorr=True, parent=None):
-        super(DistributionSelectWidget, self).__init__(parent=parent)
+        super().__init__(parent=parent)
         self.project = project
         self.singlecol = singlecol
         gui_widgets.centerWindow(self, 1000, 800)
@@ -324,10 +316,8 @@ class DistributionSelectWidget(QtWidgets.QDialog):
                 else:
                     xx = np.linspace(samples.min(), samples.max(), num=200)
                     yy = fitdist.pdf(xx)
-                    try:
+                    with suppress(ValueError):
                         ax.hist(samples, density=True, bins='sqrt')
-                    except ValueError:
-                        pass
                     ax.plot(xx, yy, label='Distribution Fit')
                     ax.set_ylabel('Probability Density')
             else:
@@ -509,10 +499,8 @@ class DistributionSelectWidget(QtWidgets.QDialog):
                 for j in range(i+1, len(distlist)):
                     name1, name2 = distlist[i][0], distlist[j][0]
                     data1, data2 = distlist[i][2].get('samples'), distlist[j][2].get('samples')
-                    try:
+                    with suppress(TypeError, ValueError):  # Could have one of the datas not be sampled values
                         corrdict[(name1, name2)] = np.corrcoef(data1, data2)[0, 1]
-                    except (TypeError, ValueError):
-                        pass   # Could have one of the datas not be sampled values
             dists['_correlation_'] = corrdict
 
         if self.singlecol:
@@ -580,7 +568,7 @@ class DistributionSelectWidget(QtWidgets.QDialog):
 class ArraySelectWidget(QtWidgets.QDialog):
     ''' Widget for selecting an array of values from the project or a file '''
     def __init__(self, project=None, singlecol=False, colnames=None, parent=None):
-        super(ArraySelectWidget, self).__init__(parent=parent)
+        super().__init__(parent=parent)
         self.project = project
         self.singlecol = singlecol
         gui_widgets.centerWindow(self, 1000, 800)

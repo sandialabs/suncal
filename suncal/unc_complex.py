@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 from . import output
 from . import uparser
 from . import uncertainty
+from . import report
 
 
 def _expr_to_complex(expr):
@@ -25,7 +26,7 @@ def _expr_to_complex(expr):
         -------
         f_re, f_im: sympy expressions of real and imaginary components
     '''
-    expr = uparser.check_expr(expr, allowcomplex=True)
+    expr = uparser.parse_math(expr, allowcomplex=True)
 
     var = list(expr.free_symbols)
     comps = [sympy.Symbol('{}_r'.format(v), real=True) for v in var]
@@ -201,7 +202,7 @@ class CplxCalcOutput(output.Output):
     def report(self, **kwargs):
         ''' Report the results '''
         hdr = ['Method', 'Mean', 'Standard Deviation', 'Correlation']
-        rpt = output.MDstring()
+        rpt = report.Report(**kwargs)
 
         deg = '°' if self.degrees else ' rad'
 
@@ -218,13 +219,13 @@ class CplxCalcOutput(output.Output):
                 rows = []
                 for methodmag, methodph in zip(outmag._baseoutputs, outph._baseoutputs):
                     rows.append([methodmag.method,
-                                 # TODO: incorporate mag/phase and real/imag formatting into formatter
-                                 '{} ∠{}{}'.format(output.formatter.f(methodmag.mean, matchto=methodmag.uncert, **kwargs),
-                                                   output.formatter.f(methodph.mean, matchto=methodph.uncert, **kwargs), deg),
-                                 '{} ∠{}{}'.format(output.formatter.f(methodmag.uncert, **kwargs),
-                                                   output.formatter.f(methodph.uncert, **kwargs), deg),
+                                 # TODO: incorporate mag/phase and real/imag formatting into report.Number formatter
+                                 '{} ∠{}{}'.format(report.Number(methodmag.mean, matchto=methodmag.uncert),
+                                                   report.Number(methodph.mean, matchto=methodph.uncert), deg),
+                                 '{} ∠{}{}'.format(report.Number(methodmag.uncert),
+                                                   report.Number(methodph.uncert), deg),
                                  format(gumcor if methodmag.method == 'GUM Approximation' else mccor, '.4f')])
-                rpt += '### ${}$'.format(sympy.latex(sympy.Symbol(outmag.name[:-2])))
+                rpt.hdr('${}$'.format(sympy.latex(sympy.Symbol(outmag.name[:-2]))), level=3)
                 fidx += 4  # [real, imag, mag, phase]
             else:
                 # Display real + j*imaginary for this function
@@ -236,13 +237,13 @@ class CplxCalcOutput(output.Output):
                 rows = []
                 for methodre, methodim in zip(outre._baseoutputs, outim._baseoutputs):
                     rows.append([methodre.method,
-                                 output.formatter.f(methodre.mean + 1j*methodim.mean, matchto=methodre.uncert, **kwargs),
-                                 output.formatter.f(methodre.uncert + 1j*methodim.uncert, **kwargs),
+                                 report.Number(methodre.mean + 1j*methodim.mean, matchto=methodre.uncert),
+                                 report.Number(methodre.uncert + 1j*methodim.uncert),
                                  format(gumcor if methodre.method == 'GUM Approximation' else mccor, '.4f')
                                 ])
-                rpt += '### ${}$'.format(sympy.latex(sympy.Symbol(outre.name[:-2])))
+                rpt.hdr('${}$'.format(sympy.latex(sympy.Symbol(outre.name[:-2]))), level=3)
                 fidx += 2  # [real, imag]
-            rpt += output.md_table(rows, hdr, **kwargs)
+            rpt.table(rows, hdr)
         return rpt
 
     def plot(self, fig=None, fidx=0, **kwargs):

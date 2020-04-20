@@ -68,14 +68,14 @@ def test_riskmontecarlo():
     np.random.seed(883322)
 
     # Deaver 7 values
-    FA, FR = risk.PFAR_MC(stats.norm(loc=0, scale=4), stats.norm(loc=0, scale=1), LL=-8, UL=8)
+    FA, FR, _, _ = risk.PFAR_MC(stats.norm(loc=0, scale=4), stats.norm(loc=0, scale=1), LL=-8, UL=8)
     assert np.isclose(FA, .008, atol=.0005)
     assert np.isclose(FR, .015, atol=.0005)
 
     # Uniform distributions
     d1 = stats.uniform(loc=-1, scale=2)
     d2 = stats.uniform(loc=-.2, scale=.4)
-    FA1, FR1 = risk.PFAR_MC(d1, d2, LL=9.9, UL=11, N=1000000)
+    FA1, FR1, _, _ = risk.PFAR_MC(d1, d2, LL=9.9, UL=11, N=1000000)
     assert np.isclose(FA1, risk.PFA(d1, d2, LL=9.9, UL=11), atol=.01)
     assert np.isclose(FR1, risk.PFR(d1, d2, LL=9.9, UL=11), atol=.01)
 

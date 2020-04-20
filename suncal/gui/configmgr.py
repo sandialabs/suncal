@@ -14,7 +14,7 @@ import matplotlib as mpl
 from . import gui_common
 from . import gui_widgets
 from . import colormap
-from .. import output
+from .. import report
 from .. import ureg
 
 # List all distributions in scipy.stats!
@@ -164,7 +164,7 @@ class Settings(object):
         return self.settings.value('coverage/mc/type', 'symmetric')  # symmetric or shortest
 
     def getFunc(self):
-        return self.settings.value('calculator/function', 'f = x + y', type=str)
+        return self.settings.value('calculator/function', 'f = x', type=str)
 
     def setFunc(self, value):
         self.settings.setValue('calculator/function', value)
@@ -217,10 +217,10 @@ class Settings(object):
         self.settings.setValue('report/unicode', value)
 
     def getPandocPath(self):
-        return self.settings.value('report/pandoc', output.pandoc_path, type=str)
+        return self.settings.value('report/pandoc', report.pandoc_path, type=str)
 
     def getLatexPath(self):
-        return self.settings.value('report/latex', output.latex_path, type=str)
+        return self.settings.value('report/latex', report.latex_path, type=str)
 
     def setPandocPath(self, value):  # Should have already checked that path is valid
         self.settings.setValue('report/pandoc', value)
@@ -258,7 +258,7 @@ class Settings(object):
         self.setCoverageMC(['99%', '95%', '90%', '85%', '68%'])
         self.setCoverageTypeGUM('t')
         self.setCoverageTypeMC('symmetric')
-        self.setFunc('f = x + y')
+        self.setFunc('f = x')
         self.setSigfigs(2)
         self.setNumformat('auto')
         self.setRandomSeed(None)
@@ -279,7 +279,7 @@ class ColorButton(QtWidgets.QPushButton):
     colorChanged = QtCore.pyqtSignal(object)
 
     def __init__(self, color=None, parent=None):
-        super(ColorButton, self).__init__(parent)
+        super().__init__(parent)
         self.color = color
         self.setMaximumWidth(32)
         self.setColor(color)
@@ -309,7 +309,7 @@ class ColorMapButton(QtWidgets.QPushButton):
     cmapChanged = QtCore.pyqtSignal(str)
 
     def __init__(self, cmap=None, parent=None):
-        super(ColorMapButton, self).__init__(parent)
+        super().__init__(parent)
         self.cmap = cmap
         self.pressed.connect(self.pickCmap)
 
@@ -329,13 +329,13 @@ class ColorMapButton(QtWidgets.QPushButton):
 class PgGeneral(QtWidgets.QWidget):
     ''' Page for General Settings '''
     def __init__(self, parent=None):
-        super(PgGeneral, self).__init__(parent)
+        super().__init__(parent)
         self.txtFunc = QtWidgets.QLineEdit()
         self.sigfigs = QtWidgets.QSpinBox()
         self.sigfigs.setMinimum(1)
         self.sigfigs.setMaximum(20)
         self.nformat = QtWidgets.QComboBox()
-        self.nformat.addItems(['Auto', 'Decimal', 'Scientific', 'Engineering'])
+        self.nformat.addItems(['Auto', 'Decimal', 'Scientific', 'Engineering', 'SI'])
 
         flayout = QtWidgets.QFormLayout()
         flayout.addRow('Default Function', self.txtFunc)
@@ -348,7 +348,7 @@ class PgGeneral(QtWidgets.QWidget):
 class PgDistribution(QtWidgets.QWidget):
     ''' Page for distribution list '''
     def __init__(self, parent=None):
-        super(PgDistribution, self).__init__(parent)
+        super().__init__(parent)
         label = QtWidgets.QLabel('Enable these distributions:')
         self.dlist = QtWidgets.QListWidget()
         for name in DISTS:
@@ -366,7 +366,7 @@ class PgDistribution(QtWidgets.QWidget):
 class PgUnits(QtWidgets.QWidget):
     ''' Page for defining custom measurement units '''
     def __init__(self, parent=None):
-        super(PgUnits, self).__init__(parent)
+        super().__init__(parent)
         label = QtWidgets.QLabel('Enter custom unit names and abbreviations\nas equations relating to other units. Example:\n\n    banana_dose = 78*nanosieverts = bn\n\nSee Pint documentation for details.')
         self.unitdefs = QtWidgets.QTextEdit()
         layout = QtWidgets.QVBoxLayout()
@@ -378,7 +378,7 @@ class PgUnits(QtWidgets.QWidget):
 class PgMonteCarlo(QtWidgets.QWidget):
     ''' Page for Monte-Carlo settings '''
     def __init__(self, parent=None):
-        super(PgMonteCarlo, self).__init__(parent)
+        super().__init__(parent)
         self.txtSamples = QtWidgets.QLineEdit('1000000')
         self.txtSeed = QtWidgets.QLineEdit('None')
 
@@ -394,7 +394,7 @@ class PgMonteCarlo(QtWidgets.QWidget):
 class PgExpanded(QtWidgets.QWidget):
     ''' Page for intervals and type of expanded uncertainty report '''
     def __init__(self, parent=None):
-        super(PgExpanded, self).__init__(parent)
+        super().__init__(parent)
         self.GUMcov = gui_widgets.GUMExpandedWidget()
         self.MCcov = gui_widgets.MCExpandedWidget()
 
@@ -422,7 +422,7 @@ class PgExpanded(QtWidgets.QWidget):
 class PgStyle(QtWidgets.QWidget):
     ''' Page for report settings '''
     def __init__(self, parent=None):
-        super(PgStyle, self).__init__(parent)
+        super().__init__(parent)
         self.colorscustomized = False
         self.customrc = {}
         self.cmbStyle = QtWidgets.QComboBox()
@@ -443,7 +443,7 @@ class PgStyle(QtWidgets.QWidget):
         self.clrHist.pressed.connect(self.colorchange)
         self.clrGum.pressed.connect(self.colorchange)
         self.clrScat.pressed.connect(self.colorchange)
-        [self.clrI[i].pressed.connect(self.colorchange) for i in range(len(self.clrI))]
+        [clr.pressed.connect(self.colorchange) for clr in self.clrI]
         self.btnCustom = QtWidgets.QPushButton('Customize Style...')
         self.btnCustom.pressed.connect(self.customize)
 
@@ -478,12 +478,12 @@ class PgStyle(QtWidgets.QWidget):
         self.clrHist.setColor(mpl.rcParams['axes.prop_cycle'].by_key()['color'][0])
         self.clrGum.setColor(mpl.rcParams['axes.prop_cycle'].by_key()['color'][1])
         self.clrScat.setColor(mpl.rcParams['axes.prop_cycle'].by_key()['color'][3])
-        for i in range(len(self.clrI)):
+        for i, clr in enumerate(self.clrI):
             try:
-                self.clrI[i].setColor(mpl.rcParams['axes.prop_cycle'].by_key()['color'][4+i])
+                clr.setColor(mpl.rcParams['axes.prop_cycle'].by_key()['color'][4+i])
             except IndexError:
                 # Color not defined in this style
-                self.clrI[i].setColor('black')
+                clr.setColor('black')
         self.blockSignals(False)
         self.colorscustomized = False
 
@@ -520,7 +520,7 @@ class PgStyle(QtWidgets.QWidget):
 class PgReportOpts(QtWidgets.QWidget):
     ''' Page for default report format options '''
     def __init__(self, parent=None):
-        super(PgReportOpts, self).__init__(parent)
+        super().__init__(parent)
 
         self.cmbFormat = QtWidgets.QComboBox()
         self.cmbFormat.addItems(['HTML', 'Markdown', 'PDF', 'Open Office ODT', 'Word DOCX'])
@@ -556,7 +556,7 @@ class PgReportOpts(QtWidgets.QWidget):
 class DlgMultiLineEdit(QtWidgets.QDialog):
     ''' Dialog for entering a multiline string '''
     def __init__(self, title, label='', text=''):
-        super(DlgMultiLineEdit, self).__init__()
+        super().__init__()
         self.setWindowTitle(title)
         label = QtWidgets.QLabel(label)
         self.text = QtWidgets.QPlainTextEdit()
@@ -577,7 +577,7 @@ class DlgMultiLineEdit(QtWidgets.QDialog):
 class PgSettingsDlg(QtWidgets.QDialog):
     ''' Dialog for editing of settings '''
     def __init__(self, parent=None):
-        super(PgSettingsDlg, self).__init__(parent)
+        super().__init__(parent)
         self.settings = Settings()
         self.setWindowTitle('Uncertainty Calculator Settings')
 
@@ -627,7 +627,7 @@ class PgSettingsDlg(QtWidgets.QDialog):
         self.pgStyle.clrGum.setColor(self.settings.getColorFromCycle(1))
         self.pgStyle.clrScat.setColor(self.settings.getColorFromCycle(3))
         self.pgStyle.customrc = self.settings.getCustomStyle()
-        [self.pgStyle.clrI[i].setColor(self.settings.getColorFromCycle(4+i)) for i in range(len(self.pgStyle.clrI))]
+        [clr.setColor(self.settings.getColorFromCycle(4+i)) for i, clr in enumerate(self.pgStyle.clrI)]
 
         self.pgMC.txtSamples.setText(str(self.settings.getSamples()))
         self.pgMC.txtSeed.setText(str(self.settings.getRandomSeed()))
@@ -645,11 +645,11 @@ class PgSettingsDlg(QtWidgets.QDialog):
 
         pandoc = self.settings.getPandocPath()
         if pandoc is None or pandoc == '':
-            pandoc = output.pandoc_path  # Get from output module default if not defined in settings
+            pandoc = report.pandoc_path  # Get from report module default if not defined in settings
         self.pgRptOpts.pandoc.setText(pandoc if pandoc else '')
         latex = self.settings.getLatexPath()
         if latex is None or latex == '':
-            latex = output.latex_path  # Get from output module default if not defined in settings
+            latex = report.latex_path  # Get from report module default if not defined in settings
         self.pgRptOpts.latex.setText(latex if latex else '')
 
         dists = self.settings.getDistributions()
@@ -712,14 +712,14 @@ class PgSettingsDlg(QtWidgets.QDialog):
 
         self.settings.setUnitDefs(self.pgUnits.unitdefs.toPlainText())
 
-        if self.pgRptOpts.pandoc.text() != output.pandoc_path and os.path.exists(self.pgRptOpts.pandoc.text()):  # Only save if customized and pandoc is there
+        if self.pgRptOpts.pandoc.text() != report.pandoc_path and os.path.exists(self.pgRptOpts.pandoc.text()):  # Only save if customized and pandoc is there
             self.settings.setPandocPath(self.pgRptOpts.pandoc.text())
-            output.pandoc_path = self.pgRptOpts.pandoc.text()
-        if self.pgRptOpts.latex.text() != output.latex_path and os.path.exists(self.pgRptOpts.latex.text()):
+            report.pandoc_path = self.pgRptOpts.pandoc.text()
+        if self.pgRptOpts.latex.text() != report.latex_path and os.path.exists(self.pgRptOpts.latex.text()):
             self.settings.setLatexPath(self.pgRptOpts.latex.text())
-            output.latex_path = self.pgRptOpts.latex.text()
+            report.latex_path = self.pgRptOpts.latex.text()
 
-        super(PgSettingsDlg, self).accept()  # Let the dialog finish closing properly
+        super().accept()  # Let the dialog finish closing properly
 
 
 if __name__ == '__main__':

@@ -10,6 +10,8 @@ import matplotlib.pyplot as plt
 
 from . import distributions
 from . import output
+from . import report
+from . import plotting
 from . import uparser
 
 
@@ -46,7 +48,7 @@ class DistExplore(object):
     def sample(self, name):
         ''' Sample input with given name '''
         dist = self.dists.get(name, None)
-        expr = uparser.get_expr(name)
+        expr = uparser.parse_math(name, raiseonerr=False)
         if expr is None:
             raise ValueError('Invalid expression {}'.format(name))
 
@@ -56,7 +58,7 @@ class DistExplore(object):
             self.samplevalues[name] = dist.rvs(self.samples)
 
             # But check for downstream Monte Carlos that use this variable and sample them too
-            for mcexpr in [uparser.get_expr(n) for n in self.dists.keys()]:
+            for mcexpr in [uparser.parse_math(n, raiseonerr=False) for n in self.dists.keys()]:
                 if mcexpr is not None and str(mcexpr) != name and name in [str(x) for x in mcexpr.free_symbols]:
                     self.sample(str(mcexpr))
 
@@ -70,7 +72,7 @@ class DistExplore(object):
                     raise ValueError('Variable {} has not been defined'.format(i))
 
                 inputs[i] = self.samplevalues[i]
-            self.samplevalues[name] = uparser.docalc(inputs, name)
+            self.samplevalues[name] = uparser.callf(name, inputs)
         self.out = DistOutput(self.samplevalues)
         return self.samplevalues[name]
 
@@ -165,13 +167,14 @@ class DistOutput(output.Output):
         rows = []
         for name, samples in self.samples.items():
             if samples is not None:
-                rows.append([output.format_math(name),
-                             output.formatter.f(np.mean(samples), fmin=3, **kwargs),
-                             output.formatter.f(np.median(samples), fmin=3, **kwargs),
-                             output.formatter.f(np.std(samples), ddof=1, fmin=3, **kwargs)])
+                rows.append([report.Math(name),
+                             report.Number(np.mean(samples), fmin=3),
+                             report.Number(np.median(samples), fmin=3),
+                             report.Number(np.std(samples), ddof=1, fmin=3)])
             else:
-                rows.append([output.format_math(name), 'N/A', 'N/A', 'N/A'])
-        r = output.md_table(rows, hdr)
+                rows.append([report.Math(name), 'N/A', 'N/A', 'N/A'])
+        r = report.Report(**kwargs)
+        r.table(rows, hdr)
         return r
 
     def report_single(self, name, **kwargs):
@@ -181,23 +184,24 @@ class DistOutput(output.Output):
         q025, q25, q75, q975 = np.quantile(samples, (.025, .25, .75, .975))
 
         hdr = ['Parameter', 'Value']
-        rows = [['Mean', output.formatter.f(samples.mean(), fmin=3, **kwargs)],
-                ['Standard Deviation', output.formatter.f(stdev, fmin=3, **kwargs)],
-                ['Standard Uncertainty', output.formatter.f(stdev/np.sqrt(len(samples)), fmin=3, **kwargs)],
+        rows = [['Mean', report.Number(samples.mean(), fmin=3)],
+                ['Standard Deviation', report.Number(stdev, fmin=3)],
+                ['Standard Uncertainty', report.Number(stdev/np.sqrt(len(samples)), fmin=3)],
                 ['N', format(len(samples), 'd')],
-                ['Minimum', output.formatter.f(samples.min(), fmin=3, **kwargs)],
-                ['First Quartile', output.formatter.f(q25, fmin=3, **kwargs)],
-                ['Median', output.formatter.f(np.median(samples), fmin=3, **kwargs)],
-                ['Third Quartile', output.formatter.f(q75, fmin=3, **kwargs)],
-                ['Maximum', output.formatter.f(samples.max(), fmin=3, **kwargs)],
-                ['95% Coverage Interval', '{}, {}'.format(output.formatter.f(q025, fmin=3, **kwargs), output.formatter.f(q975, fmin=3, **kwargs))],
+                ['Minimum', report.Number(samples.min(), fmin=3)],
+                ['First Quartile', report.Number(q25, fmin=3)],
+                ['Median', report.Number(np.median(samples), fmin=3)],
+                ['Third Quartile', report.Number(q75, fmin=3)],
+                ['Maximum', report.Number(samples.max(), fmin=3)],
+                ['95% Coverage Interval', '{}, {}'.format(report.Number(q025, fmin=3), report.Number(q975, fmin=3))],
                 ]
-        r = output.md_table(rows, hdr)
+        r = report.Report(**kwargs)
+        r.table(rows, hdr)
 
         if self.fitparams is not None:
-            rows = list(zip(self.fitparams.keys(), [output.formatter.f(x, fmin=3) for x in self.fitparams.values()]))
-            r += '### Fit Parameters'
-            r += output.md_table(rows, hdr)
+            rows = list(zip(self.fitparams.keys(), [report.Number(x, fmin=3) for x in self.fitparams.values()]))
+            r.hdr('Fit Parameters', level=3)
+            r.table(rows, hdr)
 
         return r
 
@@ -227,9 +231,9 @@ class DistOutput(output.Output):
         if kwargs.get('coverage', False):
             coverage = np.quantile(samples, (0.025, 0.975))
 
-        fig, ax = output.initplot(plot)
+        fig, ax = plotting.initplot(plot)
         if len(np.atleast_1d(samples)) > 1:
-            params = output.fitdist(samples, distname=fitdist, plot=fig, qqplot=qqplot, coverage=coverage)
+            params = plotting.fitdist(samples, distname=fitdist, plot=fig, qqplot=qqplot, coverage=coverage)
         else:
             fig.clf()
             ax = fig.add_subplot(1, 1, 1)
@@ -242,14 +246,14 @@ class DistOutput(output.Output):
         fitdist = kwargs.get('fitdist', None)
         qqplot = kwargs.get('qqplot', False)
         coverage = kwargs.get('coverage', False)
-        r = output.MDstring()
+        r = report.Report(**kwargs)
         for name in self.samples.keys():
 
-            with mpl.style.context(output.mplcontext):
+            with mpl.style.context(plotting.mplcontext):
                 plt.ioff()
                 fig = plt.figure()
                 self.plot_hist(name, plot=fig, fitdist=fitdist, qqplot=qqplot, coverage=coverage)
                 fig.suptitle(name)
-            r.add_fig(fig)
-            r += self.report_single(name, **kwargs)
+            r.plot(fig)
+            r.append(self.report_single(name, **kwargs))
         return r

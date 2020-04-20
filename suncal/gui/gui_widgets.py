@@ -1,5 +1,7 @@
 ''' Common widgets for user interface '''
 
+from contextlib import suppress
+from collections import ChainMap
 import numpy as np
 from dateutil.parser import parse
 import matplotlib.dates as mdates
@@ -7,14 +9,15 @@ import matplotlib.dates as mdates
 from PyQt5 import QtWidgets, QtCore, QtGui
 
 from . import gui_common
-from .. import output
+from .. import report
 from .. import distributions
 
 
 # Custom data roles for tree/table widgets
 ROLE_ORIGDATA = QtCore.Qt.UserRole + 1    # Original, user-entered data
 ROLE_HISTDATA = ROLE_ORIGDATA + 1         # Data for histogram distribution (tuple of (hist, edges))
-ROLE_VALID = ROLE_HISTDATA + 1            # Histogram data
+ROLE_VARIABLE = ROLE_ORIGDATA + 2         # InputVar object for this row
+ROLE_UNCERT = ROLE_ORIGDATA + 3           # InputUncert object for this row
 
 
 def centerWindow(window, w, h):
@@ -26,21 +29,59 @@ def centerWindow(window, w, h):
     if h >= desktopsize.height() or w >= desktopsize.width():
         window.showMaximized()
 
+class WidgetPanel(QtWidgets.QTreeWidget):
+    ''' Tree widget for expanding/collapsing other widgets '''
+    def __init__(self, parent=None):
+        super().__init__(parent=parent)
+        self.setHeaderHidden(True)
+        self.setColumnCount(1)
+
+    def add_widget(self, name, widget):
+        ''' Add a widget to the tree at the end '''
+        idx = self.invisibleRootItem().childCount()
+        self.insert_widget(name, widget, idx)
+
+    def expand(self, name):
+        ''' Expand the widget with the given name '''
+        item = self.findItems(name, QtCore.Qt.MatchExactly, 0)
+        with suppress(IndexError):
+            self.expandItem(item[0])
+
+    def insert_widget(self, name, widget, idx):
+        ''' Insert a widget into the tree '''
+        item = QtWidgets.QTreeWidgetItem([name])
+        item.setFlags(QtCore.Qt.ItemIsEnabled)  # Enable, but not selectable/editable
+        self.insertTopLevelItem(idx, item)
+        witem = QtWidgets.QTreeWidgetItem()
+        witem.setFlags(QtCore.Qt.ItemIsEnabled)
+        item.addChild(witem)
+        self.setItemWidget(witem, 0, widget)
+
+    def fixSize(self):
+        ''' Adjust the size of tree rows to fit the widget sizes '''
+        self.scheduleDelayedItemsLayout()
+
 
 class ReadOnlyTableItem(QtWidgets.QTableWidgetItem):
     ''' Table Widget Item with read-only properties '''
     def __init__(self, *args, **kwargs):
-        super(ReadOnlyTableItem, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
         self.setFlags(QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsSelectable)
 
 
 class EditableTableItem(QtWidgets.QTableWidgetItem):
     ''' Table Widget Item with editable flags '''
     def __init__(self, *args, **kwargs):
-        super(EditableTableItem, self).__init__(*args, **kwargs)
-        font = self.font()
-        font.setBold(True)
-        self.setFont(font)
+        super().__init__(*args, **kwargs)
+
+
+class GroupBoxWidget(QtWidgets.QGroupBox):
+    ''' GroupBox set by widget instead of layout '''
+    def __init__(self, widget, title, parent=None):
+        super().__init__(title)
+        layout = QtWidgets.QVBoxLayout()
+        layout.addWidget(widget)
+        self.setLayout(layout)
 
 
 # TableWidget and TreeWidget item.data() roles
@@ -50,7 +91,7 @@ class LatexDelegate(QtWidgets.QStyledItemDelegate):
         as graphics instead of text when not in edit mode.
     '''
     def __init__(self):
-        super(LatexDelegate, self).__init__()
+        super().__init__()
 
     def setEditorData(self, editor, index):
         ''' Restore user-entered text when editing starts '''
@@ -69,7 +110,7 @@ class LatexDelegate(QtWidgets.QStyledItemDelegate):
         model.blockSignals(True)  # Only signal on one setData
         model.setData(index, editor.text(), ROLE_ORIGDATA)    # Save for later
         px = QtGui.QPixmap()
-        px.loadFromData(output.tex_to_buf(output.format_math(editor.text())).read())
+        px.loadFromData(report.Math(editor.text()).svg_buf().read())
         model.blockSignals(False)
         model.setData(index, px, QtCore.Qt.DecorationRole)
 
@@ -83,7 +124,7 @@ class EditableHeaderView(QtWidgets.QHeaderView):
     headeredited = QtCore.pyqtSignal()
 
     def __init__(self, orientation, floatonly=False, parent=None):
-        super(EditableHeaderView, self).__init__(orientation, parent)
+        super().__init__(orientation, parent)
         self.floatonly = floatonly
         self.line = QtWidgets.QLineEdit(parent=self.viewport())
         self.line.setAlignment(QtCore.Qt.AlignTop)
@@ -142,7 +183,7 @@ class FloatTableWidget(QtWidgets.QTableWidget):
     valueChanged = QtCore.pyqtSignal()
 
     def __init__(self, movebyrows=False, headeredit=None, xdates=False, xstrings=False, paste_multicol=True, parent=None):
-        super(FloatTableWidget, self).__init__(parent=parent)
+        super().__init__(parent=parent)
         self.movebyrows = movebyrows
         self.paste_multicol = paste_multicol
         self.xdates = xdates
@@ -254,7 +295,7 @@ class FloatTableWidget(QtWidgets.QTableWidget):
             self.blockSignals(signalstate)
             self.valueChanged.emit()
         else:
-            super(FloatTableWidget, self).keyPressEvent(event)
+            super().keyPressEvent(event)
 
     def contextMenuEvent(self, event):
         menu = QtWidgets.QMenu(self)
@@ -383,16 +424,38 @@ class FloatTableWidget(QtWidgets.QTableWidget):
 class MarkdownTextEdit(QtWidgets.QTextEdit):
     ''' Text Edit widget with a Save option in context menu. '''
     def __init__(self):
-        super(MarkdownTextEdit, self).__init__()
+        super().__init__()
         self.setReadOnly(True)
         self.zoomIn(1)
         self.rawhtml = ''
         self.md = None
         self.showmd = False
+        self.sigfigs = gui_common.settings.getSigfigs()
+        self.numformat = gui_common.settings.getNumformat()
 
     def contextMenuEvent(self, event):
         ''' Create custom context menu '''
         menu = self.createStandardContextMenu()
+        menu.addSeparator()
+        menufigs = QtWidgets.QMenu('Significant Figures')
+        for i in range(6):
+            actfigs = menufigs.addAction(str(i+1))
+            actfigs.triggered.connect(lambda x, n=i+1: self.setFigs(n))
+            if self.sigfigs == i+1:
+                actfigs.setCheckable(True)
+                actfigs.setChecked(True)
+
+        menuformat = QtWidgets.QMenu('Number Format')
+        for i in ['Auto', 'Decimal', 'Scientific', 'Engineering', 'SI']:
+            actformat = menuformat.addAction(i)
+            actformat.triggered.connect(lambda x, f=i.lower(): self.setFmt(f))
+            if self.numformat == i.lower():
+                actformat.setCheckable(True)
+                actformat.setChecked(True)
+
+        menu.addMenu(menufigs)
+        menu.addMenu(menuformat)
+        menu.addSeparator()
         actmd = menu.addAction('Show markdown')
         actmd.setCheckable(True)
         actmd.setChecked(self.showmd)
@@ -401,39 +464,48 @@ class MarkdownTextEdit(QtWidgets.QTextEdit):
         actmd.triggered.connect(self.toggledisplay)
         menu.exec(event.globalPos())
 
-    def setMarkdown(self, md):
+    def setFigs(self, figs):
+        self.sigfigs = figs
+        self.setReport(self.rpt)
+
+    def setFmt(self, fmt):
+        self.numformat = fmt
+        self.setReport(self.rpt)
+
+    def setReport(self, rpt):
         ''' Set text to display in markdown format.
 
             Parameters
             ----------
-            md: MDstring
-                Markdown string to format and display as HTML.
+            rpt: report.Report
+                Report object to format and display as HTML.
         '''
-        self.md = md
-        html = self.md.get_html()
-
+        self.rpt = rpt
+        args = ChainMap({'mathfmt': 'svg', 'n': self.sigfigs, 'fmt': self.numformat}, gui_common.get_rptargs())
+        html = self.rpt.get_html(**args)
         self.setHtml(html)
 
     def setHtml(self, html):
         ''' Override setHtml to save off raw html as QTextEdit reformats it, strips css, etc. '''
         self.rawhtml = html
-        super(MarkdownTextEdit, self).setHtml(html)
+        super().setHtml(html)
         self.repaint()
 
     def toggledisplay(self):
         self.showmd = not self.showmd
         if self.showmd:
-            self.setPlainText(self.md.raw_md())
+            self.setPlainText(self.rpt.get_md(mathfmt='latex', n=self.sigfigs, fmt=self.numformat))
         else:
-            self.setMarkdown(self.md)
+            self.setReport(self.rpt)
 
     def savepage(self):
         ''' Save text edit contents to file '''
-        savemarkdown(self.md)
+        savereport(self.rpt, fmt=self.numformat, n=self.sigfigs)
 
 
-def savemarkdown(md):
-    ''' Save markdown object contents to file, prompting user for options and file name '''
+def savereport(rpt, **kwargs):
+    ''' Save Report object contents to file, prompting user for options and file name '''
+    kargs = ChainMap(kwargs, gui_common.get_rptargs())
     dlg = SaveReportOptions()
     ok = dlg.exec_()
     if ok:
@@ -445,27 +517,25 @@ def savemarkdown(md):
         fname, _ = QtWidgets.QFileDialog.getSaveFileName(caption='File to Save', filter=filter)
         if fname:
             if fmt == 'md':
-                with output.report_format(math='mathjax', fig=setup.get('image')):
-                    data = md.get_md(unicode=setup.get('unicode', True))
+                data = rpt.get_md(mathfmt='latex', figfmt=setup.get('image'), unicode=setup.get('unicode', True), **kargs)
                 with open(fname, 'w') as f:
                     f.write(data)
                 err = None
 
             elif fmt == 'tex':
-                err = md.save_tex(fname)
+                err = rpt.save_tex(fname, **kargs)
 
             elif fmt == 'html':
-                with output.report_format(math=setup.get('math'), fig=setup.get('image')):
-                    err = md.save_html(fname)
+                err = rpt.save_html(fname, mathfmt=setup.get('mathfmt'), figfmt=setup.get('image'), **kargs)
 
             elif fmt == 'docx':
-                err = md.save_docx(fname)
+                err = rpt.save_docx(fname)
 
             elif fmt == 'pdf':
-                err = md.save_pdf(fname)
+                err = rpt.save_pdf(fname)
 
             elif fmt == 'odt':
-                err = md.save_odt(fname)
+                err = rpt.save_odt(fname)
 
             else:
                 assert False
@@ -477,7 +547,7 @@ def savemarkdown(md):
 class SaveReportOptions(QtWidgets.QDialog):
     ''' Dialog for selecting save report options '''
     def __init__(self, parent=None):
-        super(SaveReportOptions, self).__init__(parent)
+        super().__init__(parent)
         self.setWindowTitle('Save report options')
         self.setMinimumWidth(500)
         self.btnbox = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel)
@@ -490,10 +560,10 @@ class SaveReportOptions(QtWidgets.QDialog):
         self.cmbMath.addItems(['Mathjax', 'Matplotlib'])
         self.cmbImage = QtWidgets.QComboBox()
         self.cmbImage.addItems(['SVG', 'PNG'])  # EPS?
-        self.mjurl = QtWidgets.QLineEdit(output._mathjaxurl)
+        self.mjurl = QtWidgets.QLineEdit(report._mathjaxurl)
         self.chkUnicode = QtWidgets.QCheckBox('Allow Unicode')
 
-        if not output.pandoc_path:
+        if not report.pandoc_path:
             self.cmbFormat.setItemText(2, 'LaTeX (requires Pandoc)')
             self.cmbFormat.setItemText(3, 'PDF (requires Pandoc and LaTeX)')
             self.cmbFormat.setItemText(4, 'Open Office ODT (requires Pandoc)')
@@ -503,7 +573,7 @@ class SaveReportOptions(QtWidgets.QDialog):
             self.cmbFormat.model().item(4).setEnabled(False)
             self.cmbFormat.model().item(5).setEnabled(False)
 
-        if not output.latex_path:
+        if not report.latex_path:
             self.cmbFormat.setItemText(3, 'PDF (requires Pandoc and LaTeX)')
             self.cmbFormat.model().item(3).setEnabled(False)
 
@@ -552,9 +622,11 @@ class SaveReportOptions(QtWidgets.QDialog):
     def get_setup(self):
         ''' Get dictionary of report format options '''
         fmt = ['html', 'md', 'tex', 'pdf', 'odt', 'docx'][self.cmbFormat.currentIndex()]
-        math = ['mathjax', 'mpl'][self.cmbMath.currentIndex()]
+        math = ['latex', 'mpl'][self.cmbMath.currentIndex()]
         img = self.cmbImage.currentText().lower()
-        return {'math': math, 'fmt': fmt, 'image': img, 'unicode': self.chkUnicode.isChecked()}
+        if math == 'mpl':
+            math = img
+        return {'mathfmt': math, 'fmt': fmt, 'image': img, 'unicode': self.chkUnicode.isChecked()}
 
 
 class ListSelectWidget(QtWidgets.QListWidget):
@@ -562,7 +634,7 @@ class ListSelectWidget(QtWidgets.QListWidget):
     checkChange = QtCore.pyqtSignal(int)
 
     def __init__(self):
-        super(ListSelectWidget, self).__init__()
+        super().__init__()
         self.itemChanged.connect(self.itemcheck)
 
     def addItems(self, itemlist):
@@ -612,7 +684,7 @@ class SpinWidget(QtWidgets.QWidget):
     valueChanged = QtCore.pyqtSignal()
 
     def __init__(self, label=''):
-        super(SpinWidget, self).__init__()
+        super().__init__()
         self.label = QtWidgets.QLabel(label)
         self.spin = QtWidgets.QSpinBox()
         self.spin.setRange(0, 1E8)
@@ -645,7 +717,7 @@ class CoverageButtons(QtWidgets.QWidget):
     changed = QtCore.pyqtSignal()
 
     def __init__(self, levels=None, dflt=None, multiselect=False):
-        super(CoverageButtons, self).__init__()
+        super().__init__()
         self.btngroup = QtWidgets.QButtonGroup()
         self.btngroup.setExclusive(not multiselect)
 
@@ -694,7 +766,7 @@ class GUMExpandedWidget(QtWidgets.QWidget):
     changed = QtCore.pyqtSignal()
 
     def __init__(self, label='GUM:', multiselect=True, dflt=None):
-        super(GUMExpandedWidget, self).__init__()
+        super().__init__()
         self.usek = False
         self.GUMtype = QtWidgets.QComboBox()
         self.GUMtype.addItems(['Student-t', 'Normal/k'])
@@ -746,7 +818,7 @@ class MCExpandedWidget(QtWidgets.QWidget):
     changed = QtCore.pyqtSignal()
 
     def __init__(self, label='Monte-Carlo:', multiselect=True, dflt=None):
-        super(MCExpandedWidget, self).__init__()
+        super().__init__()
         self.MCtype = QtWidgets.QComboBox()
         self.MCtype.addItems(['Symmetric', 'Shortest'])
         self.MCtype.currentIndexChanged.connect(self.changed)
@@ -784,7 +856,7 @@ class DistributionEditTable(QtWidgets.QTableWidget):
     changed = QtCore.pyqtSignal()
 
     def __init__(self, initargs=None, locslider=False):
-        super(DistributionEditTable, self).__init__()
+        super().__init__()
         self.showlocslider = locslider
         self.range = (-2.0, 2.0)
         self.setMinimumWidth(200)
@@ -796,7 +868,7 @@ class DistributionEditTable(QtWidgets.QTableWidget):
 
     def clear(self):
         ''' Clear and reset the table '''
-        super(DistributionEditTable, self).clear()
+        super().clear()
         self.setColumnCount(2)
         self.setHorizontalHeaderLabels(['Parameter', 'Value', ''])
         self.resizeColumnsToContents()
@@ -942,19 +1014,19 @@ class DistributionEditTable(QtWidgets.QTableWidget):
 class ComboNoWheel(QtWidgets.QComboBox):
     ''' ComboBox with scroll wheel disabled '''
     def __init__(self):
-        super(ComboNoWheel, self).__init__()
+        super().__init__()
         self.setFocusPolicy(QtCore.Qt.StrongFocus)
 
     def wheelEvent(self, event):
         ''' Only pass on the event if we have focus '''
         if self.hasFocus():
-            super(ComboNoWheel, self).wheelEvent(event)
+            super().wheelEvent(event)
 
 
 class QHLine(QtWidgets.QFrame):
     ''' Horizontal divider line '''
     def __init__(self):
-        super(QHLine, self).__init__()
+        super().__init__()
         self.setFrameShape(QtWidgets.QFrame.HLine)
         self.setFrameShadow(QtWidgets.QFrame.Sunken)
 
@@ -962,7 +1034,7 @@ class QHLine(QtWidgets.QFrame):
 class LineEditLabelWidget(QtWidgets.QWidget):
     ''' Class for a line edit and label '''
     def __init__(self, label='', text=''):
-        super(LineEditLabelWidget, self).__init__()
+        super().__init__()
         self._label = QtWidgets.QLabel(label)
         self._text = QtWidgets.QLineEdit(text)
         layout = QtWidgets.QHBoxLayout()
@@ -980,7 +1052,7 @@ class LineEditLabelWidget(QtWidgets.QWidget):
 class SpinBoxLabelWidget(QtWidgets.QWidget):
     ''' Class for a DoubleSpinBox and label '''
     def __init__(self, label='', value=0, rng=None):
-        super(SpinBoxLabelWidget, self).__init__()
+        super().__init__()
         self._label = QtWidgets.QLabel(label)
         self._spinbox = QtWidgets.QDoubleSpinBox()
         self._spinbox.setValue(value)
@@ -1001,7 +1073,7 @@ class SpinBoxLabelWidget(QtWidgets.QWidget):
 class DateDialog(QtWidgets.QDialog):
     ''' Dialog for getting a date value '''
     def __init__(self, parent=None):
-        super(DateDialog, self).__init__(parent)
+        super().__init__(parent)
         self.dateedit = QtWidgets.QDateEdit()
         self.dateedit.setCalendarPopup(True)
         self.dateedit.setDate(QtCore.QDate.currentDate())

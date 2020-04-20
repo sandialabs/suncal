@@ -9,6 +9,8 @@ import ast
 import numpy as np
 import sympy
 
+from . import ureg
+
 
 # List of sympy functions allowed for converting strings to sympy
 _functions = ['acos', 'asin', 'atan', 'atan2', 'cos', 'sin', 'tan',
@@ -21,7 +23,7 @@ _functions = ['acos', 'asin', 'atan', 'atan2', 'cos', 'sin', 'tan',
 # Anything defined in sympy but NOT in _functions should be treated as a symbol, not a function
 # for example, assume if the function string contains 'lex', we want a variable lex, not the LexOrder function.
 _sympys = ['Symbol', 'Integer', 'Float', 'Rational', 'pi', 'E']  # But keep these as sympy objects, not symbols
-_locals = dict([(f, sympy.Symbol(f)) for f in dir(sympy) if '_' not in f and f not in _functions and f not in _sympys])
+_locals = dict((f, sympy.Symbol(f)) for f in dir(sympy) if '_' not in f and f not in _functions and f not in _sympys)
 
 # Add some aliases for common stuff
 _locals['inf'] = sympy.oo
@@ -37,9 +39,52 @@ _locals['arctan'] = sympy.atan
 _locals['log10'] = lambda x: sympy.log(x, 10)
 
 
-def check_expr(expr, fns=_functions, name=None, allowcomplex=False):
-    ''' Check the expression to ensure it is safe to eval/sympify. Only basic math operations are
-        allowed. Raise exception if expr is invalid, otherwise returns a sympy expression.
+def parse_unit(unitstr):
+    ''' Parse the unit string and return a Pint unit instance '''
+    if unitstr is None or unitstr.lower() == 'none':
+        u = ureg.dimensionless
+    else:
+        try:
+            u = ureg.parse_units(unitstr)
+        except (ValueError, AttributeError, TypeError):
+            raise ValueError('Cannot parse unit {}'.format(unitstr))
+    return u
+
+
+def parse_math(expr, name=None, allowcomplex=False, raiseonerr=True):
+    ''' Parse the math expression string into a Sympy expression. Only basic
+        math operations are allowed, such as 4-function math, exponents, and
+        standard trigonometric and logarithm functions.
+
+        Parameters
+        ----------
+        expr: string
+            Expression to evaluate
+        name: string (optional)
+            Name of function to check that function is not self-recursive (e.g. f = 2*f)
+        allowcomplex: bool
+            Allow complex numbers (I) in expression
+        raiseonerr: bool
+            Raise exception on parse error. If False, None will be returned on error.
+
+        Returns
+        -------
+        expr: Sympy expression
+    '''
+    if raiseonerr:
+        return _parse_math(expr, name=name, allowcomplex=allowcomplex)
+
+    else:
+        try:
+            expr = _parse_math(expr, name=name, allowcomplex=allowcomplex)
+        except ValueError:
+            expr = None
+        return expr
+
+
+def _parse_math(expr, fns=_functions, name=None, allowcomplex=False):
+    ''' Parse the math expression and return Sympy expression if valid.
+        Raise an error if not valid.
 
         Parameters
         ----------
@@ -100,21 +145,6 @@ def check_expr(expr, fns=_functions, name=None, allowcomplex=False):
     return fn
 
 
-def get_expr(expr):
-    ''' Get expression, without raising. Return None if an error in parsing '''
-    try:
-        expr = check_expr(expr)
-    except ValueError:
-        expr = None
-    return expr
-
-
-def docalc(vardict, func):
-    ''' Compute the output '''
-    f = sympy.lambdify(tuple(vardict.keys()), func, 'numpy')
-    return f(**vardict)
-
-
 def callf(func, vardict=None):
     ''' Call the function using variables defined in vardict dictionary. String will
         be validated before eval.
@@ -135,9 +165,9 @@ def callf(func, vardict=None):
 
     if isinstance(func, str):
         # String expression. Convert to sympy.
-        func = check_expr(func)
+        func = _parse_math(func)
 
-    if hasattr(func, 'subs'):
+    if isinstance(func, sympy.Basic):
         # Sympy expression. Try lambdify method with numpy so arrays can be computed element-wise.
 
         if func.has(sympy.zoo):
@@ -147,7 +177,8 @@ def callf(func, vardict=None):
             vardict['zoo'] = np.inf
 
         try:
-            y = docalc(vardict, func)
+            fn = sympy.lambdify(tuple(vardict.keys()), func, 'numpy')
+            y = fn(**vardict)
         except (ZeroDivisionError, OverflowError):
             y = np.inf
 

@@ -242,20 +242,20 @@ def test_readconfig():
     a = u.get_input('a')
     assert a.name == 'a'
     assert a.nom == 10.0
-    assert a.uncerts[0].args['std'] == 0.2
+    assert float(a.uncerts[0].args['std']) == 0.2
     assert a.uncerts[0].distname == 'normal'
     assert a.degf() == 10
     b = u.get_input('b')
     assert b.name == 'b'
     assert b.nom == 25.0
-    assert b.uncerts[0].args['scale'] == 2.0
-    assert b.uncerts[0].args['a'] == 5.0
+    assert float(b.uncerts[0].args['scale']) == 2.0
+    assert float(b.uncerts[0].args['a']) == 5.0
     assert b.uncerts[0].distname == 'gamma'
     assert b.degf() == np.inf
     c = u.get_input('c')
     assert c.name == 'c'
     assert c.nom == 2.0
-    assert c.uncerts[0].args['std'] == 0.1
+    assert float(c.uncerts[0].args['std']) == 0.1
     assert c.uncerts[0].distname == 'normal'
     assert c.degf() == 88
     corlist = u.get_corr_list()

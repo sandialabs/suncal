@@ -11,7 +11,8 @@ import matplotlib as mpl
 from . import configmgr
 from . import icons
 from . import logo
-from .. import output
+from .. import report
+from .. import plotting
 
 
 # Characters and colors
@@ -28,7 +29,7 @@ CHR_X_RED = u'<font color="Red" size=5>\u2717</font>'
 COLOR_INVALID = QtGui.QBrush(QtCore.Qt.red)
 COLOR_OK = QtGui.QBrush(QtCore.Qt.white)
 COLOR_TEXT_OK = QtGui.QBrush(QtCore.Qt.black)
-COLOR_UNUSED = QtGui.QBrush(QtCore.Qt.gray)
+COLOR_UNUSED = QtGui.QBrush(QtGui.QColor(236, 236, 236, 255))
 COLOR_SELECTED = QtGui.QBrush(QtGui.QColor(204, 255, 204, 255))
 COLOR_HIGHLIGHT = QtGui.QBrush(QtGui.QColor(255, 0, 0, 127))
 
@@ -67,13 +68,13 @@ def handle_exception(exc_type, exc_value, exc_traceback):
 sys.excepthook = handle_exception
 
 
-# Load Pandoc/Latex paths from settings into output module
+# Load Pandoc/Latex paths from settings into report module
 pandoc = settings.getPandocPath()
 latex = settings.getLatexPath()
 if pandoc and os.path.exists(pandoc):
-    output.pandoc_path = pandoc
+    report.pandoc_path = pandoc
 if latex and os.path.exists(latex):
-    output.latex_path = latex
+    report.latex_path = latex
 
 
 def set_plot_style():
@@ -85,7 +86,7 @@ def set_plot_style():
             mpl.style.use({k: v})  # Override anything in base style
         except ValueError:
             print('Bad parameter {} for key {}'.format(v, k))
-    output.setup_mplparams()  # Override some font things always
+    plotting.setup_mplparams()  # Override some font things always
 
 
 # This function allows switching file path when run from pyInstaller.
@@ -133,7 +134,7 @@ def get_rptargs():
 
 def setLabelTex(label, tex):
     ''' Set QLabel to math-image of tex expression '''
-    imgbuf = output.tex_to_buf(tex)
+    imgbuf = report.Math.from_latex(tex).svg_buf()
     px = QtGui.QPixmap()
     px.loadFromData(imgbuf.getvalue())
     label.setPixmap(px)

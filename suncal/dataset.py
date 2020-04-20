@@ -8,6 +8,8 @@ import yaml
 
 from . import distributions
 from . import output
+from . import report
+from . import plotting
 from . import ttable
 
 
@@ -32,9 +34,9 @@ def autocorrelation(x):
     '''
     # This is pretty close, but not exactly np.correlate(x, x, mode='full') normalized.
     rho = np.zeros(len(x))
+    xbar = x.mean()
+    denom = sum((x-xbar)**2)
     for i in range(len(x)):
-        xbar = x.mean()
-        denom = sum((x-xbar)**2)
         rho[i] = sum((x[:len(x)-i] - xbar) * (x[i:] - xbar)) / denom
     return rho
 
@@ -82,8 +84,8 @@ def uncert_autocorrelated(x, conf=.95):
         r = np.nan
         nc = np.nan
 
-    result = namedtuple('AutoCorrUncert', ['uncert', 'r', 'r_unc', 'nc'])
-    return result(unc, r, np.sqrt(r), nc)
+    Result = namedtuple('AutoCorrUncert', ['uncert', 'r', 'r_unc', 'nc'])
+    return Result(unc, r, np.sqrt(r), nc)
 
 
 def _sigma_rhok(rho):
@@ -100,8 +102,17 @@ def _sigma_rhok(rho):
 
 
 class DataSet(object):
-    ''' Class for storing and statistics on measured data sets '''
-    # colnames can be string, numeric, or datetime
+    ''' Class for storing and statistics on measured data sets
+
+        Parameters
+        ----------
+        data: array
+            1D or 2D array of data
+        colnames: list of string, numeric, or datetime
+            Names for each column
+        name: string
+            Name for the dataset
+    '''
     def __init__(self, data=None, colnames=None, name='data'):
         self.name = name
         self.description = ''
@@ -127,7 +138,7 @@ class DataSet(object):
     @colnames.setter
     def colnames(self, value):
         ''' Set column names, and parse strings into float or date values if possible. '''
-        if all([hasattr(v, 'month') for v in value]):
+        if all(hasattr(v, 'month') for v in value):
             cols = value
             coltype = 'date'
             self._colnames = [v.strftime('%Y-%m-%d') for v in value]
@@ -175,7 +186,7 @@ class DataSet(object):
 
     def maxrows(self):
         ''' Return longest column length '''
-        return max([len(c) for c in self.data])
+        return max(len(c) for c in self.data)
 
     def histogram(self, colname=None, bins='auto'):
         ''' Get histogram of the column data '''
@@ -188,8 +199,8 @@ class DataSet(object):
         n = len(dat)
         stdev = np.nanstd(dat, ddof=1)
         sem = stdev / np.sqrt(n)
-        res = namedtuple('ColumnStats', ['name', 'mean', 'stdev', 'sem', 'N', 'df'])
-        return res(self._colname(colname), mean, stdev, sem, n, n-1)
+        Result = namedtuple('ColumnStats', ['name', 'mean', 'stdev', 'sem', 'N', 'df'])
+        return Result(self._colname(colname), mean, stdev, sem, n, n-1)
 
     def group_stats(self):
         ''' Get summary statistics for each column '''
@@ -198,8 +209,8 @@ class DataSet(object):
         groupmean = np.nanmean(self.data, axis=1)
         groupN = np.count_nonzero(np.isfinite(self.data), axis=1)
         groupsem = groupstd / np.sqrt(groupN)
-        res = namedtuple('GroupStats', ['name', 'mean', 'var', 'stdev', 'sem', 'N', 'df'])
-        return res(self.colnames, groupmean, groupvar, groupstd, groupsem, groupN, groupN - 1)
+        Result = namedtuple('GroupStats', ['name', 'mean', 'var', 'stdev', 'sem', 'N', 'df'])
+        return Result(self.colnames, groupmean, groupvar, groupstd, groupsem, groupN, groupN - 1)
 
     def pooled_stats(self):
         ''' Get summary statistics for all columns (pooled variance, etc.) '''
@@ -216,9 +227,9 @@ class DataSet(object):
         ntot = np.count_nonzero(np.isfinite(self.data))
         alldf = ntot - 1
 
-        res = namedtuple('PooledStats', ['mean', 'poolvar', 'poolstd', 'pooldf', 'reproducibility', 'reproducibilitydf',
+        Result = namedtuple('PooledStats', ['mean', 'poolvar', 'poolstd', 'pooldf', 'reproducibility', 'reproducibilitydf',
                                          'allvar', 'allstd', 'N', 'alldf'])
-        return res(grandmean, poolvar, poolstd, pooldf, reproducibility, reproducibility_df,
+        return Result(grandmean, poolvar, poolstd, pooldf, reproducibility, reproducibility_df,
                    allvar, allstd, ntot, alldf)
 
     def anova(self, conf=.95):
@@ -301,7 +312,7 @@ class DataSet(object):
         ''' Summarize the DataSet as an array with columns for x, y, and uy. '''
         gstats = self.group_stats()
         return DataSet(np.vstack((self._pcolnames, gstats.mean, gstats.stdev)), colnames=['x', 'y', 'u(y)'])
-    
+
     @classmethod
     def from_config(cls, config):
         ''' Create new DataSet from configuration dictionary '''
@@ -397,17 +408,13 @@ class DataSetSummary(DataSet):
     MAX_ROWS = 3
 
     def __init__(self, colnames=None, means=None, stds=None, nmeas=None, name='data'):
-        super(DataSetSummary, self).__init__(name=name)
+        super().__init__(name=name)
         self.colnames = colnames                   # Parse them in setter
         self._groupnames = self._pcolnames.copy()  # and make a copy of parsed names
         try:
             self.data = np.vstack((means, stds, nmeas)).T
         except ValueError:
             self.data = np.array([[]])
-
-    def _gnames(self):
-        ''' Get group names '''
-        return self._groupnames
 
     def _means(self):
         ''' Get mean of each group '''
@@ -422,19 +429,20 @@ class DataSetSummary(DataSet):
         return self.data[:, self.ROW_STD]
 
     def _nmeas(self):
-        ''' Get number of measurements in each group '''        
+        ''' Get number of measurements in each group '''
         if self.data.shape[1] == 0:
             return []
         return self.data[:, self.ROW_NMEAS]
 
     def maxrows(self):
+        ''' Get maximum number of rows in data table (always 3) '''
         return self.MAX_ROWS
 
     def stats(self, colname=None):
         ''' Get statistics for one column/group '''
         idx = self._colidx(colname)
-        res = namedtuple('ColumnStats', ['name', 'mean', 'stdev', 'sem', 'N', 'df'])
-        return res(self._colname(colname),
+        Result = namedtuple('ColumnStats', ['name', 'mean', 'stdev', 'sem', 'N', 'df'])
+        return Result(self._colname(colname),
                    self._means()[idx],
                    self._stds()[idx],
                    self._stds()[idx]/np.sqrt(self._nmeas()[idx]),
@@ -443,8 +451,8 @@ class DataSetSummary(DataSet):
 
     def group_stats(self):
         ''' Get statistics for all groups '''
-        res = namedtuple('GroupStats', ['name', 'mean', 'var', 'stdev', 'sem', 'N', 'df'])
-        return res(self.colnames,
+        Result = namedtuple('GroupStats', ['name', 'mean', 'var', 'stdev', 'sem', 'N', 'df'])
+        return Result(self.colnames,
                    self._means(),
                    self._stds()**2,
                    self._stds(),
@@ -454,7 +462,7 @@ class DataSetSummary(DataSet):
 
     def pooled_stats(self):
         ''' Get pooled statistics '''
-        res = namedtuple('PooledStats', ['mean', 'poolvar', 'poolstd', 'pooldf', 'reproducibility', 'reproducibilitydf',
+        Result = namedtuple('PooledStats', ['mean', 'poolvar', 'poolstd', 'pooldf', 'reproducibility', 'reproducibilitydf',
                                          'allvar', 'allstd', 'N', 'alldf'])
         nmeas = self._nmeas()
         means = self._means()
@@ -469,20 +477,20 @@ class DataSetSummary(DataSet):
         reproducibility_df = len(self.colnames) - 1
         ntot = sum(nmeas)
         alldf = ntot - 1
-        return res(grandmean,
-                   poolvar,
-                   poolstd,
-                   pooldf,
-                   reproducibility,
-                   reproducibility_df,
-                   None,
-                   None,
-                   ntot,
-                   alldf)
+        return Result(grandmean,
+                      poolvar,
+                      poolstd,
+                      pooldf,
+                      reproducibility,
+                      reproducibility_df,
+                      None,
+                      None,
+                      ntot,
+                      alldf)
 
     def get_config(self):
         ''' Get configuration dictionary '''
-        d = super(DataSetSummary, self).get_config()
+        d = super().get_config()
         d['groupnames'] = self._groupnames
         d['nmeas'] = self._nmeas()
         d['means'] = self._means()
@@ -543,10 +551,12 @@ class DataSetOutput(output.Output):
         rows = []
         names = self.dataset.colnames
         gstats = self.dataset.group_stats()
-        meanstrs = output.formatter.f_array(gstats.mean, **kwargs)
+        meanstrs = report.Number.number_array(gstats.mean, fmin=0)
         for g, gmean, gvar, gstd, gsem, df in zip(names, meanstrs, gstats.var, gstats.stdev, gstats.sem, gstats.df):
-            rows.append([format(g), gmean, output.formatter.f(gvar, **kwargs), output.formatter.f(gstd, **kwargs), output.formatter.f(gsem, **kwargs), format(df)])
-        rpt = output.md_table(rows, hdr=['Group', 'Mean', 'Variance', 'Std. Dev.', 'Std. Error', 'Deg. Freedom'], **kwargs)
+            rows.append([format(g), gmean, report.Number(gvar, fmin=0), report.Number(gstd, fmin=0), report.Number(gsem, fmin=0), format(df)])
+
+        rpt = report.Report(**kwargs)
+        rpt.table(rows, hdr=['Group', 'Mean', 'Variance', 'Std. Dev.', 'Std. Error', 'Deg. Freedom'])
         return rpt
 
     def report_all(self, **kwargs):
@@ -556,56 +566,66 @@ class DataSetOutput(output.Output):
     def report_column(self, colname=None, **kwargs):
         ''' Report statistics for one column '''
         st = self.dataset.stats(colname)
-        rows = [['Mean', output.formatter.f(st.mean, **kwargs)],
-                ['Standard Deviation', output.formatter.f(st.stdev, **kwargs)],
-                ['Std. Error of the Mean', output.formatter.f(st.sem, **kwargs)],
+        rows = [['Mean', report.Number(st.mean, fmin=0)],
+                ['Standard Deviation', report.Number(st.stdev, fmin=0)],
+                ['Std. Error of the Mean', report.Number(st.sem, fmin=0)],
                 ['Deg. Freedom', format(st.df, '.2f')]]
-        rpt = output.md_table(rows, hdr=['Parameter', 'Value'])
+        rpt = report.Report(**kwargs)
+        rpt.table(rows, hdr=['Parameter', 'Value'])
         return rpt
 
     def report_pooled(self, **kwargs):
         ''' Report pooled statistics and grand mean '''
         pstats = self.dataset.pooled_stats()
         rows = []
-        rows.append(['Grand Mean', output.formatter.f(pstats.mean, matchto=pstats.poolstd, fmin=0, **kwargs), '-'])
-        rows.append(['Pooled Standard Deviation (repeatability)', output.formatter.f(pstats.poolstd, **kwargs), output.formatter.f(pstats.pooldf, n=0)])
-        rows.append(['Reproducibility', output.formatter.f(pstats.reproducibility, **kwargs), output.formatter.f(pstats.reproducibilitydf, n=0)])
-        rows.append(['Standard Deviation of All Measurements', output.formatter.f(pstats.allstd, **kwargs), output.formatter.f(pstats.alldf, n=0)])
-        rpt = output.md_table(rows, hdr=['Statistic', 'Value', 'Degrees of Freedom'], **kwargs)
+        rows.append(['Grand Mean', report.Number(pstats.mean, matchto=pstats.poolstd, fmin=0), '-'])
+        rows.append(['Pooled Standard Deviation (repeatability)', report.Number(pstats.poolstd), report.Number(pstats.pooldf, fmin=0)])
+        rows.append(['Reproducibility', report.Number(pstats.reproducibility), report.Number(pstats.reproducibilitydf, fmin=0)])
+        rows.append(['Standard Deviation of All Measurements', report.Number(pstats.allstd), report.Number(pstats.alldf, fmin=0)])
+        rpt = report.Report(**kwargs)
+        rpt.table(rows, hdr=['Statistic', 'Value', 'Degrees of Freedom'])
         return rpt
 
     def report_anova(self, **kwargs):
         ''' Report analysis of variance '''
         aresult = self.dataset.anova()
         hdr = ['Source', 'SS', 'MS', 'F', 'F crit (95%)', 'p-value']
-        rows = [['Between Groups', format(aresult.SSbet, '.5g'), format(aresult.MSbet, '.5g'), format(aresult.F, '.5g'), format(aresult.Fcrit, '.5g'), format(aresult.P, '.5g')],
-                ['Within Groups', format(aresult.SSwit, '.5g'), format(aresult.MSwit, '.5g'), '-', '-', '-'],
-                ['Total', format(aresult.SSbet+aresult.SSwit, '.5g'), '-', '-', '-', '-']]
-        rpt = output.md_table(rows, hdr=hdr, **kwargs) + '\n\n'
-        rpt += output.md_table([['F < Fcrit?', format(aresult.F < aresult.Fcrit)], ['p > 0.05?', format(aresult.P > 0.05)]],
-                               hdr=['Test', 'Statistically equivalent (95%)?'])
+        rows = [['Between Groups', report.Number(aresult.SSbet), report.Number(aresult.MSbet),
+                report.Number(aresult.F, fmt='decimal'), report.Number(aresult.Fcrit, fmt='decimal'),
+                report.Number(aresult.P, fmt='decimal')],
+                ['Within Groups', report.Number(aresult.SSwit), report.Number(aresult.MSwit), '-', '-', '-'],
+                ['Total', report.Number(aresult.SSbet+aresult.SSwit), '-', '-', '-', '-']]
+        rpt = report.Report(**kwargs)
+        rpt.table(rows, hdr=hdr)
+        rpt.table([['F < Fcrit?', format(aresult.F < aresult.Fcrit)], ['p > 0.05?', format(aresult.P > 0.05)]],
+                  hdr=['Test', 'Statistically equivalent (95%)?'])
         return rpt
 
     def report_correlation(self, **kwargs):
         ''' Report correlation coefficients between columns '''
+        rpt = report.Report(**kwargs)
         if len(self.dataset.colnames) < 2:
-            return output.MDstring('Add columns to compute correlation.')
+            rpt.txt('Add columns to compute correlation.')
+            return rpt
 
         corr = self.dataset.correlation()
         names = self.dataset.colnames
         rows = []
         for name, corrow in zip(names, corr):
-            rows.append([name] + [format(f, '.2f') for f in corrow])
-        return output.md_table(rows, hdr=['-'] + names)
+            rows.append([name] + [report.Number(f) for f in corrow])
+        rpt.table(rows, hdr=['-'] + names)
+        return rpt
 
     def report_autocorrelation(self, colname=None, **kwargs):
         ''' Report of autocorrelation for one column '''
         acor = self.dataset.autocorrelation_uncert(colname=colname)
-        rows = [['r (variance)', format(acor.r, '.2f')],
-                ['r (uncertainty)', format(acor.r_unc, '.2f')],
+        rows = [['r (variance)', report.Number(acor.r, fmin=0)],
+                ['r (uncertainty)', report.Number(acor.r_unc, fmin=0)],
                 ['nc', str(acor.nc)],
-                ['uncertainty', output.formatter.f(acor.uncert, **kwargs)]]
-        return output.md_table(rows, hdr=['Parameter', 'Value'])
+                ['uncertainty', report.Number(acor.uncert)]]
+        rpt = report.Report(**kwargs)
+        rpt.table(rows, hdr=['Parameter', 'Value'])
+        return rpt
 
     def plot_groups(self, plot=None):
         ''' Plot each group with errorbars.
@@ -616,12 +636,12 @@ class DataSetOutput(output.Output):
                 Either matplotlib figure or axis object. If omitted,
                 new figure will be created.
         '''
-        fig, ax = output.initplot(plot)
-
+        fig, ax = plotting.initplot(plot)
         summary = self.dataset.summarize()
         gstats = summary.group_stats()
         x = summary._groupnames
         y = gstats.mean
+        if len(x) != len(y): return  # Nothing to plot
         uy = gstats.stdev
 
         ax.errorbar(x, y, yerr=uy, marker='o', ls='', capsize=4)
@@ -652,11 +672,11 @@ class DataSetOutput(output.Output):
             coverage: array
                 List of coverage probabilities to plot as vertical lines
         '''
-        fig, ax = output.initplot(plot)
+        fig, ax = plotting.initplot(plot)
         data = self.dataset.get_column(colname)
         if colname is None and len(self.dataset.colnames) > 0:
             colname = self.dataset.colnames[0]
-        output.fitdist(data, fit, plot=fig, qqplot=qqplot, bins=bins, points=points, coverage=coverage, xlabel=colname)
+        plotting.fitdist(data, fit, plot=fig, qqplot=qqplot, bins=bins, points=points, coverage=coverage, xlabel=colname)
 
     def plot_autocorrelation(self, colname=None, plot=None, nmax=None, conf=.95):
         ''' Plot autocorrelation vs lag for one column
@@ -672,7 +692,7 @@ class DataSetOutput(output.Output):
             conf: float
                 Confidence level (0-1) for confidence bands
         '''
-        fig, ax = output.initplot(plot)
+        fig, ax = plotting.initplot(plot)
 
         x = self.dataset.get_column(colname)
         rho = self.dataset.autocorrelation(colname)
@@ -702,7 +722,7 @@ class DataSetOutput(output.Output):
             lag: int
                 Lag value to plot
         '''
-        fig, ax = output.initplot(plot)
+        fig, ax = plotting.initplot(plot)
         x = self.dataset.get_column(colname)
         ax.plot(x[lag:], x[:len(x)-lag], ls='', marker='o')
 
@@ -718,7 +738,7 @@ class DataSetOutput(output.Output):
             plot: object
                 Figure or axis to plot on
         '''
-        fig, ax = output.initplot(plot)
+        fig, ax = plotting.initplot(plot)
         x = self.dataset.get_column(col1)
         y = self.dataset.get_column(col2)
         ax.scatter(x, y, marker='.')
