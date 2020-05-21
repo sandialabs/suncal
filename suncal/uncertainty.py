@@ -995,8 +995,8 @@ class InputFunc(object):
                     # Call might have failed if basefunc is not vectorizable. Use numpy vectorize
                     # to broadcast over array and try again.
                     ustd = uparser.callf(np.vectorize(basefunc), x).std()
-                sens.append((ustd/v.stdunc()).to_reduced_units())   # to_reduced_units() will take care of prefix multipliers and dimensionless values
-                props.append((ustd/stdY).to_reduced_units().magnitude**2 * 100)
+                sens.append((ustd/v.stdunc()).to_base_units().to_reduced_units())   # to_reduced_units() will take care of prefix multipliers and dimensionless values
+                props.append((ustd/stdY).to_base_units().to_reduced_units().magnitude**2 * 100)
 
         params = {'mean': meanY,
                   'expected': self.mean(),   # expected/measured value may not match mean or median of MC distribution

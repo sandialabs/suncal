@@ -14,5 +14,5 @@ dependencies:
     - pip:
         - pyqt5==5.12.2
         - PyInstaller==3.5  # Conda-pyinstaller dont seem to work
-        - pint==0.9
+        - pint==0.11
 #       - pandoc-fignos     # Used for building user manual via pandoc

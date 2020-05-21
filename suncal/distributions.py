@@ -377,10 +377,10 @@ class DPoisson(Distribution):
         ''' Update the keywords for the distribution. '''
         self.kwds.update(kwds)
         v = self.kwds.get('v', 1)
-        self.distargs = {'loc': v, 'mu': v}
+        self.distargs = {'loc': -v, 'mu': v}  # Since Median value will be applied later, shift loc to -v to compensate.
 
     def helpstr(self):
-        return 'Poisson discrete distribution with variance v. In general, mean should equal variance.'
+        return 'Poisson discrete distribution with variance v. In general, measured value should equal variance.'
 
 
 class DBinom(Distribution):

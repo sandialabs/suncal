@@ -1,5 +1,12 @@
 # Change History
 
+## Version 1.3.5
+
+- Finished flattened uncertainty entry user interface
+- Fixed error in computing Poisson distribution mean for Monte Carlo calculation
+- Fix a possible unit conversion error
+
+
 ## Version 1.3.4
 
 - Improved output reporting system. Adds right-click option to output reports for changing significant figures and number formats.

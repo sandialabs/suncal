@@ -18,6 +18,7 @@ ROLE_ORIGDATA = QtCore.Qt.UserRole + 1    # Original, user-entered data
 ROLE_HISTDATA = ROLE_ORIGDATA + 1         # Data for histogram distribution (tuple of (hist, edges))
 ROLE_VARIABLE = ROLE_ORIGDATA + 2         # InputVar object for this row
 ROLE_UNCERT = ROLE_ORIGDATA + 3           # InputUncert object for this row
+ROLE_TOPITEM = ROLE_ORIGDATA + 4          # Top row of Uncertainty item in the table
 
 
 def centerWindow(window, w, h):
@@ -29,37 +30,110 @@ def centerWindow(window, w, h):
     if h >= desktopsize.height() or w >= desktopsize.width():
         window.showMaximized()
 
+
+class TreeButton(QtWidgets.QToolButton):
+    ''' Round button for use in a tree widget '''
+    # CSS stylesheet for nice round buttons
+    buttonstyle = '''QToolButton {border: 1px solid #8f8f91; border-radius: 8px;
+                     background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1, stop: 0 #f6f7fa, stop: 1 #dadbde);}
+
+                     QToolButton:pressed {border: 2px solid #8f8f91; border-radius: 8px; border-width: 2px;
+                     background-color: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1, stop: 0 #dadbde, stop: 1 #f6f7fa);}
+
+                     QToolButton:checked {border: 2px solid #8f8f91; border-radius: 8px; border-width: 1px;
+                     background-color: qlineargradient(x1: 0, y1: 1, x2: 0, y2: 0, stop: 0 #dadbde, stop: 1 #7c7c7c);}
+                     '''
+
+    def __init__(self, text):
+        super(TreeButton, self).__init__(text=text)
+        self.setStyleSheet(self.buttonstyle)
+        self.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
+        self.setFixedSize(18, 18)
+
+
+class PlusMinusButton(QtWidgets.QWidget):
+    plusclicked = QtCore.pyqtSignal()
+    minusclicked = QtCore.pyqtSignal()
+
+    ''' Widget containing plus/minus buttons '''
+    def __init__(self, label='', parent=None):
+        super().__init__(parent)
+        self.btnplus = TreeButton('+')
+        self.btnminus = TreeButton(gui_common.CHR_ENDASH)
+        layout = QtWidgets.QHBoxLayout()
+        self.label = QtWidgets.QLabel(label)
+        font = QtGui.QFont('Arial', 14)
+        self.label.setFont(font)
+        layout.addWidget(self.label)
+        layout.addWidget(self.btnplus)
+        layout.addWidget(self.btnminus)
+        layout.addStretch()
+        layout.setContentsMargins(0, 0, 0, 0)
+        self.setLayout(layout)
+        self.btnplus.clicked.connect(self.plusclicked)
+        self.btnminus.clicked.connect(self.minusclicked)
+
+
 class WidgetPanel(QtWidgets.QTreeWidget):
     ''' Tree widget for expanding/collapsing other widgets '''
     def __init__(self, parent=None):
         super().__init__(parent=parent)
         self.setHeaderHidden(True)
         self.setColumnCount(1)
+        self.itemExpanded.connect(self.wasexpanded)
+        self.itemCollapsed.connect(self.wasexpanded)
 
-    def add_widget(self, name, widget):
+    def add_widget(self, name, widget, buttons=False):
         ''' Add a widget to the tree at the end '''
         idx = self.invisibleRootItem().childCount()
-        self.insert_widget(name, widget, idx)
+        return self.insert_widget(name, widget, idx, buttons=buttons)
 
     def expand(self, name):
         ''' Expand the widget with the given name '''
         item = self.findItems(name, QtCore.Qt.MatchExactly, 0)
         with suppress(IndexError):
             self.expandItem(item[0])
+            self.wasexpanded(item[0])
 
-    def insert_widget(self, name, widget, idx):
+        root = self.invisibleRootItem()
+        for i in range(root.childCount()):
+            item = root.child(i)
+            if self.itemWidget(item, 0) and self.itemWidget(item, 0).label.text() == name:
+                self.expandItem(item)
+                self.wasexpanded(item)
+                break
+
+    def insert_widget(self, name, widget, idx, buttons=False):
         ''' Insert a widget into the tree '''
-        item = QtWidgets.QTreeWidgetItem([name])
+        item = QtWidgets.QTreeWidgetItem()
         item.setFlags(QtCore.Qt.ItemIsEnabled)  # Enable, but not selectable/editable
         self.insertTopLevelItem(idx, item)
+        if buttons:
+            bwidget = PlusMinusButton(name)
+            bwidget.btnplus.setVisible(False)
+            bwidget.btnminus.setVisible(False)
+            self.setItemWidget(item, 0, bwidget)
+        else:
+            bwidget = None
+            item.setText(0, name)
+
         witem = QtWidgets.QTreeWidgetItem()
         witem.setFlags(QtCore.Qt.ItemIsEnabled)
         item.addChild(witem)
         self.setItemWidget(witem, 0, widget)
+        return item, bwidget
 
     def fixSize(self):
         ''' Adjust the size of tree rows to fit the widget sizes '''
         self.scheduleDelayedItemsLayout()
+
+    def wasexpanded(self, item):
+        ''' Show/hide buttons when item is expanded '''
+        buttons = self.itemWidget(item, 0)
+        if buttons:
+            with suppress(AttributeError):
+                buttons.btnplus.setVisible(item.isExpanded())
+                buttons.btnminus.setVisible(item.isExpanded())
 
 
 class ReadOnlyTableItem(QtWidgets.QTableWidgetItem):
@@ -108,11 +182,14 @@ class LatexDelegate(QtWidgets.QStyledItemDelegate):
     def setModelData(self, editor, model, index):
         ''' Save user-entered text to restore in edit mode later '''
         model.blockSignals(True)  # Only signal on one setData
-        model.setData(index, editor.text(), ROLE_ORIGDATA)    # Save for later
-        px = QtGui.QPixmap()
-        px.loadFromData(report.Math(editor.text()).svg_buf().read())
+        olddata = index.model().data(index, ROLE_ORIGDATA)
+        if editor.text() != olddata:  # Don't refresh unless necessary
+            model.setData(index, editor.text(), ROLE_ORIGDATA)    # Save for later
+            px = QtGui.QPixmap()
+            px.loadFromData(report.Math(editor.text()).svg_buf().read())
+            model.blockSignals(False)
+            model.setData(index, px, QtCore.Qt.DecorationRole)
         model.blockSignals(False)
-        model.setData(index, px, QtCore.Qt.DecorationRole)
 
 
 class EditableHeaderView(QtWidgets.QHeaderView):

@@ -1,6 +1,6 @@
 ---
 title: Sandia Primary Standards Laboratory Uncertainty Calculator User's Guide
-date: April 17, 2020
+date: May 19, 2020
 author:
 - Sandia National Laboratories^[Sandia National Laboratories is a multimission laboratory managed and operated by National Technology and Engineering Solutions of Sandia, LLC., a wholly owned subsidiary of Honeywell International, Inc., for the U.S. Department of Energy’s National Nuclear Security Administration under contract DE-NA-0003525.]
 - uncertainty@sandia.gov
@@ -115,19 +115,20 @@ Along with constants "e" and "pi", several common functions are also recognized:
 Most Greek symbols are recognized by typing their names in English: "theta," "delta," etc. and will be displayed as symbols.
 After entering an expression, the field should render the expression as a math formula.
 If the field turns red, there was an error parsing the expression, which could mean a missing parenthesis, unrecognized function, or other error.
-Additional functions can be entered and calculated in parallel using the right-click menu to add or remove model equations.
+Additional functions can be entered and calculated in parallel using the plus (+) button or right-click menu to add or remove measurement functions.
 These equations may be chained together, for example "f = a + b", and "g = 2*f".
 
 Once a function is entered, the **Uncertainties** table is filled in with the variable names extracted from the measurement model equations.
 In this table, the nominal measured value, measurement units, and a description of each variable can be entered, along with one or more uncertainty components for each measurement variable.
-If a variable has more than one uncertainty component (e.g. a type A and type B component), right-click on the variable and select **Add uncertainty component.**
+If a variable has more than one uncertainty component (e.g. a type A and type B component), click the plus (+) button on the right side of the table or right-click on the variable and select **Add uncertainty component.**
 When multiple components are present, the standard uncertainty of each component is root-sum-squared together to obtain a standard uncertainty for the variable used by the GUM equation, and the degrees of freedom are combined using the W-S formula.
 The Monte Carlo method will separately sample each component before combining.
 
 ![Uncertainties table](figs/measuredqty.png){#fig:measuredqty}
 
-The four **Param** columns change depending on what distribution is selected.
-Normal and t distributions have columns for entering uncertainty with a k value and a confidence percentage. Entering one value will recompute the other based on the entered degrees of freedom.
+The items in the **Value** column change depending on what distribution is selected.
+Normal and t distributions have values for entering uncertainty with a k value and a confidence percentage.
+Entering one value will recompute the other based on the entered degrees of freedom.
 Uniform distributions can be entered by using the half-width "a" parameter.
 For more information on what the parameters for each distribution are, right-click the uncertainty row and select **Distribution Help**.
 The most common distributions are shown in the drop-down list box, but many others can be enabled in the **Preferences** menu.
@@ -151,7 +152,7 @@ as 1% reading + 5% range, when operating on the 100 V range, enter "1% + 5%range
 
 If the input variables are correlated, these can be entered on the **Correlations** section (see {*@fig:correlation}).
 Correlation coefficients are entered one pair at a time, and must be a value between -1 and +1.
-Right-click the table to add or remove correlation coefficients.
+Use the plus (+) button or right-click the table to add or remove correlation coefficients.
 
 ![Correlation coefficient entry table](figs/correlations.png){#fig:correlation}
 

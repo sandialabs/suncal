@@ -10,7 +10,7 @@ dependencies:
     - setuptools==44.0
     - pyyaml==5.1
     - markdown==3.1
-    - pint==0.9
+    - pint==0.11
     - pip==19.1.1
     - pip:
         - pyqt5==5.12.2     # Conda-installed pyqt is broken in pyinstaller 3.4. Install it with pip.

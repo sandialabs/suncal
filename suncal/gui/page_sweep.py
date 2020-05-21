@@ -442,7 +442,9 @@ class UncertSweepWidget(page_uncertprop.UncertPropWidget):
         self.pgoutputsweep.back.connect(self.backbutton)
         self.stack.removeWidget(self.pgoutput)
         self.stack.addWidget(self.pgoutputsweep)
-        self.pginput.panel.insert_widget('Sweep', self.sweepsetup, 4)
+        _, buttons = self.pginput.panel.insert_widget('Sweep', self.sweepsetup, 4, buttons=True)
+        buttons.plusclicked.connect(self.sweepsetup.addcol)
+        buttons.minusclicked.connect(self.sweepsetup.remcol)
         self.pginput.panel.expand('Sweep')
 
     def funcchanged(self, row, fdict):
@@ -472,6 +474,10 @@ class UncertSweepWidget(page_uncertprop.UncertPropWidget):
 
         elif len(self.uncSweep.sweeplist) < 1:
             QtWidgets.QMessageBox.warning(self, 'Uncertainty Calculator', 'Please define at least one sweep in the Sweep tab.')
+            valid = False
+
+        elif len(set([len(s.get('values', [])) for s in self.uncSweep.sweeplist])) > 1:
+            QtWidgets.QMessageBox.warning(self, 'Uncertainty Calculator', 'All sweep columns must be the same length.')
             valid = False
 
         if not valid:
@@ -523,8 +529,10 @@ class UncertReverseSweepWidget(page_uncertprop.UncertPropWidget):
         self.pgoutputrevsweep.back.connect(self.backbutton)
         self.stack.removeWidget(self.pgoutput)
         self.stack.addWidget(self.pgoutputrevsweep)
-        self.pginput.panel.insert_widget('Sweep', self.sweepsetup, 4)
+        _, buttons = self.pginput.panel.insert_widget('Sweep', self.sweepsetup, 4, buttons=True)
         self.pginput.panel.insert_widget('Reverse Target Value', self.targetsetup, 4)
+        buttons.plusclicked.connect(self.sweepsetup.addcol)
+        buttons.minusclicked.connect(self.sweepsetup.remcol)
 
     def funcchanged(self, row, fdict):
         ''' Function has changed '''
@@ -546,6 +554,7 @@ class UncertReverseSweepWidget(page_uncertprop.UncertPropWidget):
     def calculate(self):
         ''' Run the calculation '''
         valid = True
+
         if not self.pginput.isValid():
             QtWidgets.QMessageBox.warning(self, 'Uncertainty Calculator', 'Invalid Input Parameter!')
             valid = False
@@ -560,6 +569,10 @@ class UncertReverseSweepWidget(page_uncertprop.UncertPropWidget):
 
         elif len(self.uncRevSwp.sweeplist) < 1:
             QtWidgets.QMessageBox.warning(self, 'Uncertainty Calculator', 'Please define at least one sweep in the Sweep tab.')
+            valid = False
+
+        elif len(set([len(s.get('values', [])) for s in self.uncRevSwp.sweeplist])) > 1:
+            QtWidgets.QMessageBox.warning(self, 'Uncertainty Calculator', 'All sweep columns must be the same length.')
             valid = False
 
         if not valid:
