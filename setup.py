@@ -4,12 +4,19 @@ version = {}
 with open('suncal/version.py', 'r') as f:
     exec(f.read(), version)
 
+with open('README.md', 'r') as f:
+    long_description = f.read()
+
 setup(
     name='suncal',
     version=version['__version__'],
     description='Sandia PSL Uncertainty Calculator',
+    long_description=long_description,
+    long_description_content_type='text/markdown',
     author='Collin J. Delker',
     author_email='uncertainty@sandia.gov',
+    url='https://sandiapsl.github.io',
+    project_urls={'Source': 'https://github.com/SandiaPSL/UncertaintyCalc'},
     python_requires='>=3.5',
     install_requires=[
         'pyqt5',
