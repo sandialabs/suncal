@@ -54,7 +54,7 @@ def from_config(config):
 def get_distargs(dist):
     ''' Get dictionary of arguments defining this Distribution instance. '''
     try:
-        return dist.get_distargs()  # Instance of Distribution class
+        return dist.get_distargs().copy()  # Instance of Distribution class
     except AttributeError:
         # stats.rv_ class
         kwds = dist.kwds.copy()

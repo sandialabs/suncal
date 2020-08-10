@@ -21,8 +21,8 @@ class DoubleLineEdit(QtWidgets.QWidget):
         super().__init__()
         self.line1 = QtWidgets.QLineEdit(str(value1))
         self.line2 = QtWidgets.QLineEdit(str(value2))
-        self.line1.setValidator(QtGui.QDoubleValidator(-1E99, 1E99, 15))
-        self.line2.setValidator(QtGui.QDoubleValidator(-1E99, 1E99, 15))
+        self.line1.setValidator(gui_common.InfValidator())
+        self.line2.setValidator(gui_common.InfValidator())
         layout = QtWidgets.QFormLayout()
         layout.addRow(label1, self.line1)
         layout.addRow(label2, self.line2)
@@ -37,8 +37,8 @@ class DoubleLineEdit(QtWidgets.QWidget):
 
     def setValue(self, value1, value2):
         ''' Set value of both lines '''
-        self.line1.setText(str(value1))
-        self.line2.setText(str(value2))
+        self.line1.setText(format(value1, '.5g'))
+        self.line2.setText(format(value2, '.5g'))
 
 
 class SimpleRiskWidget(QtWidgets.QWidget):
@@ -76,7 +76,7 @@ class SimpleRiskWidget(QtWidgets.QWidget):
         hlayout = QtWidgets.QHBoxLayout()
         hlayout.addWidget(self.itp)
         layout.addRow('In-tolerance probability:', hlayout)
-        layout.addRow('Guard band factor:', self.gbfactor)
+        layout.addRow('Guardband factor:', self.gbfactor)
         layout.addRow('Test Measurement:', self.measured)
         self.setLayout(layout)
 
@@ -99,30 +99,38 @@ class SimpleRiskWidget(QtWidgets.QWidget):
 
 
 class GuardBandFinderWidget(QtWidgets.QDialog):
-    ''' Widget providing options for calculating a guard band '''
+    ''' Widget providing options for calculating a guardband '''
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle('Calculate Guard Band')
+        self.setWindowTitle('Calculate Guardband')
         self.pfa = QtWidgets.QRadioButton('Target PFA %')
         self.pfaval = QtWidgets.QDoubleSpinBox()
         self.pfaval.setValue(0.8)  # in percent
         self.pfaval.setRange(.01, 99.99)
         self.pfaval.setDecimals(2)
         self.pfaval.setSingleStep(0.1)
-        self.dobbert = QtWidgets.QRadioButton('Dobbert Managed PFA')
+        self.dobbert = QtWidgets.QRadioButton('Dobbert Managed 2% PFA')
         self.rss = QtWidgets.QRadioButton('RSS')
         self.rp10 = QtWidgets.QRadioButton('NCSL RP10')
         self.test = QtWidgets.QRadioButton('95% Test Uncertainty')
         self.fourtoone = QtWidgets.QRadioButton('Same as 4:1')
         self.mincost = QtWidgets.QRadioButton('Minimum Cost')
         self.minimax = QtWidgets.QRadioButton('Minimax Cost')
+        self.maxspecific = QtWidgets.QRadioButton('Minimum Prob. Conformance')
+        self.spval = QtWidgets.QDoubleSpinBox()
+        self.spval.setValue(90)  # in percent
+        self.spval.setRange(.01, 99.99)
+        self.spval.setDecimals(2)
+        self.spval.setSingleStep(0.1)
         self.buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel)
         self.pfa.setChecked(True)
         self.buttons.accepted.connect(self.accept)
         self.buttons.rejected.connect(self.reject)
+        self.pfaval.valueChanged.connect(lambda x: self.pfa.setChecked(True))
+        self.spval.valueChanged.connect(lambda x: self.maxspecific.setChecked(True))
 
         layout = QtWidgets.QGridLayout()
-        layout.addWidget(QtWidgets.QLabel('Select Guard Band Method'), 0, 0, 1, 2)
+        layout.addWidget(QtWidgets.QLabel('Select Guardband Method'), 0, 0, 1, 2)
         layout.addWidget(self.pfa, 1, 0)
         layout.addWidget(self.pfaval, 1, 1)
         layout.addWidget(self.dobbert, 2, 0)
@@ -136,6 +144,8 @@ class GuardBandFinderWidget(QtWidgets.QDialog):
         layout.addWidget(self.fourtoone, 6, 0)
         layout.addWidget(self.mincost, 7, 0)
         layout.addWidget(self.minimax, 8, 0)
+        layout.addWidget(self.maxspecific, 9, 0)
+        layout.addWidget(self.spval, 9, 1)
 
         mainlayout = QtWidgets.QVBoxLayout()
         mainlayout.addLayout(layout)
@@ -143,7 +153,7 @@ class GuardBandFinderWidget(QtWidgets.QDialog):
         self.setLayout(mainlayout)
 
     def get_method(self):
-        ''' Get selected guard band method, as dictionary of arguments for risk.get_guardband() '''
+        ''' Get selected guardband method, as dictionary of arguments for risk.get_guardband() '''
         kargs = {}
         if self.pfa.isChecked():
             kargs['method'] = 'pfa'
@@ -162,12 +172,15 @@ class GuardBandFinderWidget(QtWidgets.QDialog):
             kargs['method'] = 'mincost'
         elif self.minimax.isChecked():
             kargs['method'] = 'minimax'
+        elif self.maxspecific.isChecked():
+            kargs['method'] = 'specific'
+            kargs['pfa'] = 1 - self.spval.value() / 100
         return kargs
 
 
 class CostEntryWidget(QtWidgets.QDialog):
     ''' Widget for entering cost of FA and FR '''
-    def __init__(self, parent=None):
+    def __init__(self, costFA=None, costFR=None, parent=None):
         super().__init__(parent)
         self.setWindowTitle('Expected costs')
         self.costfa = QtWidgets.QDoubleSpinBox()
@@ -186,6 +199,10 @@ class CostEntryWidget(QtWidgets.QDialog):
         layout.addLayout(flayout)
         layout.addWidget(self.buttons)
         self.setLayout(layout)
+        if costFA is not None:
+            self.costfa.setValue(costFA)
+        if costFR is not None:
+            self.costfr.setValue(costFR)
 
     def getCost(self):
         return self.costfa.value(), self.costfr.value()
@@ -201,15 +218,15 @@ class RiskWidget(QtWidgets.QWidget):
         self.plotlines = {}  # Saved lines in plot
         self.mode = QtWidgets.QComboBox()
         self.mode.addItems(['Simple', 'Full'])
-        self.montecarlo = QtWidgets.QComboBox()
-        self.montecarlo.addItems(['Integral', 'Monte-Carlo'])
+        self.calctype = QtWidgets.QComboBox()
+        self.calctype.addItems(['Integral', 'Monte Carlo', 'Guardband sweep', 'Probability of Conformance'])
 
         self.simple = SimpleRiskWidget()
         self.limits = DoubleLineEdit(-2, 2, 'Lower Specification Limit:', 'Upper Specification Limit:')
         self.chkProc = QtWidgets.QCheckBox('Process Distribution:')
         self.chkTest = QtWidgets.QCheckBox('Test Measurement:')
-        self.guardband = DoubleLineEdit(0, 0, 'Lower Guard Band (relative):', 'Upper Guard Band (relative):')
-        self.chkGB = QtWidgets.QCheckBox('Guard Band')
+        self.guardband = DoubleLineEdit(0, 0, 'Lower Guardband (relative):', 'Upper Guardband (relative):')
+        self.chkGB = QtWidgets.QCheckBox('Guardband')
 
         self.limits.setVisible(False)
         self.chkProc.setVisible(False)
@@ -283,7 +300,7 @@ class RiskWidget(QtWidgets.QWidget):
         vlayout = QtWidgets.QVBoxLayout()
         flayout = QtWidgets.QFormLayout()
         flayout.addRow('Mode:', self.mode)
-        flayout.addRow('Calculation:', self.montecarlo)
+        flayout.addRow('Calculation:', self.calctype)
         vlayout.addLayout(flayout)
         vlayout.addWidget(self.simple)
         vlayout.addWidget(self.limits)
@@ -313,22 +330,19 @@ class RiskWidget(QtWidgets.QWidget):
         self.limits.editingFinished.connect(self.replot_and_update)
         self.guardband.editingFinished.connect(self.replot_and_update)
         self.txtNotes.textChanged.connect(self.update_description)
-        self.montecarlo.currentIndexChanged.connect(self.changecalc)
+        self.calctype.currentIndexChanged.connect(self.changecalc)
 
         self.menu = QtWidgets.QMenu('Risk')
         self.actImportDist = QtWidgets.QAction('Import distribution...', self)
         self.actCalcGB = QtWidgets.QAction('Calculate guardband...', self)
-        self.actCost = QtWidgets.QAction('Set expected costs...', self)
         self.actSaveReport = QtWidgets.QAction('Save Report...', self)
         self.menu.addAction(self.actImportDist)
         self.menu.addSeparator()
         self.menu.addAction(self.actCalcGB)
-        self.menu.addAction(self.actCost)
         self.menu.addSeparator()
         self.menu.addAction(self.actSaveReport)
         self.actImportDist.triggered.connect(self.importdist)
         self.actCalcGB.triggered.connect(self.calc_guardband)
-        self.actCost.triggered.connect(self.set_costs)
         self.actSaveReport.triggered.connect(self.save_report)
         self.initplot()
         self.changemode()  # Show/hide controls
@@ -396,16 +410,31 @@ class RiskWidget(QtWidgets.QWidget):
             self.replot_and_update()
 
     def changecalc(self):
-        ''' Change calculation mode (integration vs monte carlo) '''
+        ''' Change calculation mode (integration vs monte carlo vs gbsweep) '''
         self.block(True)
-        if self.montecarlo.currentText() == 'Monte-Carlo':
+        if self.calctype.currentText() == 'Monte Carlo':
             self.chkProc.setChecked(True)
             self.chkTest.setChecked(True)
             self.chkProc.setEnabled(False)
             self.chkTest.setEnabled(False)
+            self.guardband.setEnabled(True)
+            self.chkGB.setEnabled(True)
+            self.simple.gbfactor.setEnabled(True)
+            self.simple.measured.setVisible(False)
+        elif self.calctype.currentText() == 'Guardband sweep':
+            self.chkTest.setEnabled(True)
+            self.chkProc.setEnabled(True)
+            self.guardband.setEnabled(False)
+            self.chkGB.setEnabled(False)
+            self.simple.gbfactor.setEnabled(False)
+            self.simple.measured.setVisible(False)
         else:
             self.chkTest.setEnabled(True)
             self.chkProc.setEnabled(True)
+            self.guardband.setEnabled(True)
+            self.chkGB.setEnabled(True)
+            self.simple.gbfactor.setEnabled(True)
+            self.simple.measured.setVisible(True)
             self.testprocclick()
         self.block(False)
         self.initplot()
@@ -413,6 +442,7 @@ class RiskWidget(QtWidgets.QWidget):
 
     def replot_and_update(self):
         ''' Replot and update the text fields '''
+        self.block(True)
         if self.mode.currentText() == 'Simple':
             if ((self.simple.get_gbf() != 1.0 and self.urisk.get_gbf() == 1.0) or
                 (self.simple.get_gbf() == 1.0 and self.urisk.get_gbf() != 1.0)):
@@ -433,20 +463,24 @@ class RiskWidget(QtWidgets.QWidget):
                 self.urisk.set_guardband(0, 0)
             self.urisk.set_speclimits(*self.limits.getValue())
 
-        if self.montecarlo.currentText() == 'Monte-Carlo':
+        if self.calctype.currentText() == 'Monte Carlo':
             self.replot_mc()
+        elif self.calctype.currentText() == 'Guardband sweep':
+            self.replot_gbsweep()
+        elif self.calctype.currentText() == 'Probability of Conformance':
+            self.replot_probconform()
         else:
             self.update_range()
             self.replot()
             self.update_report()
+        self.block(False)
 
     def initplot(self):
         ''' (Re)initialize the plot when the mode or options change '''
         self.fig.clf()
         self.axes = []  # List of axes (1, 2, or 3)
         self.plotlines = {}
-        if self.montecarlo.currentText() == 'Monte-Carlo':
-            # Set up monte carlo plot
+        if self.calctype.currentText() in ['Monte Carlo', 'Guardband sweep']:
             pass
 
         else:
@@ -454,6 +488,8 @@ class RiskWidget(QtWidgets.QWidget):
             nrows = self.chkTest.isChecked() + self.chkProc.isChecked()
             plotnum = 0
             LL, UL = self.limits.getValue()
+            LL = np.nan if not np.isfinite(LL) else LL
+            UL = np.nan if not np.isfinite(UL) else UL
             GBL, GBU = self.guardband.getValue()
             if self.chkProc.isChecked():
                 ax = self.fig.add_subplot(nrows, 1, plotnum+1)
@@ -477,7 +513,7 @@ class RiskWidget(QtWidgets.QWidget):
                 self.plotlines['LL2'] = ax.axvline(LL, ls='--', color='C2', label='Specification Limits')
                 self.plotlines['UL2'] = ax.axvline(UL, ls='--', color='C2')
                 if self.chkGB.isChecked():
-                    self.plotlines['GBL'] = ax.axvline(LL + GBL, ls='-.', color='C3', label='Guard Band Limit')
+                    self.plotlines['GBL'] = ax.axvline(LL + GBL, ls='-.', color='C3', label='Guardband Limit')
                     self.plotlines['GBU'] = ax.axvline(UL - GBU, ls='-.', color='C3')
                 ax.set_ylabel('Probability Density')
                 ax.set_xlabel('Value')
@@ -488,6 +524,8 @@ class RiskWidget(QtWidgets.QWidget):
         # Note GUI is not using urisk.output.plot_dists() so that it can work interactively without replotting full figure.
         LL, UL = self.urisk.get_speclimits()
         LL, UL = min(LL, UL), max(LL, UL)
+        LLplot = np.nan if not np.isfinite(LL) else LL
+        ULplot = np.nan if not np.isfinite(UL) else UL
         GBL = 0
         GBU = 0
         if ((self.mode.currentText() == 'Simple' and self.simple.get_gbf() > 0) or
@@ -503,8 +541,8 @@ class RiskWidget(QtWidgets.QWidget):
             yproc = self.urisk.get_procdist().pdf(x)
             self.plotlines['procdist'].set_data(x, yproc)
             self.axes[plotnum].fill_between(x, yproc, where=((x <= LL) | (x >= UL)), label='Nonconforming', alpha=.5, color='C0')
-            self.plotlines['LL'].set_xdata([LL, LL])
-            self.plotlines['UL'].set_xdata([UL, UL])
+            self.plotlines['LL'].set_xdata([LLplot, LLplot])
+            self.plotlines['UL'].set_xdata([ULplot, ULplot])
             if self.mode.currentText() == 'Simple':
                 self.axes[plotnum].xaxis.set_major_formatter(FormatStrFormatter(r'%dSL'))
             else:
@@ -518,8 +556,8 @@ class RiskWidget(QtWidgets.QWidget):
             self.plotlines['testdist'].set_data(x, ytest)
             self.plotlines['testmed'].set_xdata([median]*2)
             self.plotlines['testexpected'].set_xdata([measured]*2)
-            self.plotlines['LL2'].set_xdata([LL, LL])
-            self.plotlines['UL2'].set_xdata([UL, UL])
+            self.plotlines['LL2'].set_xdata([LLplot, LLplot])
+            self.plotlines['UL2'].set_xdata([ULplot, ULplot])
             if self.mode.currentText() == 'Simple':
                 self.axes[plotnum].xaxis.set_major_formatter(FormatStrFormatter(r'%dSL'))
             else:
@@ -549,6 +587,20 @@ class RiskWidget(QtWidgets.QWidget):
     def replot_mc(self):
         ''' Replot/report monte carlo method '''
         rpt = self.urisk.out.report_montecarlo(fig=self.fig)
+        self.fig.tight_layout()
+        self.canvas.draw_idle()
+        self.txtOutput.setReport(rpt)
+
+    def replot_gbsweep(self):
+        ''' Plot guardband sweep '''
+        rpt = self.urisk.out.report_gbsweep(plot=self.fig)
+        self.fig.tight_layout()
+        self.canvas.draw_idle()
+        self.txtOutput.setReport(rpt)
+
+    def replot_probconform(self):
+        ''' Plot probability of conformance given a test measurement result '''
+        rpt = self.urisk.out.report_probconform(plot=self.fig)
         self.fig.tight_layout()
         self.canvas.draw_idle()
         self.txtOutput.setReport(rpt)
@@ -588,14 +640,12 @@ class RiskWidget(QtWidgets.QWidget):
         ''' Returns lower, upper limit to plot range '''
         LL, UL = self.limits.getValue()
         LL, UL = min(LL, UL), max(LL, UL)
-        LLpad = self.dproc_table.statsdist.std()*3
-        ULpad = self.dproc_table.statsdist.std()*3
-        if self.chkTest.isChecked():
-            LLpad = np.nanmax([LLpad, self.dtest_table.statsdist.std()*5])
-            ULpad = np.nanmax([LLpad, self.dtest_table.statsdist.std()*5])
-
-        LL -= LLpad
-        UL += ULpad
+        LL = np.nan if not np.isfinite(LL) else LL
+        UL = np.nan if not np.isfinite(UL) else UL
+        procmean = self.dproc_table.statsdist.mean()
+        procstd = self.dproc_table.statsdist.std()
+        LL = np.nanmin([LL, procmean-procstd*4])
+        UL = np.nanmax([UL, procmean+procstd*4])
         return LL, UL
 
     def update_range(self):
@@ -607,29 +657,45 @@ class RiskWidget(QtWidgets.QWidget):
         ''' Determine guardband to hit specified PFA '''
         simple = self.mode.currentText() == 'Simple'
         if self.urisk.get_testdist() is None:
-            QtWidgets.QMessageBox.information(self, 'Uncertainty Calculator', 'Please enable test distribution before finding guard band.')
+            QtWidgets.QMessageBox.information(self, 'Uncertainty Calculator', 'Please enable test distribution before finding guardband.')
             return
 
         dlg = GuardBandFinderWidget()
+        if not np.isfinite(self.urisk.get_tur()):
+            dlg.dobbert.setEnabled(False)
+            dlg.rss.setEnabled(False)
+            dlg.rp10.setEnabled(False)
+            dlg.test.setEnabled(False)
+            dlg.fourtoone.setEnabled(False)
+            dlg.mincost.setEnabled(False)
+            dlg.minimax.setEnabled(False)
+            if self.urisk.get_procdist() is None:
+                dlg.pfa.setEnabled(False)
+                dlg.pfaval.setEnabled(False)
+                dlg.maxspecific.setChecked(True)
+
+        elif self.urisk.get_procdist() is None:
+            dlg.pfa.setEnabled(False)
+            dlg.pfaval.setEnabled(False)
+            dlg.fourtoone.setEnabled(False)
+            dlg.mincost.setEnabled(False)
+            dlg.dobbert.setChecked(True)
+
         ok = dlg.exec()
         if ok:
             self.block(True)
             methodargs = dlg.get_method()
-            if methodargs['method'] in ['mincost', 'minimax'] and (self.urisk.cost_FA is None or self.urisk.cost_FR is None):
-                QtWidgets.QMessageBox.information(self, 'Uncertainty Calculator', 'Please specify expected costs using Risk menu before using mincost or minimax guardbanding.')
-                return
+            if methodargs['method'] in ['mincost', 'minimax']:
+                self.set_costs()
 
             self.urisk.calc_guardband(**methodargs)
             if simple:
                 self.simple.gbfactor.setValue(self.urisk.get_gbf())
                 self.chkGB.setChecked(True)
-                self.chkTest.setChecked(True)
-                self.chkProc.setChecked(True)
             else:
                 self.guardband.setValue(*self.urisk.get_guardband())
                 self.chkGB.setChecked(True)
-                self.chkTest.setChecked(True)
-                self.chkProc.setChecked(True)
+            self.guardband.setEnabled(True)
 
             self.block(False)
             self.initplot()
@@ -637,7 +703,7 @@ class RiskWidget(QtWidgets.QWidget):
 
     def set_costs(self):
         ''' Set expected cost of FA and FR '''
-        dlg = CostEntryWidget()
+        dlg = CostEntryWidget(self.urisk.cost_FA, self.urisk.cost_FR, parent=self)
         ok = dlg.exec()
         if ok:
             self.urisk.set_costs(*dlg.getCost())
@@ -645,7 +711,7 @@ class RiskWidget(QtWidgets.QWidget):
 
     def get_report(self):
         ''' Get full report of curve fit, using page settings '''
-        mc = self.montecarlo.currentText() == 'Monte-Carlo'
+        mc = self.calctype.currentText() == 'Monte Carlo'
         return self.urisk.get_output().report_all(mc=mc)
 
     def save_report(self):

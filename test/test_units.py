@@ -139,3 +139,14 @@ def test_power():
     assert mc.uncert.units == ureg.dimensionless
     assert np.isclose(mc.mean.magnitude, 16.0, rtol=.01)
     assert np.isclose(mc.uncert.magnitude, gum.uncert.magnitude, rtol=.02)
+
+
+def test_welch():
+    ''' Test welch-satterthwaite with units '''
+    u = uc.UncertCalc.from_configfile('test/ex_xrf.yaml')
+    # XRF problem with Yu units in nm, others in um
+    u.calculate()
+    gum = u.out.get_output(method='gum')
+    assert np.isclose(gum.degf, 27.5, atol=.1)
+    assert np.isclose(gum.expanded(0.95).k, 2.05, atol=.01)
+

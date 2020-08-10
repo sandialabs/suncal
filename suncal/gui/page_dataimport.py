@@ -320,6 +320,7 @@ class DistributionSelectWidget(QtWidgets.QDialog):
                         ax.hist(samples, density=True, bins='sqrt')
                     ax.plot(xx, yy, label='Distribution Fit')
                     ax.set_ylabel('Probability Density')
+
             else:
                 if 'function' in data:
                     if self.xval_isdate:
@@ -459,8 +460,8 @@ class DistributionSelectWidget(QtWidgets.QDialog):
 
         dists = {}
         for newname, colidx, data in distlist:
+            distname = self.table.item(self.ROW_DIST, colidx).text()
             if 'samples' in data:
-                distname = self.table.item(self.ROW_DIST, colidx).text()
                 if distname == 'normal (standard error)':
                     distname = 'normal'
                     params = {'median': np.mean(data['samples']), 'std': data['samples'].std(ddof=1)/np.sqrt(len(data['samples']))}
@@ -487,6 +488,11 @@ class DistributionSelectWidget(QtWidgets.QDialog):
                 else:
                     x = self.xval.value()
                 params = f(x)
+            elif 'sem' in data and distname == 'normal (standard error)':
+                params = {'dist': 'normal',
+                          'median': data.get('median', data.get('mean', 0)),
+                          'std': data.get('sem'),
+                          'df': data.get('df', np.inf)}
             else:
                 params = data
                 params.setdefault('dist', 'normal')
@@ -539,6 +545,12 @@ class DistributionSelectWidget(QtWidgets.QDialog):
                 std = data['samples'].std(ddof=1)
                 df = len(data['samples']) - 1
                 sem = std / np.sqrt(df + 1)
+                dist = 'normal (standard error)'
+            elif 'sem' in data:
+                mean = data.get('mean', data.get('median', 0))
+                std = data.get('std', 1)
+                sem = data.get('sem')
+                df = data.get('df', 100)
                 dist = 'normal (standard error)'
             else:
                 mean = data.get('mean', 0)

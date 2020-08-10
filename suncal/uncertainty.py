@@ -912,7 +912,7 @@ class InputFunc(object):
         gidegf = [x**4/i for x, i in zip(gradu, idegf)]
         gidegf = [g for g in gidegf if np.isfinite(g)]
         try:
-            self._degf = (uncert**4 / sum(gidegf)).magnitude   # numpy: uncert**4 / np.nansum(gradu**4 / idegf)
+            self._degf = (uncert**4 / sum(gidegf)).to_reduced_units().magnitude   # numpy: uncert**4 / np.nansum(gradu**4 / idegf)
         except AttributeError:
             self._degf = np.inf
 
@@ -1914,7 +1914,7 @@ class UncertCalc(object):
 
         try:
             config = yaml.safe_load(yml)
-        except yaml.scanner.ScannerError:
+        except yaml.YAMLError:
             return None  # Can't read YAML
 
         if isinstance(config, list):

@@ -25,6 +25,7 @@
 '''
 
 from collections import namedtuple
+from contextlib import suppress
 import numpy as np
 import yaml
 from scipy import stats
@@ -99,7 +100,7 @@ def guardband_norm(method, TUR, **kwargs):
         Parameters
         ----------
         method: string
-            Guard band method to apply. One of: 'dobbert', 'rss',
+            Guardband method to apply. One of: 'dobbert', 'rss',
             'rp10', 'test', '4:1', 'pfa', 'mincost', 'minimax'.
         TUR: float
             Test Uncertainty Ratio
@@ -118,7 +119,7 @@ def guardband_norm(method, TUR, **kwargs):
         Returns
         -------
         guardband: (float)
-            Guard band factor. Acceptance limit = Tolerance Limit * guardband.
+            Guardband factor. Acceptance limit = Tolerance Limit * guardband.
 
         Notes
         -----
@@ -132,7 +133,7 @@ def guardband_norm(method, TUR, **kwargs):
         minimax method: Minimize the maximum expected cost due to false decisions (Ref Easterling 1991)
     '''
     if method == 'dobbert':
-        # Dobbert Eq. 4 for Managed Guard Band, maintains max PFA 2% for any itp.
+        # Dobbert Eq. 4 for Managed Guardband, maintains max PFA 2% for any itp.
         M = 1.04 - np.exp(0.38 * np.log(TUR) - 0.54)
         GB = 1 - M / TUR
     elif method == 'rss':
@@ -162,18 +163,17 @@ def guardband_norm(method, TUR, **kwargs):
         k = stats.norm.ppf(conf) * np.sqrt(1 + sigtest**2/sigprod**2) - sigtest/sigprod**2
         GB = 1 - k * sigtest
     elif method == 'minimax':
-        itp = kwargs.get('itp', 0.95)
         Cc_over_Cp = kwargs.get('CcCp', 10)
         conf = 1 - (1 / (1 + Cc_over_Cp))
         k = stats.norm.ppf(conf)
         GB = 1 - k * (1/TUR/2)
     else:
-        raise ValueError('Unknown guard band method {}.'.format(method))
+        raise ValueError('Unknown guardband method {}.'.format(method))
     return GB
 
 
 def guardband(dist_proc, dist_test, LL, UL, target_PFA, testbias=0, approx=False):
-    ''' Calculate (symmetric) guard band required to meet a target PFA value, for
+    ''' Calculate (symmetric) guardband required to meet a target PFA value, for
         arbitrary distributions.
 
         Parameters
@@ -207,6 +207,9 @@ def guardband(dist_proc, dist_test, LL, UL, target_PFA, testbias=0, approx=False
         Uses Brent's Method to find zero of PFA(dist_proc, dist_test, LL, UL, GBU=x, GBL=x)-target_PFA.
     '''
     w = UL-(LL+UL)/2
+    if not np.isfinite(w):
+        w = np.nanmax([x for x in [abs(LL), abs(UL), max(dist_proc.std()*4, dist_test.std()*4)] if np.isfinite(x)])
+
     try:
         gb, r = brentq(lambda x: PFA(dist_proc, dist_test, LL, UL, GBU=x, GBL=x, testbias=testbias, approx=approx)-target_PFA, a=-w/2, b=w/2, full_output=True)
     except ValueError:
@@ -216,6 +219,48 @@ def guardband(dist_proc, dist_test, LL, UL, target_PFA, testbias=0, approx=False
         return gb
     else:
         return np.nan
+
+
+def guardband_specific(dtest, LL, UL, target):
+    ''' Calculate guardband based on maximum specific risk
+
+        Parameters
+        ----------
+        dtest : stats.frozen or distributions.Distribution
+            Test measurement distribution
+        LL : float
+            Lower specification limit
+        UL : float
+            Upper specification limit
+        target : float
+            Target maximum specific risk
+    '''
+    kwds = distributions.get_distargs(dtest)
+    w = (UL-LL)
+    xx = np.linspace(LL-w/2, UL+w/2, num=500)
+    if not np.isfinite(w):
+        w = dtest.std() * 8
+        xx = np.linspace(dtest.mean()-w if not np.isfinite(LL) else LL-w/2,
+                         dtest.mean()+w if not np.isfinite(UL) else UL+w/2,
+                         num=500)
+
+    fa_lower = np.empty(len(xx))
+    fa_upper = np.empty(len(xx))
+    for i, loc in enumerate(xx):
+        kwds.update({'loc': loc})
+        dtestswp = dtest.dist(**kwds)
+        fa_lower[i] = specific_risk(dtestswp, LL=LL, UL=np.inf).total
+        fa_upper[i] = specific_risk(dtestswp, LL=-np.inf, UL=UL).total
+    fa = fa_lower + fa_upper
+
+    GBL = np.nan
+    GBU = np.nan
+    with suppress(IndexError):
+        GBL = xx[np.where(fa<=target)[0][0]]
+    with suppress(IndexError):
+        GBU = xx[np.where(fa<=target)[0][-1]]
+
+    return GBL-LL, UL-GBU
 
 
 def guardbandfactor_to_offset(gbf, LL, UL):
@@ -235,7 +280,7 @@ def PFA_norm(itp, TUR, GB=1, **kwargs):
         TUR: float
             Test Uncertainty Ratio. Spec Limit / (2*Test Uncertainty)
         GB: float or string (optional)
-            Guard Band Factor. If GB is numeric, GB = K, where acceptance
+            Guardband Factor. If GB is numeric, GB = K, where acceptance
             limit A = T * K. In Dobbert's notation, K = 1 - M/TUR where
             A = T - U*M. GB = 1 implies no guardbanding.
 
@@ -243,7 +288,7 @@ def PFA_norm(itp, TUR, GB=1, **kwargs):
             method. kwargs passed to guardband_norm.
     '''
     # Convert itp to stdev of process
-    # This is T in equation 2 in Dobbert's Guard Banding Strategy, with T = 1.
+    # This is T in equation 2 in Dobbert's Guardbanding Strategy, with T = 1.
     sigma0 = 1/stats.norm.ppf((1+itp)/2)
     sigmatest = 1/TUR/2
 
@@ -271,7 +316,7 @@ def PFR_norm(itp, TUR, GB=1, **kwargs):
         TUR: float
             Test Uncertainty Ratio. Spec Limit / (2*Test Uncertainty)
         GB: float or string (optional)
-            Guard Band Factor. If GB is numeric, GB = K, where acceptance
+            Guardband Factor. If GB is numeric, GB = K, where acceptance
             limit A = T * K. In Dobbert's notation, K = 1 - M/TUR where
             A = T - U*M. GB = 1 implies no guardbanding.
 
@@ -306,7 +351,7 @@ def PFA_deaver(SL, TUR, GB=1):
             Test Uncertainty Ratio (sigma_uut / sigma_test). Note this is
             definition used by Deaver's papers, NOT the typical SL/(2*sigma_test) definition.
         GB: float (optional)
-            Guard Band factor (0-1) with 1 being no guard band
+            Guardband factor (0-1) with 1 being no guardband
 
         Returns
         -------
@@ -334,7 +379,7 @@ def PFR_deaver(SL, TUR, GB=1):
             Test Uncertainty Ratio (sigma_uut / sigma_test). Note this is
             definition used by Deaver's papers, NOT the typical SL/(2*sigma_test) definition.
         GB: float (optional)
-            Guard Band factor (0-1) with 1 being no guard band
+            Guardband factor (0-1) with 1 being no guardband
 
         Returns
         -------
@@ -364,9 +409,9 @@ def PFA(dist_proc, dist_test, LL, UL, GBL=0, GBU=0, testbias=0, approx=False):
         UL: float
             Upper specification limit (absolute)
         GBL: float
-            Lower guard band, as offset. Test limit is LL + GBL.
+            Lower guardband, as offset. Test limit is LL + GBL.
         GBU: float
-            Upper guard band, as offset. Test limit is UL - GBU.
+            Upper guardband, as offset. Test limit is UL - GBU.
         testbias: float
             Bias (difference between distribution median and expected value)
             in test distribution
@@ -417,9 +462,9 @@ def _PFA_discrete(dist_proc, dist_test, LL, UL, GBL=0, GBU=0, testbias=0):
         UL: float
             Upper specification limit (absolute)
         GBL: float
-            Lower guard band, as offset. Test limit is LL + GBL.
+            Lower guardband, as offset. Test limit is LL + GBL.
         GBU: float
-            Upper guard band, as offset. Test limit is UL - GBU.
+            Upper guardband, as offset. Test limit is UL - GBU.
         testbias: float
             Bias (difference between distribution median and expected value)
             in test distribution
@@ -474,9 +519,9 @@ def PFR(dist_proc, dist_test, LL, UL, GBL=0, GBU=0, testbias=0, approx=False):
         UL: float
             Upper specification limit (absolute)
         GBL: float
-            Lower guard band, as offset. Test limit is LL + GBL.
+            Lower guardband, as offset. Test limit is LL + GBL.
         GBU: float
-            Upper guard band, as offset. Test limit is UL - GBU.
+            Upper guardband, as offset. Test limit is UL - GBU.
         testbias: float
             Bias (difference between distribution median and expected value)
             in test distribution
@@ -527,9 +572,9 @@ def _PFR_discrete(dist_proc, dist_test, LL, UL, GBL=0, GBU=0, testbias=0):
         UL: float
             Upper specification limit (absolute)
         GBL: float
-            Lower guard band, as offset. Test limit is LL + GBL.
+            Lower guardband, as offset. Test limit is LL + GBL.
         GBU: float
-            Upper guard band, as offset. Test limit is UL - GBU.
+            Upper guardband, as offset. Test limit is UL - GBU.
         testbias: float
             Bias (difference between distribution median and expected value)
             in test distribution
@@ -579,9 +624,9 @@ def PFAR_MC(dist_proc, dist_test, LL, UL, GBL=0, GBU=0, N=100000, testbias=0):
         UL: float
             Upper specification limit (absolute)
         GBL: float
-            Lower guard band, as offset. Test limit is LL + GBL.
+            Lower guardband, as offset. Test limit is LL + GBL.
         GBU: float
-            Upper guard band, as offset. Test limit is UL - GBU.
+            Upper guardband, as offset. Test limit is UL - GBU.
         N: int
             Number of Monte Carlo samples
         testbias: float
@@ -631,7 +676,7 @@ class Risk(object):
         self.testdist = distributions.get_distribution('normal', std=.125)
         self.testbias = 0              # Offset between testdist median and measurement result
         self.speclimits = (-1.0, 1.0)  # Upper/lower specification limits
-        self.guardband = (0, 0)        # Guard band offset (A = speclimits - guardband)
+        self.guardband = (0, 0)        # Guardband offset (A = speclimits - guardband)
         self.out = RiskOutput(self)
         self.cost_FA = None  # Cost of false accept
         self.cost_FR = None  # Cost of false reject
@@ -641,7 +686,7 @@ class Risk(object):
 
             Parameters
             ----------
-            testdist: stats.rv_continuous
+            testdist: distributions.Distribution
                 Test distribution instance
         '''
         self.testdist = testdist
@@ -653,7 +698,7 @@ class Risk(object):
 
             Parameters
             ----------
-            procdist: stats.rv_continuous
+            procdist: distributions.Distribution
                 Process distribution instance
         '''
         self.procdist = procdist
@@ -671,12 +716,12 @@ class Risk(object):
         self.speclimits = LL, UL
 
     def set_gbf(self, gbf):
-        ''' Set guard band factor
+        ''' Set guardband factor
 
             Parameters
             ----------
             gbf: float
-                Guard band factor as multiplier of specification
+                Guardband factor as multiplier of specification
                 limit. Acceptance limit A = T * gbf.
         '''
         rng = (self.speclimits[1] - self.speclimits[0])/2
@@ -814,12 +859,10 @@ class Risk(object):
         Parameters
         ----------
         method: string
-            Guard band method to apply. One of: 'dobbert', 'rss',
-            'rp10', 'test', '4:1', 'pfa', 'minimax', 'mincost'.
-        TUR: float
-            Test Uncertainty Ratio
+            Guardband method to apply. One of: 'dobbert', 'rss',
+            'rp10', 'test', '4:1', 'pfa', 'minimax', 'mincost', 'specific'.
         pfa: float (optional)
-            Target PFA (for method 'pfa'. Defaults to 0.008)
+            Target PFA (for method 'pfa' and 'specific'. Defaults to 0.008)
 
         Notes
         -----
@@ -838,8 +881,12 @@ class Risk(object):
                 raise ValueError('Minimax and Mincost methods must set costs of false accept/reject using `set_costs`.')
             CcCp = self.cost_FA/self.cost_FR
 
-        if self.is_simple() or method != 'pfa':
-            gbf = guardband_norm(method, self.get_tur(), pfa=pfa, itp=self.get_itp(), CcCp=CcCp)
+        if method == 'specific':
+            gbl, gbu = guardband_specific(self.get_testdist(), *self.get_speclimits(), pfa)
+            self.set_guardband(gbl, gbu)
+        elif self.is_simple() or method != 'pfa':
+            itp = self.get_itp() if self.get_procdist() is not None else None
+            gbf = guardband_norm(method, self.get_tur(), pfa=pfa, itp=itp, CcCp=CcCp)
             self.set_gbf(gbf)
         else:
             gb = guardband(self.get_procdist(), self.get_testdist(), *self.get_speclimits(), pfa, self.get_testbias(), approx=True)
@@ -1077,11 +1124,11 @@ class RiskOutput(output.Output):
                 ('TUR: ', report.Number(self.risk.get_tur(), fmt='auto')),
                 ('Measured value: ', report.Number(val)),
                 'Result: {}'.format('ACCEPT' if accept else 'REJECT'),
-                ('PF{} of measurement: '.format('A' if accept else 'R'), report.Number(PFx*100, fmt='auto'), '%'),
+                ('Specific F{} Risk: '.format('A' if accept else 'R'), report.Number(PFx*100, fmt='auto'), '%'),
                 ])
 
         if self.risk.get_testdist() is not None and self.risk.get_procdist() is not None:
-            hdr.extend(['Combined Risk'])
+            hdr.extend(['Global Risk'])
             pfa = self.risk.PFA()
             pfr = self.risk.PFR()
             cols.append([
@@ -1096,9 +1143,9 @@ class RiskOutput(output.Output):
             rpt.table(rows=rows, hdr=hdr)
 
         if cost is not None:
-            costrows = [[('Cost of false accept', report.Number(self.risk.cost_FA))],
-                        [('Cost of false reject', report.Number(self.risk.cost_FR))],
-                        [('Expected cost', report.Number(cost))]]
+            costrows = [['Cost of false accept', report.Number(self.risk.cost_FA)],
+                        ['Cost of false reject', report.Number(self.risk.cost_FR)],
+                        ['Expected cost', report.Number(cost)]]
             rpt.table(costrows, hdr=['Cost', 'Value'])
         return rpt
 
@@ -1168,7 +1215,7 @@ class RiskOutput(output.Output):
                 ax.axvline(LL, ls='--', label='Specification Limits', color='C2')
                 ax.axvline(UL, ls='--', color='C2')
                 if GBL != 0 or GBU != 0:
-                    ax.axvline(LL+GBL, ls='--', label='Guard Band', color='C3')
+                    ax.axvline(LL+GBL, ls='--', label='Guardband', color='C3')
                     ax.axvline(UL-GBU, ls='--', color='C3')
 
                 if measured > UL-GBU or measured < LL+GBL:   # Shade PFR
@@ -1187,36 +1234,40 @@ class RiskOutput(output.Output):
     def report_montecarlo(self, fig=None, **kwargs):
         ''' Run Monte-Carlo risk and return report. If fig is provided, plot it. '''
         N = kwargs.get('samples', 100000)
-        SL = self.risk.get_speclimits()
+        LL, UL = self.risk.get_speclimits()
         GB = self.risk.get_guardband()
         pfa, pfr, psamples, tsamples = PFAR_MC(self.risk.get_procdist(), self.risk.get_testdist(),
-                                               *SL, *GB, N=N, testbias=self.risk.get_testbias())
+                                               LL, UL, *GB, N=N, testbias=self.risk.get_testbias())
 
+        LLplot = np.nan if not np.isfinite(LL) else LL
+        ULplot = np.nan if not np.isfinite(UL) else UL
         if fig is not None:
             fig.clf()
             ax = fig.add_subplot(1, 1, 1)
             if psamples is not None:
-                ifa1 = (tsamples > SL[0]+GB[0]) & (tsamples < SL[1]-GB[1]) & ((psamples < SL[0]) | (psamples > SL[1]))
-                ifr1 = ((tsamples < SL[0]+GB[0]) | (tsamples > SL[1]-GB[1])) & ((psamples > SL[0]) & (psamples < SL[1]))
+                ifa1 = (tsamples > LL+GB[0]) & (tsamples < UL-GB[1]) & ((psamples < LL) | (psamples > UL))
+                ifr1 = ((tsamples < LL+GB[0]) | (tsamples > UL-GB[1])) & ((psamples > LL) & (psamples < UL))
                 good = np.logical_not(ifa1 | ifr1)
                 ax.plot(psamples[good], tsamples[good], marker='o', ls='', markersize=2, color='C0', label='Correct Decision', rasterized=True)
                 ax.plot(psamples[ifa1], tsamples[ifa1], marker='o', ls='', markersize=2, color='C1', label='False Accept', rasterized=True)
                 ax.plot(psamples[ifr1], tsamples[ifr1], marker='o', ls='', markersize=2, color='C2', label='False Reject', rasterized=True)
-                ax.axvline(SL[0], ls='--', lw=1, color='black')
-                ax.axvline(SL[1], ls='--', lw=1, color='black')
-                ax.axhline(SL[0]+GB[0], lw=1, ls='--', color='gray')
-                ax.axhline(SL[1]-GB[1], lw=1, ls='--', color='gray')
-                ax.axhline(SL[0], ls='--', lw=1, color='black')
-                ax.axhline(SL[1], ls='--', lw=1, color='black')
+                ax.axvline(LLplot, ls='--', lw=1, color='black')
+                ax.axvline(ULplot, ls='--', lw=1, color='black')
+                ax.axhline(LLplot+GB[0], lw=1, ls='--', color='gray')
+                ax.axhline(ULplot-GB[1], lw=1, ls='--', color='gray')
+                ax.axhline(LLplot, ls='--', lw=1, color='black')
+                ax.axhline(ULplot, ls='--', lw=1, color='black')
                 ax.legend(loc='upper left', fontsize=10)
                 ax.set_xlabel('Actual Product')
                 ax.set_ylabel('Test Result')
-
-                slrange = SL[1] - SL[0]
-                slmin = SL[0] - slrange
-                slmax = SL[1] + slrange
-                ax.set_xlim(slmin, slmax)
-                ax.set_ylim(slmin, slmax)
+                pdist = self.risk.get_procdist()
+                tdist = self.risk.get_testdist()
+                xmin = np.nanmin([LLplot, pdist.mean()-5*pdist.std()])
+                xmax = np.nanmax([ULplot, pdist.mean()+5*pdist.std()])
+                ymin = np.nanmin([LLplot, pdist.mean()-5*pdist.std()-tdist.std()])
+                ymax = np.nanmax([ULplot, pdist.mean()+5*pdist.std()+tdist.std()])
+                ax.set_xlim(xmin, xmax)
+                ax.set_ylim(ymin, ymax)
                 fig.tight_layout()
 
         rpt = report.Report(**kwargs)
@@ -1227,3 +1278,115 @@ class RiskOutput(output.Output):
         rpt.txt('- Total PFR: ')
         rpt.num(pfr*100, fmt='auto', end='%\n')
         return rpt
+
+    def report_gbsweep(self, plot=None, **kwargs):
+        ''' Plot PFA/R vs guardband '''
+        with mpl.style.context(plotting.mplcontext):
+            plt.ioff()
+            fig, ax = plotting.initplot(plot)
+            fig.clf()
+            LL, UL = self.risk.get_speclimits()
+            simple = self.risk.is_simple()
+            dtest = self.risk.get_testdist()
+            dproc = self.risk.get_procdist()
+
+            if dproc is not None and dtest is not None:
+                if simple:
+                    gbrange = np.linspace(0, 1, num=26)
+                    xlabel = 'Guardband Factor'
+                else:
+                    gbrange = np.linspace(0, dtest.std()*3, num=26)
+                    xlabel = 'Guardband'
+
+                pfa = np.empty(len(gbrange))
+                pfr = np.empty(len(gbrange))
+                for i, gb in enumerate(gbrange):
+                    if simple:
+                        self.risk.set_gbf(gb)
+                    else:
+                        self.risk.set_guardband(gb, gb)  # Always symmetric
+                    pfa[i] = self.risk.PFA()
+                    pfr[i] = self.risk.PFR()
+
+                ax1 = fig.add_subplot(2, 1, 1)
+                ax1.plot(gbrange, pfa*100)
+                ax1.set_ylabel('False Accept %')
+                ax2 = fig.add_subplot(2, 1, 2)
+                ax2.plot(gbrange, pfr*100)
+                ax2.set_ylabel('False Reject %')
+                ax2.set_xlabel(xlabel)
+                ax1.get_shared_x_axes().join(ax1, ax2)
+                fig.tight_layout()
+                if simple:
+                    ax1.set_xlim(1, 0)  # Go backwards
+                    ax2.set_xlim(1, 0)
+
+            rpt = report.Report(**kwargs)
+            rpt.hdr(f'Global Risk vs {xlabel}', level=2)
+            hdr = [xlabel, 'False Accept %', 'False Reject %']
+            gbrange = [report.Number(g) for g in gbrange]
+            pfa = [report.Number(p*100) for p in pfa]
+            pfr = [report.Number(p*100) for p in pfr]
+            rows = list(map(list, zip(gbrange, pfa, pfr)))
+            if simple:
+                rows = list(reversed(rows))
+            rpt.table(rows=rows, hdr=hdr)
+            return rpt
+
+        rpt = report.Report(**kwargs)
+        rpt.text('No test distribution')
+        return rpt
+
+    def report_probconform(self, plot=None, **kwargs):
+        ''' Plot Probability of Conformance plot '''
+        with mpl.style.context(plotting.mplcontext):
+            plt.ioff()
+            fig, ax = plotting.initplot(plot)
+            fig.clf()
+            LL, UL = self.risk.get_speclimits()
+            dtest = self.risk.get_testdist()
+
+            if dtest is not None:
+                kwds = distributions.get_distargs(dtest)
+                locorig = kwds.pop('loc', 0)
+                bias = self.risk.get_testbias()
+                w = (UL-LL)
+                xx = np.linspace(LL-w/2, UL+w/2, num=500)
+                if not np.isfinite(w):
+                    w = dtest.std() * 4
+                    xx = np.linspace(dtest.mean()-w if not np.isfinite(LL) else LL-w/2,
+                                     dtest.mean()+w if not np.isfinite(UL) else UL+w/2,
+                                     num=500)
+                fa_lower = np.empty(len(xx))
+                fa_upper = np.empty(len(xx))
+                for i, loc in enumerate(xx):
+                    kwds.update({'loc': loc-bias})
+                    dtestswp = dtest.dist(**kwds)
+                    fa_lower[i] = specific_risk(dtestswp, LL=LL, UL=np.inf).total
+                    fa_upper[i] = specific_risk(dtestswp, LL=-np.inf, UL=UL).total
+                fa = 1-(fa_lower + fa_upper)
+
+                ax = fig.add_subplot(1, 1, 1)
+                ax.plot(xx, fa*100, color='C1')
+                ax.set_ylabel('Probability of Conformance %')
+                ax.set_xlabel('Measurement Result')
+                ax.axvline(LL, ls='--', label='Specification Limits', color='C2')
+                ax.axvline(UL, ls='--', color='C2')
+                GBL, GBU = self.risk.get_guardband()
+                if GBL != 0 or GBU != 0:
+                    ax.axvline(LL+GBL, ls='--', label='Guardband', color='C3')
+                    ax.axvline(UL-GBU, ls='--', color='C3')
+                fig.tight_layout()
+
+                rpt = report.Report(**kwargs)
+                rpt.hdr('Probability of Conformance', level=2)
+                hdr = ['Measurement Result', 'Probability of Conformance %']
+                xx = report.Number.number_array(xx[::10])
+                pc = [report.Number(p) for p in fa[::10]*100]
+                rows = list(map(list, zip(xx, pc)))
+                rpt.table(rows, hdr=hdr)
+                return rpt
+
+            rpt = report.Report(**kwargs)
+            rpt.text('No test distribution')
+            return rpt

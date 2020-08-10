@@ -214,23 +214,27 @@ class DataSet(object):
 
     def pooled_stats(self):
         ''' Get summary statistics for all columns (pooled variance, etc.) '''
+        ntot = np.count_nonzero(np.isfinite(self.data))
         gstats = self.group_stats()
         poolvar = sum(gstats.var * gstats.df) / sum(gstats.df)
         poolstd = np.sqrt(poolvar)
         pooldf = sum(gstats.df)
         reproducibility = np.std(gstats.mean, ddof=1)  # Standard deviation of group means
         reproducibility_df = len(self.colnames) - 1
+        reprod_ofmean = reproducibility / np.sqrt(len(self.colnames))   # sR / sqrt(M)
+        poolstd_ofmean = poolstd / np.sqrt(ntot)                        # sr / sqrt(N*M)
 
         grandmean = np.nanmean(self.data)
         allvar = np.nanvar(self.data, ddof=1)
         allstd = np.sqrt(allvar)
-        ntot = np.count_nonzero(np.isfinite(self.data))
         alldf = ntot - 1
 
-        Result = namedtuple('PooledStats', ['mean', 'poolvar', 'poolstd', 'pooldf', 'reproducibility', 'reproducibilitydf',
+        Result = namedtuple('PooledStats', ['mean', 'poolvar', 'poolstd', 'pooldf', 'pool_ofmean',
+                                            'reproducibility', 'reproducibilitydf', 'reprod_ofmean',
                                          'allvar', 'allstd', 'N', 'alldf'])
-        return Result(grandmean, poolvar, poolstd, pooldf, reproducibility, reproducibility_df,
-                   allvar, allstd, ntot, alldf)
+        return Result(grandmean, poolvar, poolstd, pooldf, poolstd_ofmean,
+                      reproducibility, reproducibility_df, reprod_ofmean,
+                      allvar, allstd, ntot, alldf)
 
     def anova(self, conf=.95):
         ''' Analysis of Variance (one-way)
@@ -462,27 +466,32 @@ class DataSetSummary(DataSet):
 
     def pooled_stats(self):
         ''' Get pooled statistics '''
-        Result = namedtuple('PooledStats', ['mean', 'poolvar', 'poolstd', 'pooldf', 'reproducibility', 'reproducibilitydf',
-                                         'allvar', 'allstd', 'N', 'alldf'])
+        Result = namedtuple('PooledStats', ['mean', 'poolvar', 'poolstd', 'pooldf', 'pool_ofmean',
+                                            'reproducibility', 'reproducibilitydf', 'reprod_ofmean',
+                                            'allvar', 'allstd', 'N', 'alldf'])
         nmeas = self._nmeas()
         means = self._means()
         stds = self._stds()
 
+        ntot = sum(nmeas)
         groupvar = stds**2
         grandmean = sum(nmeas * means)/sum(nmeas)
         poolvar = sum(groupvar * (nmeas-1)) / sum(nmeas - 1)
         poolstd = np.sqrt(poolvar)
         pooldf = sum(nmeas - 1)
+        poolstd_ofmean = poolstd/np.sqrt(ntot)
         reproducibility = np.std(means, ddof=1)
         reproducibility_df = len(self.colnames) - 1
-        ntot = sum(nmeas)
+        reprod_ofmean = reproducibility / np.sqrt(reproducibility_df+1)
         alldf = ntot - 1
         return Result(grandmean,
                       poolvar,
                       poolstd,
                       pooldf,
+                      poolstd_ofmean,
                       reproducibility,
                       reproducibility_df,
+                      reprod_ofmean,
                       None,
                       None,
                       ntot,
@@ -543,7 +552,11 @@ class DataSetOutput(output.Output):
         # Pooled stats returned as mean/std/df dictionary
         if len(colnames) > 1:
             pstats = self.dataset.pooled_stats()
-            d['Pooled Statistics'] = {'mean': pstats.mean, 'std': pstats.poolstd, 'df': pstats.pooldf}
+            d['Repeatability'] = {'mean': pstats.mean, 'std': pstats.poolstd,
+                                  'sem': pstats.pool_ofmean, 'df': pstats.pooldf}
+            d['Reproducibility'] = {'mean': pstats.mean, 'std': pstats.reproducibility,
+                                    'sem': pstats.reprod_ofmean,
+                                    'df': pstats.reproducibilitydf}
         return d
 
     def report(self, **kwargs):
@@ -579,7 +592,7 @@ class DataSetOutput(output.Output):
         pstats = self.dataset.pooled_stats()
         rows = []
         rows.append(['Grand Mean', report.Number(pstats.mean, matchto=pstats.poolstd, fmin=0), '-'])
-        rows.append(['Pooled Standard Deviation (repeatability)', report.Number(pstats.poolstd), report.Number(pstats.pooldf, fmin=0)])
+        rows.append(['Repeatability (Pooled Standard Deviation)', report.Number(pstats.poolstd), report.Number(pstats.pooldf, fmin=0)])
         rows.append(['Reproducibility', report.Number(pstats.reproducibility), report.Number(pstats.reproducibilitydf, fmin=0)])
         rows.append(['Standard Deviation of All Measurements', report.Number(pstats.allstd), report.Number(pstats.alldf, fmin=0)])
         rpt = report.Report(**kwargs)

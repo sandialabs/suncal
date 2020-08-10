@@ -77,6 +77,16 @@ if latex and os.path.exists(latex):
     report.latex_path = latex
 
 
+class InfValidator(QtGui.QDoubleValidator):
+    ''' Double Validator that allows "inf" and "-inf" entry '''
+    def validate(self, s, pos):
+        if s.lower() in ['inf', '-inf']:
+            return QtGui.QValidator.Acceptable, s, pos
+        elif s.lower() in '-inf':
+            return QtGui.QValidator.Intermediate, s, pos
+        return super().validate(s, pos)
+
+
 def set_plot_style():
     ''' Configure matplotlib with plot style from saved settings '''
     mpl.rcParams.update(mpl.rcParamsDefault)

@@ -1,5 +1,12 @@
 # Change History
 
+## Version 1.3.6
+
+- Fixed potential units conversion error in Welch-Satterthwaite degrees of freedom calculation
+- Repeatability and reproducibility, as standard as standard deviation of the mean, can be imported from datasets
+- Added guardband sweep, probability of conformance plots to risk calculator
+
+
 ## Version 1.3.5
 
 - Finished flattened uncertainty entry user interface
