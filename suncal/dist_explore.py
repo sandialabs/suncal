@@ -132,7 +132,7 @@ class DistExplore(object):
 
         try:
             config = yaml.safe_load(yml)
-        except yaml.scanner.ScannerError:
+        except yaml.YAMLError:
             return None  # Can't read YAML
 
         u = cls.from_config(config[0])  # config yaml is always a list
@@ -249,11 +249,11 @@ class DistOutput(output.Output):
         r = report.Report(**kwargs)
         for name in self.samples.keys():
 
-            with mpl.style.context(plotting.mplcontext):
-                plt.ioff()
+            with mpl.style.context(plotting.plotstyle):
                 fig = plt.figure()
                 self.plot_hist(name, plot=fig, fitdist=fitdist, qqplot=qqplot, coverage=coverage)
                 fig.suptitle(name)
             r.plot(fig)
+            plt.close(fig)
             r.append(self.report_single(name, **kwargs))
         return r

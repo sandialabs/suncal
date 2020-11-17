@@ -369,7 +369,7 @@ class DataSet(object):
 
         try:
             config = yaml.safe_load(yml)
-        except yaml.scanner.ScannerError:
+        except yaml.YAMLError:
             return None  # Can't read YAML
 
         u = cls.from_config(config[0])  # config yaml is always a list
@@ -573,8 +573,11 @@ class DataSetOutput(output.Output):
         return rpt
 
     def report_all(self, **kwargs):
-        ''' Report everything (same as report) '''
-        return self.report(**kwargs)
+        ''' Report summary, pooled statistics, anova '''
+        rpt = self.report(**kwargs)
+        rpt.append(self.report_pooled(**kwargs))
+        rpt.append(self.report_anova(**kwargs))
+        return rpt
 
     def report_column(self, colname=None, **kwargs):
         ''' Report statistics for one column '''

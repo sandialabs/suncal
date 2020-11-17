@@ -7,14 +7,17 @@ import matplotlib.pyplot as plt
 
 from . import distributions
 
+
+plotstyle = {'figure.figsize': (8, 6), 'font.size': 14}   # Common plot parameters, usage: "with mpl.style.context(plotstyle):"
+
+# This unfortunately overwrites the user's MPL context, so user notebooks will end up with these params
+# after importing suncal. But matplotlib contexts are broken such that certain parameters won't stay
+# with the plot - see the "won't fix" bug report: https://github.com/matplotlib/matplotlib/issues/11376/
+# meaning things like color='C0' and mathtext.fontset won't actually plot with their context-defined values.
 mpl.style.use('bmh')
-
-mplcontext = {'figure.figsize': (8, 6), 'font.size': 14}   # Common plot parameters, usage: "with mpl.style.context(mplcontext):"
-
-
 def setup_mplparams():
     ''' Set some default matplotlib parameters for things like fonts '''
-    with suppress(AttributeError):
+    with suppress(AttributeError, KeyError):
         mpl.rcParams['figure.subplot.left'] = .12
         mpl.rcParams['figure.subplot.right'] = .95
         mpl.rcParams['figure.subplot.top'] = .95
@@ -27,6 +30,13 @@ def setup_mplparams():
         mpl.rcParams['mathtext.default'] = 'regular'
         mpl.rcParams['figure.max_open_warning'] = 0
         mpl.rcParams['axes.formatter.useoffset'] = False
+
+        # v3.3 of Matplotlib made a really bad decision to change the epoch used by num2date
+        # for plotting so that datetime.toordinal() does not give the same float date as num2date()
+        # unless epoch is overridden like this. But it could be broken by the user if they
+        # change rcParams after importing suncal. MPL < 3.3 will raise KeyError here, but it should
+        # be suppressed above
+        mpl.rcParams['date.epoch'] = '0000-12-31T00:00:00'
 setup_mplparams()
 
 

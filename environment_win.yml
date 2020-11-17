@@ -14,5 +14,5 @@ dependencies:
     - pip==19.1.1
     - pip:
         - pyqt5==5.12.2     # Conda-installed pyqt is broken in pyinstaller 3.4. Install it with pip.
-        - PyInstaller==3.5
+        - PyInstaller==3.6
         - scipy==1.1.0        # Install from pip because openblas version N/A in conda or conda-forge.

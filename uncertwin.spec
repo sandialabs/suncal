@@ -25,7 +25,8 @@ exe = EXE(pyz,
           strip=False,
           icon='suncal/gui/PSLcal_logo.ico',
           upx=True,
-          console=False)
+          console=False,
+          version='winexe_version_info.txt')
 coll = COLLECT(exe,
                a.binaries,
                a.zipfiles,

@@ -1,5 +1,33 @@
 # Change History
 
+## Version 1.5
+
+- Improved uncertainty computation and derivation report in multi-output measurement models
+- Improved handling of callable functions with multiple outputs
+- Added colorbar to contour plots
+- Allow UncertComplex to compute uncertainty on callable functions
+- Suppress duplicate plot outputs in Jupyter
+- Fixed order of polynomial curve fit coefficients in report
+- Fixed date issue introduced by Matplotlib 3.3
+- Fixed font scaling issue in Windows with display scaling enabled
+
+
+
+## Version 1.4
+
+- Added calibration interval calculator, using NCSLI RP-1 Method A3 and Method S2
+- Implemented "Symbolic GUM Only" mode to show GUM equation results without entering values
+- Added risk sweeps mode for plotting PFA(R) vs. itp at various TUR, or other combinations
+- Report the correlation matrix between multiple uncertainty model equations
+- Save user-defined units with project files
+- Added distribution fit selection to Data Sets page
+- Added random seed option to Distribution Explorer
+- Sort the measured variables list alphabetically
+- Fixed issue entering t-distribution parameters before degrees of freedom is defined
+- Fixed display of degree symbol in output reports
+- Handle callable measurement models that raise exception with Unit Quantity inputs
+- Minor fixes for Python 3.8 compatibility
+
 ## Version 1.3.6
 
 - Fixed potential units conversion error in Welch-Satterthwaite degrees of freedom calculation

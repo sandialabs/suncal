@@ -1,0 +1,28 @@
+- deltas:
+  - 0.1
+  - 0.11
+  - 0.251
+  - 0.299
+  - 0.403
+  - 0.615
+  desc: 'Calculating interval using variables data, of interval length and deviation
+    from prior calibration. Both uncertainty target and reliability target methods
+    are calculated. '
+  dt:
+  - 70.0
+  - 86.0
+  - 104.0
+  - 135.0
+  - 167.0
+  - 173.0
+  m: 2
+  maxm: 1
+  mode: intervalvariables
+  name: interval
+  rconf: 0.9
+  rlimits:
+  - 9.0
+  - 11.0
+  u0: 0.28
+  utarget: 0.5
+  y0: 10.03

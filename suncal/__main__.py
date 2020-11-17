@@ -21,7 +21,7 @@ from suncal import reverse
 from suncal import risk
 from suncal import curvefit
 from suncal import distributions
-from suncal import ureg
+from suncal import unitmgr
 
 
 def main_setup(args=None):
@@ -78,16 +78,17 @@ def main_unc(args=None):
     parser.add_argument('-o', help='Output filename. Extension determines file format.', type=argparse.FileType('w', encoding='UTF-8'), default=sys.stdout)
     parser.add_argument('-f', help="Output format for when output filename not provided ['txt', 'html', 'md']", type=str, choices=['html', 'txt', 'md'])
     parser.add_argument('--samples', help='Number of Monte Carlo samples', type=int, default=1000000)
+    parser.add_argument('--seed', help='Random Generator Seed', type=int, default=None)
     parser.add_argument('-s', help='Short output format, prints values only. Prints (GUM mean, GUM std. uncert, GUM expanded, GUM k, MC mean, MC std. uncert, MC expanded min, MC expanded max, MC k) for each function', action='store_true')
     parser.add_argument('--verbose', '-v', help='Verbose mode. Include plots with one v, full report with two.', action='count', default=0)
     args = parser.parse_args(args=args)
 
-    u = uc.UncertaintyCalc(args.funcs, units=args.units, samples=args.samples)
+    u = uc.UncertaintyCalc(args.funcs, units=args.units, samples=args.samples, seed=args.seed)
     if args.variables is not None:
         for var in args.variables:
             name, val = var.split('=')
             units = None
-            nom = ureg.parse_expression(val)
+            nom = unitmgr.parse_expression(val)
             if hasattr(nom, 'magnitude'):
                 units = str(nom.units)
                 nom = nom.magnitude
@@ -97,8 +98,7 @@ def main_unc(args=None):
         for uncert in args.uncerts:
             var, *uncargs = uncert.split(';')
             uncargs = dict(u.split('=') for u in uncargs)
-            keys = uncargs.keys()
-            for key in keys:
+            for key in list(uncargs.keys()):  # Use list since pop will modify keys
                 uncargs[key.strip()] = uncargs.pop(key)
             u.set_uncert(var.strip(), **uncargs)
 
@@ -163,11 +163,12 @@ def main_reverse(args=None):
     parser.add_argument('-o', help='Output filename. Extension determines file format.', type=argparse.FileType('w', encoding='UTF-8'), default='-')
     parser.add_argument('-f', help="Output format for when output filename not provided ['txt', 'html', 'md']", type=str, choices=['html', 'txt', 'md'])
     parser.add_argument('--samples', help='Number of Monte Carlo samples', type=int, default=1000000)
+    parser.add_argument('--seed', help='Random Number Seed', type=int, default=None)
     parser.add_argument('-s', help='Short output format, prints values only. Prints (GUM mean, GUM std. uncert, MC mean, MC std. uncert) for solve-for variable.', action='store_true')
     parser.add_argument('--verbose', '-v', help='Verbose mode (include plots)', action='count', default=0)
     args = parser.parse_args(args=args)
 
-    u = reverse.UncertReverse(args.funcs, targetnom=args.target, targetunc=args.targetunc, solvefor=args.solvefor, samples=args.samples)
+    u = reverse.UncertReverse(args.funcs, targetnom=args.target, targetunc=args.targetunc, solvefor=args.solvefor, samples=args.samples, seed=args.seed)
     if args.variables is not None:
         for var in args.variables:
             name, val = var.split('=')
@@ -177,8 +178,7 @@ def main_reverse(args=None):
         for uncert in args.uncerts:
             var, *uncargs = uncert.split(';')
             uncargs = dict(u.split('=') for u in uncargs)
-            keys = uncargs.keys()
-            for key in keys:
+            for key in list(uncargs.keys()):
                 uncargs[key.strip()] = uncargs.pop(key)
             u.set_uncert(var.strip(), **uncargs)
 

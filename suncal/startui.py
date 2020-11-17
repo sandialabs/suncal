@@ -24,10 +24,9 @@ Version: {} - {}<br><br>
 Copyright 2019-2020 National Technology & Engineering Solutions<br>of Sandia, LLC (NTESS).
 Under the terms of Contract<br>DE-NA0003525 with NTESS, the U.S. Government<br>retains certain rights in this software.'''.format(version.__version__, version.__date__)
 
-
+QtWidgets.QApplication.setAttribute(QtCore.Qt.AA_EnableHighDpiScaling)
+QtWidgets.QApplication.setAttribute(QtCore.Qt.AA_UseHighDpiPixmaps)
 app = QtWidgets.QApplication(sys.argv)
-app.setAttribute(QtCore.Qt.AA_EnableHighDpiScaling)
-app.setAttribute(QtCore.Qt.AA_UseHighDpiPixmaps)
 
 pixmap = QtGui.QPixmap(480, 320)
 pixmap.fill(app.palette().color(QtGui.QPalette.Window))

@@ -35,19 +35,19 @@ def test_uc(capsys):
     out = u.calculate()
     report = out.report().get_md(mathfmt='text', figfmt='text')
 
-    cli.main_unc(['f=a*b+c', '--variables', 'a=10', 'b=5', 'c=3', '--uncerts', 'a; std=1', 'b; dist=uniform; a=.5', 'c; unc=3; k=2', '--correlate', 'a; b; .6', 'c; b; -.3'])
+    cli.main_unc(['f=a*b+c', '--variables', 'a=10', 'b=5', 'c=3', '--uncerts', 'a; std=1', 'b; dist=uniform; a=.5', 'c; unc=3; k=2', '--correlate', 'a; b; .6', 'c; b; -.3', '--seed=4848484'])
     report2, err = capsys.readouterr()
     assert report == report2
 
     # HTML format
     reporthtml = out.report().get_html(mathfmt='latex', figfmt='svg')
-    cli.main_unc(['f=a*b+c', '--variables', 'a=10', 'b=5', 'c=3', '--uncerts', 'a; std=1', 'b; dist=uniform; a=.5', 'c; unc=3; k=2', '--correlate', 'a; b; .6', 'c; b; -.3', '-f', 'html'])
+    cli.main_unc(['f=a*b+c', '--variables', 'a=10', 'b=5', 'c=3', '--uncerts', 'a; std=1', 'b; dist=uniform; a=.5', 'c; unc=3; k=2', '--correlate', 'a; b; .6', 'c; b; -.3', '-f', 'html', '--seed=4848484'])
     report2html, err = capsys.readouterr()
     assert reporthtml == report2html
 
     # MD format
     reportmd = out.report().get_md(mathfmt='latex', figfmt='svg')
-    cli.main_unc(['f=a*b+c', '--variables', 'a=10', 'b=5', 'c=3', '--uncerts', 'a; std=1', 'b; dist=uniform; a=.5', 'c; unc=3; k=2', '--correlate', 'a; b; .6', 'c; b; -.3', '-f', 'md'])
+    cli.main_unc(['f=a*b+c', '--variables', 'a=10', 'b=5', 'c=3', '--uncerts', 'a; std=1', 'b; dist=uniform; a=.5', 'c; unc=3; k=2', '--correlate', 'a; b; .6', 'c; b; -.3', '-f', 'md', '--seed=4848484'])
     report2md, err = capsys.readouterr()
     assert reportmd == report2md
 
@@ -74,13 +74,13 @@ def test_rev(capsys):
     out = u.calculate()
     report = out.report().get_md(mathfmt='text', figfmt='text')
 
-    cli.main_reverse(['rho=w/(k*d**2*h)', '--target={}'.format(rho), '--targetunc={}'.format(urho), '--solvefor=w', '--variables', 'h=.5', 'd=.25', 'k=12.870369', '--uncerts', 'h; std=.0005', 'd; std=.0005'])
+    cli.main_reverse(['rho=w/(k*d**2*h)', '--target={}'.format(rho), '--targetunc={}'.format(urho), '--solvefor=w', '--variables', 'h=.5', 'd=.25', 'k=12.870369', '--uncerts', 'h; std=.0005', 'd; std=.0005', '--seed=234283742'])
     report2, err = capsys.readouterr()
     assert report == report2
 
     # html format
     reporthtml = out.report().get_html(mathfmt='latex', figfmt='svg')
-    cli.main_reverse(['rho=w/(k*d**2*h)', '--target={}'.format(rho), '--targetunc={}'.format(urho), '--solvefor=w', '--variables', 'h=.5', 'd=.25', 'k=12.870369', '--uncerts', 'h; std=.0005', 'd; std=.0005', '-f', 'html'])
+    cli.main_reverse(['rho=w/(k*d**2*h)', '--target={}'.format(rho), '--targetunc={}'.format(urho), '--solvefor=w', '--variables', 'h=.5', 'd=.25', 'k=12.870369', '--uncerts', 'h; std=.0005', 'd; std=.0005', '-f', 'html', '--seed=234283742'])
     report2html, err = capsys.readouterr()
     assert reporthtml == report2html
 

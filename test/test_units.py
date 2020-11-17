@@ -8,8 +8,9 @@ from suncal import uncertainty
 from suncal import curvefit
 from suncal import report
 from suncal import uparser
+from suncal import unitmgr
 
-ureg = uncertainty.ureg
+ureg = unitmgr.ureg
 
 
 def test_units():
@@ -20,30 +21,25 @@ def test_units():
     u.set_uncert('V', name='u(typeA)', std=.1, k=2)
     u.set_uncert('V', name='u(typeB)', std=.15, k=2)
     u.calculate()
-    outgum = u.out.get_output(method='gum')
-    outmc = u.out.get_output(method='mc')
-    assert str(outgum.units) == 'milliwatt'
-    assert np.isclose(outgum.mean.magnitude, 80)
-    assert str(outgum.mean.units) == 'milliwatt'
-    assert str(outmc.units) == 'milliwatt'
-    assert np.isclose(outmc.mean.magnitude, 80)
-    assert str(outmc.mean.units) == 'milliwatt'
-    assert 'mW' in str(outgum.report())
-    assert 'mW' in str(outgum.report_expanded())
-    assert 'mW' in str(outmc.report())
-    assert 'mW' in str(outmc.report_expanded())
+    assert str(u.out.gum._units[0]) == 'milliwatt'
+    assert np.isclose(u.out.gum.nom().magnitude, 80)
+    assert str(u.out.mc._units[0]) == 'milliwatt'
+    assert np.isclose(u.out.mc.nom().magnitude, 80)
+    assert str(u.out.mc.nom().units) == 'milliwatt'
+    assert 'mW' in str(u.out.gum.report())
+    assert 'mW' in str(u.out.gum.report_expanded())
+    assert 'mW' in str(u.out.mc.report())
+    assert 'mW' in str(u.out.mc.report_expanded())
 
     # Change output to microwatts and recalculate
-    u.functions[0].outunits = 'uW'
+    u.model.outunits = ['uW']
     u.calculate()
-    outgum = u.out.get_output(method='gum')
-    outmc = u.out.get_output(method='mc')
-    assert str(outgum.units) == 'microwatt'
-    assert np.isclose(outgum.mean.magnitude, 80000)
-    assert str(outgum.mean.units) == 'microwatt'
-    assert str(outmc.units) == 'microwatt'
-    assert np.isclose(outmc.mean.magnitude, 80000)
-    assert str(outmc.mean.units) == 'microwatt'
+    assert str(u.out.gum._units[0]) == 'microwatt'
+    assert np.isclose(u.out.gum.nom().magnitude, 80000)
+    assert str(u.out.gum.nom().units) == 'microwatt'
+    assert str(u.out.mc._units[0]) == 'microwatt'
+    assert np.isclose(u.out.mc.nom().magnitude, 80000)
+    assert str(u.out.mc.nom().units) == 'microwatt'
 
 
 def test_multifunc():
@@ -55,10 +51,10 @@ def test_multifunc():
     u1.set_uncert('J', name='u_A', std=.05)  # 50 mA
     u1.set_uncert('J', name='u_B', std=.01)  # 1 mA = 10000 uA
     u1.calculate()
-    meanP = u1.out.get_output(fname='P', method='gum').mean.magnitude
-    uncertP = u1.out.get_output(fname='P', method='gum').uncert.magnitude
-    meanR = u1.out.get_output(fname='R', method='gum').mean.magnitude
-    uncertR = u1.out.get_output(fname='R', method='gum').uncert.magnitude
+    meanP = u1.out.gum.nom('P').magnitude
+    uncertP = u1.out.gum.uncert('P').magnitude
+    meanR = u1.out.gum.nom('R').magnitude
+    uncertR = u1.out.gum.uncert('R').magnitude
 
     # Now with units specified instead of converting first
     u = uc.UncertCalc(['P = J*V', 'R = V/J'], units=['mW', 'ohm'], seed=398232)
@@ -69,23 +65,19 @@ def test_multifunc():
     u.calculate()
 
     # And compare.
-    outgumP = u.out.get_output(method='gum', fname='P')
-    outmcP = u.out.get_output(method='mc', fname='P')
-    assert np.isclose(outgumP.mean.magnitude, meanP)
-    assert np.isclose(outgumP.uncert.magnitude, uncertP)
-    assert str(outgumP.mean.units) == 'milliwatt'
-    assert np.isclose(outmcP.mean.magnitude, meanP, rtol=.0001)
-    assert np.isclose(outmcP.uncert.magnitude, uncertP, rtol=.001)
-    assert str(outmcP.mean.units) == 'milliwatt'
+    assert np.isclose(u.out.gum.nom('P').magnitude, meanP)
+    assert np.isclose(u.out.gum.uncert('P').magnitude, uncertP)
+    assert str(u.out.gum.nom('P').units) == 'milliwatt'
+    assert np.isclose(u.out.mc.nom('P').magnitude, meanP, rtol=.0001)
+    assert np.isclose(u.out.mc.uncert('P').magnitude, uncertP, rtol=.001)
+    assert str(u.out.mc.nom('P').units) == 'milliwatt'
 
-    outgumR = u.out.get_output(method='gum', fname='R')
-    outmcR = u.out.get_output(method='mc', fname='R')
-    assert np.isclose(outgumR.mean.magnitude, meanR)
-    assert np.isclose(outgumR.uncert.magnitude, uncertR)
-    assert str(outgumR.mean.units) == 'ohm'
-    assert np.isclose(outmcR.mean.magnitude, meanR, rtol=.0001)
-    assert np.isclose(outmcR.uncert.magnitude, uncertR, rtol=.001)
-    assert str(outmcR.mean.units) == 'ohm'
+    assert np.isclose(u.out.mc.nom('R').magnitude, meanR, rtol=.0001)
+    assert np.isclose(u.out.mc.uncert('R').magnitude, uncertR, rtol=.001)
+    assert str(u.out.mc.nom('R').units) == 'ohm'
+    assert np.isclose(u.out.mc.nom('R').magnitude, meanR, rtol=.0001)
+    assert np.isclose(u.out.mc.uncert('R').magnitude, uncertR, rtol=.001)
+    assert str(u.out.mc.nom('R').units) == 'ohm'
 
 
 def test_load():
@@ -93,12 +85,10 @@ def test_load():
     u = uc.UncertCalc.from_configfile('test/ex_endgauge_units.yaml')
     u.seed = 8888
     u.calculate()
-    GUM = u.out.get_output(method='gum')
-    MC = u.out.get_output(method='mc')
-    assert np.isclose(GUM.uncert.magnitude, 32, atol=.1)
-    assert str(GUM.uncert.units) == 'nanometer'
-    assert np.isclose(MC.uncert.magnitude, 34, atol=.2)
-    assert str(MC.uncert.units) == 'nanometer'
+    assert np.isclose(u.out.gum.uncert().magnitude, 32, atol=.1)
+    assert str(u.out.gum.uncert().units) == 'nanometer'
+    assert np.isclose(u.out.mc.uncert().magnitude, 34, atol=.2)
+    assert str(u.out.mc.uncert().units) == 'nanometer'
 
 
 def test_parse():
@@ -134,11 +124,9 @@ def test_power():
     u.set_input('x', nom=4, std=.1)  # No units / dimensionless
     u.calculate()
 
-    mc = u.out.get_output(method='mc')
-    gum = u.out.get_output(method='gum')
-    assert mc.uncert.units == ureg.dimensionless
-    assert np.isclose(mc.mean.magnitude, 16.0, rtol=.01)
-    assert np.isclose(mc.uncert.magnitude, gum.uncert.magnitude, rtol=.02)
+    assert u.out.mc.uncert().units == ureg.dimensionless
+    assert np.isclose(u.out.mc.nom().magnitude, 16.0, rtol=.01)
+    assert np.isclose(u.out.mc.uncert().magnitude, u.out.gum.uncert().magnitude, rtol=.02)
 
 
 def test_welch():
@@ -146,7 +134,6 @@ def test_welch():
     u = uc.UncertCalc.from_configfile('test/ex_xrf.yaml')
     # XRF problem with Yu units in nm, others in um
     u.calculate()
-    gum = u.out.get_output(method='gum')
-    assert np.isclose(gum.degf, 27.5, atol=.1)
-    assert np.isclose(gum.expanded(0.95).k, 2.05, atol=.01)
+    assert np.isclose(u.out.gum.degf(), 27.5, atol=.1)
+    assert np.isclose(u.out.gum.expanded().k, 2.05, atol=.01)
 

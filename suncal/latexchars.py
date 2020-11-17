@@ -97,6 +97,7 @@ textable = {
     '∂': r'\partial',
     'Å': r'\mathrm{\mathring{A}}',
     'ℏ': r'\hbar',
+    '°': r'^{\circ}',
 
     '⁰': r'^{0}',
     '¹': r'^{1}',

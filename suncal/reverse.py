@@ -11,9 +11,7 @@ from . import report
 from . import uparser
 from . import plotting
 
-import matplotlib as mpl
 import matplotlib.pyplot as plt
-mpl.style.use('bmh')
 
 
 class UncertReverse(uncertainty.UncertCalc):
@@ -113,25 +111,29 @@ class UncertReverse(uncertainty.UncertCalc):
         req_nom = self.reverseparams['targetnom']
         req_uncert = self.reverseparams['targetunc']
 
-        function = self.functions[fidx]  # Function object
-        if function.ftype != 'sympy':
+        model = self.model
+        if not isinstance(model, uncertainty.ModelSympy):
             raise ValueError('Reverse calculation requires sympy function')
 
-        if var not in function.get_basenames():
+        if var not in self.inputs.names:
             raise ValueError('Undefined solvefor variable {}'.format(var))
 
-        req_nom *= uparser.parse_unit(function.outunits)
-        req_uncert *= uparser.parse_unit(function.outunits)
-        solvefor_units = function.get_basemeans()[var].units
+        req_nom *= uparser.parse_unit(model.outunits[fidx])
+        req_uncert *= uparser.parse_unit(model.outunits[fidx])
+        solvefor_units = self.inputs.means()[var].units
 
         # Calculate GUM symbolically then solve for uncertainty component
         self.add_required_inputs()
-        symout = function.calc_SYM()
-        fname = 'f' if function.name is None else function.name
+        symout = model.GUMcovariance().symbolic  # uncerts, self.sympyexprs, degf, Uy, Ux, Cx
+        fname = model.outnames[fidx]
 
         # Solve function for variable of interest
-        var_f = sympy.solve(sympy.Eq(sympy.Symbol(fname), function.get_basefunc()), sympy.Symbol(var))[0]
-        ucombined = symout['uncertainty']  # Symbolic expression for combined uncertainty
+        var_f = sympy.solve(sympy.Eq(sympy.Symbol(fname), model.get_baseexprs()[fidx]), sympy.Symbol(var))[0]
+        ucombined = symout.uncert[0]  # Symbolic expression for combined uncertainty
+
+        # ucombined will have sigma/correlation values in it, likely 0 - sub them out
+        corrvals = {k: v for k, v in self.inputs.corr_values().items() if v == 0}
+        ucombined = ucombined.subs(corrvals).simplify()
 
         u_ivar = sympy.Symbol('u_'+var)  # Symbol for unknown uncertainty we're solving for
         u_ovar = sympy.Symbol('u_'+fname)
@@ -143,23 +145,20 @@ class UncertReverse(uncertainty.UncertCalc):
             u_iexpr = u_ovar
         else:
             u_iexpr = u_iexpr.subs({var: var_f})  # Replace var with var_f
-        u_ival = u_iexpr.subs(function.get_basemeans())
-        inpts = function.get_basemeans()
+        u_ival = u_iexpr.subs(self.inputs.means())
+        inpts = self.inputs.means()
         inpts.pop(var)
         inpts.update({fname: req_nom})
         i_val = sympy.lambdify(inpts.keys(), var_f, 'numpy')(**inpts)
         i_val.ito(solvefor_units)
 
-        # Rename values in baseuncerts
-        uncertvals = function.get_baseuncerts()
-        for k, v in uncertvals.copy().items():
-            uncertvals.pop(k)
-            uncertvals['u_'+k] = v
+        uncertvals = self.inputs.stdunc()
 
         reverse_GUM = None
         if kwargs.get('gum', True):
             # Plug everything in
             inpts.update(uncertvals)
+            inpts.update(self.inputs.corr_values())
             inpts.update({str(u_ovar): req_uncert})
             u_ival = sympy.lambdify(inpts.keys(), u_ival, 'numpy')(**inpts)
             u_ival.ito(i_val.units)
@@ -172,9 +171,9 @@ class UncertReverse(uncertainty.UncertCalc):
                            'u_iname': u_ivar,
                            'u_c': ucombined,
                            'i': i_val,
-                           'f': function.get_basefunc(),
+                           'f': self.model.get_baseexprs()[fidx],
                            'fname': sympy.Symbol(fname),
-                           'ucname': symout['uc_symbol'],
+                           'ucname': self.model.unc_symbols[fidx],
                            'f_required': req_nom,
                            'uf_required': req_uncert,
                            }
@@ -182,46 +181,46 @@ class UncertReverse(uncertainty.UncertCalc):
         reverse_MC = None
         if kwargs.get('mc', True):
             # Use Monte Carlo Method - Must add correlation between f and input variables
-            ucalc = uncertainty.UncertCalc(var + '=' + str(var_f), samples=self.samples, units=str(solvefor_units))  # Set up UncertCalc with reversed expression
-            for origvar in function.get_basevars():
+            ucalc = uncertainty.UncertCalc(var + '=' + str(var_f), samples=self.inputs.nsamples, units=str(solvefor_units))  # Set up UncertCalc with reversed expression
+            for origvar in self.inputs:
                 if origvar.name == var: continue
                 origunc = origvar.stdunc()
                 if np.isfinite(origunc.magnitude) and origunc != 0:
                     ucalc.set_input(origvar.name, nom=origvar.nom, std=origunc.to(origvar.units).magnitude, units=str(origvar.units))
                 else:
                     ucalc.set_input(origvar.name, nom=origvar.nom, units=str(origvar.units))  # Doesn't like std=0
-            ucalc.set_input(fname, nom=req_nom.magnitude, std=req_uncert.magnitude, units=str(function.outunits))
-            # TODO: allow nom, std params to be Pint Quantities
+            ucalc.set_input(fname, nom=req_nom.magnitude, std=req_uncert.magnitude, units=str(self.model.outunits[fidx]))
 
             # Correlate variables: see GUM C.3.6 NOTE 3 - Estimate correlation from partials
-            for vname, part in zip(symout['var_symbols'], symout['partials']):
+            for vname, part in zip(self.inputs.symbols, symout.Cx[fidx]):
                 if str(vname) == var: continue
-                inpts = function.get_basemeans()
+                inpts = self.inputs.means()
                 inpts.update(uncertvals)
                 inpts.update({fname: req_nom})
                 ci = sympy.lambdify(inpts.keys(), part.subs({var: var_f}), 'numpy')(**inpts)
-                corr = (ucalc.get_input(str(vname)).stdunc() / ucalc.get_input(fname).stdunc() * ci).magnitude  # dimensionless
+                corr = (ucalc.get_inputvar(str(vname)).stdunc() / ucalc.get_inputvar(fname).stdunc() * ci).magnitude  # dimensionless
                 if np.isfinite(corr):
                     ucalc.correlate_vars(str(vname), fname, corr)
 
             # Include existing correlations between inputs
-            if self._corr is not None:
-                for v1, v2, corr in self.get_corr_list():
+            if len(self.inputs.corr_list) > 0:
+                for v1, v2, corr in self.inputs.corr_list:
                     if v1 == var or v2 == var: continue
                     ucalc.correlate_vars(v1, v2, corr)
-            mcout = ucalc.calcMC()
-            reverse_MC = {'u_i': mcout.foutputs[0].mc.uncert,
-                          'i': mcout.foutputs[0].mc.mean,
+
+            mcout = ucalc.calculate(gum=False).mc
+            reverse_MC = {'u_i': mcout.uncert(0),
+                          'i': mcout.nom(0),
                           'f_required': req_nom,
                           'uf_required': req_uncert,
                           'rev_ucalc': ucalc
                           }
-            if np.count_nonzero(np.isfinite(mcout.foutputs[0].mc.samples.magnitude)) < self.samples * .95:
+            if np.count_nonzero(np.isfinite(list(mcout.samples().magnitude))) < self.inputs.nsamples * .95:
                 # less than 95% of trials resulted in real number, consider this a no-solution
                 reverse_MC['u_i'] = None
                 reverse_MC['i'] = None
 
-        self.out = ReverseOutput(reverse_GUM, reverse_MC, function.name)
+        self.out = ReverseOutput(reverse_GUM, reverse_MC, self.model.outnames[fidx])
         return self.out
 
     @classmethod
@@ -315,11 +314,11 @@ class ReverseOutput(output.Output):
 
     def report_summary(self, **kwargs):
         r = self.report(**kwargs)
-        with mpl.style.context(plotting.mplcontext):
-            plt.ioff()
+        with plt.style.context(plotting.plotstyle):
             fig = plt.figure()
             self.plot_pdf(fig)
             r.plot(fig)
+            plt.close(fig)
         return r
 
     def plot_pdf(self, plot=None, **kwargs):
@@ -342,4 +341,4 @@ class ReverseOutput(output.Output):
         if self.mcdata:
             kwargs['color'] = mccolor
             kwargs['label'] = 'Monte Carlo'
-            self.mcdata['rev_ucalc'].out.foutputs[0].plot_pdf(plot=ax, **kwargs)
+            self.mcdata['rev_ucalc'].out.mc.plot_pdf(plot=ax, **kwargs)

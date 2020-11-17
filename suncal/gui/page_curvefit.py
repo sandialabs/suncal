@@ -224,8 +224,6 @@ class SettingsWidget(QtWidgets.QWidget):
         self.chkMCMC = QtWidgets.QCheckBox('Markov-Chain Monte Carlo')
         self.chkGUM = QtWidgets.QCheckBox('GUM')
         self.chkLSQ.setChecked(True)
-        self.chkDates = QtWidgets.QCheckBox('X Values are Dates')
-        self.chkDates.stateChanged.connect(self.xdatechange)
         self.chkAbsoluteSigma = QtWidgets.QCheckBox('Treat uncertainties as relative values. Will be scaled to match the residual variance.')
         self.chkAbsoluteSigma.stateChanged.connect(self.abssigmaupdate)
 
@@ -246,7 +244,6 @@ class SettingsWidget(QtWidgets.QWidget):
         flayout.addRow('Random Seed', self.txtSeed)
         layout.addLayout(flayout)
         layout.addSpacing(20)
-        layout.addWidget(self.chkDates)
         layout.addWidget(self.chkAbsoluteSigma)
         layout.addStretch()
         self.setLayout(layout)
@@ -260,7 +257,6 @@ class SettingsWidget(QtWidgets.QWidget):
 
     def calcupdate(self):
         ''' Save settings to model object '''
-
         with suppress(ValueError):
             samp = int(self.txtSamples.text())
             self.fitcalc.samples = samp
@@ -280,7 +276,7 @@ class PageInputCurveFit(QtWidgets.QWidget):
         self.useUX = False
         self.btnCalculate = QtWidgets.QPushButton('Calculate')
         self.btnCalculate.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
-        self.table = gui_widgets.FloatTableWidget(headeredit='str', xdates=False)
+        self.table = gui_widgets.FloatTableWidget(headeredit='str')
         self.table.setColumnCount(3)
         self.table.setMaximumWidth(400)
         self.table.setHorizontalHeaderLabels(['x', 'y', 'u(y)'])
@@ -316,7 +312,6 @@ class PageInputCurveFit(QtWidgets.QWidget):
         self.table.valueChanged.connect(self.update_arr)
         self.notes.textChanged.connect(self.savenotes)
         self.settings.xdatechange.connect(self.update_arr)
-        self.settings.xdatechange.connect(self.update_arr)
         self.settings.absolutesigmachange.connect(self.model.update_model)
         self.canvas.draw_idle()
 
@@ -348,8 +343,7 @@ class PageInputCurveFit(QtWidgets.QWidget):
 
     def update_arr(self):
         ''' Table edited, update array '''
-        self.table.set_xdates(self.settings.chkDates.isChecked())
-        self.fitcalc.xdates = self.settings.chkDates.isChecked()
+        self.fitcalc.xdates = self.table.has_dates()
 
         x = self.table.get_column(0)
         y = self.table.get_column(1)
@@ -391,11 +385,11 @@ class PageInputCurveFit(QtWidgets.QWidget):
     def updateplot(self):
         ''' Update the plot '''
         if len(self.fitcalc.arr.x) == len(self.fitcalc.arr.y):
-            xdates = self.settings.chkDates.isChecked()
+            xdates = self.table.has_dates()
             self.ax.cla()
             x = self.fitcalc.arr.x
             xerr = self.fitcalc.arr.ux
-            if self.settings.chkDates.isChecked():
+            if xdates:
                 x = mdates.num2date(x)
                 xerr = None
             self.ax.errorbar(x, self.fitcalc.arr.y, yerr=self.fitcalc.arr.uy, xerr=xerr, marker='o', ls='')
@@ -411,36 +405,39 @@ class PageInputCurveFit(QtWidgets.QWidget):
         ok = dlg.exec_()
         if ok:
             arrvals = dlg.get_array()
-            self.settings.chkDates.blockSignals(True)
-            self.settings.chkDates.setChecked(dlg.is_datecol('x'))
-            self.settings.chkDates.blockSignals(False)
             self.table.blockSignals(True)
-            self.table.xdates = dlg.is_datecol('x')
+
+            xvals = arrvals.get('x', None)
+            yvals = arrvals.get('y', None)
+            uxvals = arrvals.get('u(x)', None)
+            uyvals = arrvals.get('u(y)', None)
 
             def checkrow(i):
                 if i >= self.table.rowCount():
                     self.table.setRowCount(i+1)
 
-            if arrvals.x is not None:
-                for i, x in enumerate(arrvals.x):
+            if xvals is not None:
+                for i, x in enumerate(xvals):
                     checkrow(i)
+                    if hasattr(x, 'date'):
+                        x = x.strftime('%d-%b-%Y')
                     self.table.setItem(i, 0, QtWidgets.QTableWidgetItem(str(x)))
 
-            if arrvals.y is not None:
-                for i, y in enumerate(arrvals.y):
+            if yvals is not None:
+                for i, y in enumerate(yvals):
                     checkrow(i)
                     self.table.setItem(i, 1, QtWidgets.QTableWidgetItem(str(y)))
 
-            if arrvals.uy is not None and len(arrvals.uy) > 0:
-                for i, uy in enumerate(arrvals.uy):
+            if uyvals is not None and len(uyvals) > 0:
+                for i, uy in enumerate(uyvals):
                     checkrow(i)
                     self.table.setItem(i, 2, QtWidgets.QTableWidgetItem(str(uy)))
 
-            if arrvals.ux is not None and len(arrvals.ux) > 0:
+            if uxvals is not None and len(uxvals) > 0:
                 self.useUX = True
                 self.table.setColumnCount(4)
                 self.table.setHorizontalHeaderItem(3, QtWidgets.QTableWidgetItem('u(x)'))
-                for i, ux in enumerate(arrvals.ux):
+                for i, ux in enumerate(uxvals):
                     checkrow(i)
                     self.table.setItem(i, 3, QtWidgets.QTableWidgetItem(str(ux)))
             self.table.blockSignals(False)
@@ -454,63 +451,6 @@ class PageInputCurveFit(QtWidgets.QWidget):
             self.fitcalc.arr.save_file(fname)
 
 
-class MethodSelectWidget(QtWidgets.QWidget):
-    ''' Widget for selecting calculation method (LSQ, MC, etc.) '''
-    changed = QtCore.pyqtSignal()
-
-    def __init__(self, parent=None):
-        super().__init__(parent=parent)
-        self.label = QtWidgets.QLabel('Uncertainty Calculation Method:')
-        self.chkLSQ = QtWidgets.QCheckBox('Least Squares Analytical')
-        self.chkLSQ.setChecked(True)
-        self.chkMC = QtWidgets.QCheckBox('Monte Carlo')
-        self.chkMCMC = QtWidgets.QCheckBox('Markov-Chain Monte Carlo')
-        self.chkGUM = QtWidgets.QCheckBox('GUM')
-        layout = QtWidgets.QVBoxLayout()
-        layout.addWidget(self.label)
-        layout.addWidget(self.chkLSQ)
-        layout.addWidget(self.chkMC)
-        layout.addWidget(self.chkMCMC)
-        layout.addWidget(self.chkGUM)
-        layout.addWidget(gui_widgets.QHLine())
-        self.setLayout(layout)
-        self.update_methods()
-        self.chkLSQ.toggled.connect(self.changed)
-        self.chkMC.toggled.connect(self.changed)
-        self.chkMCMC.toggled.connect(self.changed)
-        self.chkGUM.toggled.connect(self.changed)
-
-    def update_methods(self, lsq=True, mc=False, mcmc=False, gum=False):
-        ''' Show/Hide widget components depending on which calculations were run.
-            If only one method, don't show anything.
-        '''
-        self.blockSignals(True)
-        self.chkLSQ.setChecked(lsq)
-        self.chkMC.setChecked(mc)
-        self.chkMCMC.setChecked(mcmc)
-        self.chkGUM.setChecked(gum)
-        self.blockSignals(False)
-        if lsq+mc+mcmc+gum <= 1:
-            self.setVisible(False)  # Hide the whole widget, only one calculation was run
-        else:
-            self.chkLSQ.setVisible(lsq)
-            self.chkMC.setVisible(mc)
-            self.chkMCMC.setVisible(mcmc)
-            self.chkGUM.setVisible(gum)
-            self.setVisible(True)
-
-    def get_selected_methods(self):
-        ''' Return list of methods selected ['gum', 'lsq',...] '''
-        methods = []
-        if self.chkLSQ.isChecked():
-            methods.append('lsq')
-        if self.chkMC.isChecked():
-            methods.append('mc')
-        if self.chkMCMC.isChecked():
-            methods.append('mcmc')
-        if self.chkGUM.isChecked():
-            methods.append('gum')
-        return methods
 
 
 class IntervalWidget(QtWidgets.QWidget):
@@ -569,7 +509,6 @@ class PageOutputCurveFit(QtWidgets.QWidget):
 
         self.outSelect = QtWidgets.QComboBox()
         self.outSelect.addItems(['Fit Plot', 'Prediction', 'Interval', 'Residuals', 'Correlations'])
-        self.methodselect = MethodSelectWidget()   # For selecting multiple methods
         self.cmbMethod = QtWidgets.QComboBox()     # For selecting a single method
         self.cmbMethod.setVisible(False)
 
@@ -577,7 +516,7 @@ class PageOutputCurveFit(QtWidgets.QWidget):
         self.chkPredBand = QtWidgets.QCheckBox('Show Prediction Band')
         self.chkPredBand.setChecked(True)
         self.chkConfBand.setChecked(True)
-        self.xvals = gui_widgets.FloatTableWidget(xdates=False)
+        self.xvals = gui_widgets.FloatTableWidget()
         self.xvals.setVisible(False)
         self.xvals.setColumnCount(1)
         self.xvals.setHorizontalHeaderLabels(['X Values'])
@@ -604,7 +543,6 @@ class PageOutputCurveFit(QtWidgets.QWidget):
         layout = QtWidgets.QHBoxLayout()
         llayout = QtWidgets.QVBoxLayout()
         llayout.addWidget(self.outSelect)
-        llayout.addWidget(self.methodselect)
         llayout.addWidget(self.cmbMethod)
         llayout.addWidget(self.chkConfBand)
         llayout.addWidget(self.chkPredBand)
@@ -632,17 +570,15 @@ class PageOutputCurveFit(QtWidgets.QWidget):
         self.chkPredBand.toggled.connect(self.update)
         self.cmbMethod.currentIndexChanged.connect(self.update)
         self.cmbMCplot.currentIndexChanged.connect(self.update)
-        self.methodselect.changed.connect(self.update)
         self.paramlist.checkChange.connect(self.update)
         self.kvalue.changed.connect(self.update)
         self.predictmode.currentIndexChanged.connect(self.update)
 
     def changeview(self):
         ''' Combobox selection was changed. '''
-        showpredict = self.output._baseoutputs[0].properties['has_uy']
+        showpredict = self.output.inputs.has_uy()
         if self.outSelect.currentText() == 'Fit Plot':
-            self.methodselect.setVisible(self.methodcnt > 1)
-            self.cmbMethod.setVisible(False)
+            self.cmbMethod.setVisible(self.methodcnt > 1)
             self.xvals.setVisible(False)
             self.interval.setVisible(False)
             self.chkConfBand.setVisible(True)
@@ -654,7 +590,6 @@ class PageOutputCurveFit(QtWidgets.QWidget):
             self.predictmode.setVisible(showpredict)
 
         elif self.outSelect.currentText() == 'Prediction':
-            self.methodselect.setVisible(False)
             self.cmbMethod.setVisible(self.methodcnt > 1)
             self.chkConfBand.setVisible(True)
             self.chkPredBand.setVisible(True)
@@ -667,7 +602,6 @@ class PageOutputCurveFit(QtWidgets.QWidget):
             self.predictmode.setVisible(showpredict)
 
         elif self.outSelect.currentText() == 'Interval':
-            self.methodselect.setVisible(False)
             self.cmbMethod.setVisible(self.methodcnt > 1)
             self.chkConfBand.setVisible(False)
             self.chkPredBand.setVisible(False)
@@ -680,7 +614,6 @@ class PageOutputCurveFit(QtWidgets.QWidget):
             self.predictmode.setVisible(showpredict)
 
         elif self.outSelect.currentText() == 'Residuals':
-            self.methodselect.setVisible(False)
             self.cmbMethod.setVisible(self.methodcnt > 1)
             self.chkConfBand.setVisible(False)
             self.chkPredBand.setVisible(False)
@@ -693,7 +626,6 @@ class PageOutputCurveFit(QtWidgets.QWidget):
             self.predictmode.setVisible(False)
 
         elif self.outSelect.currentText() == 'Correlations':
-            self.methodselect.setVisible(False)
             self.cmbMethod.setVisible(self.methodcnt > 1)
             self.chkConfBand.setVisible(False)
             self.chkPredBand.setVisible(False)
@@ -706,7 +638,6 @@ class PageOutputCurveFit(QtWidgets.QWidget):
             self.predictmode.setVisible(False)
 
         elif 'Monte Carlo' in self.outSelect.currentText():
-            self.methodselect.setVisible(False)
             self.cmbMethod.setVisible(False)
             self.chkConfBand.setVisible(False)
             self.chkPredBand.setVisible(False)
@@ -727,8 +658,10 @@ class PageOutputCurveFit(QtWidgets.QWidget):
         except (KeyError, AttributeError):
             return  # Something weird, nothing in combobox
 
+        out = getattr(self.output, method)
+
         predmode = {0: 'Syx', 1: 'sigy', 2: 'sigylast'}.get(self.predictmode.currentIndex(), 'Syx')
-        self.output.set_predmode(predmode)
+        out.predmode = predmode
 
         kstr = self.kvalue.get_covlist()[0]
         if 'k' in kstr:
@@ -740,34 +673,29 @@ class PageOutputCurveFit(QtWidgets.QWidget):
 
         if self.outSelect.currentText() == 'Fit Plot':
             r.hdr('Fit Parameters', level=3)
-            r.append(self.output.report())
-            r.sympy(self.output._baseoutputs[0].expr(subs=True), end='\n\n')
+            r.append(out.report())
+            r.sympy(out.expr(subs=True), end='\n\n')
             r.hdr('Goodness of Fit', level=3)
-            r.append(self.output.report_fit(), end='\n\n')
+            r.append(out.report_fit(), end='\n\n')
 
-            methods = self.methodselect.get_selected_methods()
-            axs = plotting.axes_grid(len(methods), self.fig, maxcols=2)
-            for ax, m in zip(axs, methods):
-                out = getattr(self.output, m)
-                out.plot_points(ax=ax, ls='', marker='o')
-                out.plot_fit(ax=ax, label='Fit')
-                ax.set_title(self.namelookup[m])
-                if self.chkConfBand.isChecked():
-                    out.plot_conf(ax=ax, k=k, conf=conf, ls='--', color='C2')
-                if self.chkPredBand.isChecked():
-                    out.plot_pred(ax=ax, k=k, conf=conf, ls='--', color='C3')
-                ax.legend(loc='best')
-                ax.set_xlabel(out.properties['axnames'][0])
-                ax.set_ylabel(out.properties['axnames'][1])
+            fig, ax = plotting.initplot(self.fig)
+            out.plot_points(ax=ax, ls='', marker='o')
+            out.plot_fit(ax=ax, label='Fit')
+            if self.chkConfBand.isChecked():
+                out.plot_conf(ax=ax, k=k, conf=conf, ls='--', color='C2')
+            if self.chkPredBand.isChecked():
+                out.plot_pred(ax=ax, k=k, conf=conf, ls='--', color='C3')
+            ax.legend(loc='best')
+            ax.set_xlabel(out.model.xname)
+            ax.set_ylabel(out.model.yname)
             self.fig.tight_layout()
 
         elif self.outSelect.currentText() == 'Prediction':
-            out = getattr(self.output, method)
             ax = self.fig.add_subplot(1, 1, 1)
 
             # Extend x-range to the manually entered x-point
             xvalues = self.xvals.get_column(0)
-            xdata, _, _, _ = out.properties.get('data')
+            xdata = out.inputs.x
             if len(xvalues) > 0:
                 xmin = min(np.nanmin(xdata), np.nanmin(xvalues))
                 xmax = max(np.nanmax(xdata), np.nanmax(xvalues))
@@ -786,12 +714,11 @@ class PageOutputCurveFit(QtWidgets.QWidget):
                 out.plot_pred_value(xvalues, ax=ax, k=k, conf=conf)
 
             ax.legend(loc='best')
-            ax.set_xlabel(out.properties['axnames'][0])
-            ax.set_ylabel(out.properties['axnames'][1])
+            ax.set_xlabel(out.model.xname)
+            ax.set_ylabel(out.model.yname)
 
         elif self.outSelect.currentText() == 'Interval':
-            out = getattr(self.output, method)
-            if self.output.xdates:
+            if out.inputs.xdate:
                 t1 = self.interval.xdate1.date().toPyDate().strftime('%d-%b-%Y')
                 t2 = self.interval.xdate2.date().toPyDate().strftime('%d-%b-%Y')
             else:
@@ -805,7 +732,6 @@ class PageOutputCurveFit(QtWidgets.QWidget):
             r.append(out.report_interval_uncert_eqns())
 
         elif self.outSelect.currentText() == 'Residuals':
-            out = getattr(self.output, method)
             ax = self.fig.add_subplot(2, 2, 1)
             out.plot_points(ax=ax, ls='', marker='o')
             out.plot_fit(ax=ax)
@@ -832,14 +758,13 @@ class PageOutputCurveFit(QtWidgets.QWidget):
             r.append(out.report_residtable(k=k, conf=conf))
 
         elif self.outSelect.currentText() == 'Correlations':
-            out = getattr(self.output, method)
-            if len(out.pnames) == 2:
+            if len(out.paramnames) == 2:
                 params = [0, 1]
             else:
                 params = self.paramlist.getSelectedIndexes()
 
             if len(params) >= 2:
-                out.plot_outputscatter(fig=self.fig, params=params)
+                out.plot_correlation(fig=self.fig, params=params)
 
             r.hdr('Correlation Matrix:', level=2)
             r.append(out.report_correlation())
@@ -872,15 +797,14 @@ class PageOutputCurveFit(QtWidgets.QWidget):
                 The output object to display
         '''
         self.output = output
-        methods = {'lsq': hasattr(output, 'lsq'),
-                   'mc': hasattr(output, 'mc'),
-                   'gum': hasattr(output, 'gum'),
-                   'mcmc': hasattr(output, 'mcmc')}
+        methods = {'lsq': output.lsq is not None,
+                   'mc': output.mc is not None,
+                   'gum': output.gum is not None,
+                   'mcmc': output.mcmc is not None}
         self.blockSignals(True)
-        self.methodselect.update_methods(**methods)
         self.cmbMethod.clear()
         self.cmbMethod.addItems(self.namelookup[i] for i, v in methods.items() if v)
-        self.paramlist.addItems(self.output.pnames)
+        self.paramlist.addItems(self.output.paramnames)
         self.paramlist.selectAll()
         self.outSelect.blockSignals(True)
         self.outSelect.clear()
@@ -890,20 +814,22 @@ class PageOutputCurveFit(QtWidgets.QWidget):
         if methods['mcmc']:
             self.outSelect.addItem('Markov-Chain Monte Carlo')
 
-        self.interval.set_datemode(self.output.xdates)
+        self.interval.set_datemode(self.output.inputs.xdate)
         self.xvals.clear()
         self.xvals.setHorizontalHeaderLabels(['X Values'])
-        self.xvals.setItem(0, 0, QtWidgets.QTableWidgetItem(str(self.output._baseoutputs[0]._x()[-1])))
-        self.xvals.set_xdates(self.output.xdates)
-        if self.output.xdates:
+        xval = self.output.inputs.x[-1]
+        if self.output.inputs.xdate:
+            xval = mdates.num2date(xval).strftime('%d-%b-%Y')
+        self.xvals.setItem(0, 0, QtWidgets.QTableWidgetItem(str(xval)))
+        if self.output.inputs.xdate:
             # Must add 1721424.5 to account for difference in Julian day (QT) and proleptic Gregorian day (datetime)
-            lastdate1 = QtCore.QDate.fromJulianDay(self.output._baseoutputs[0]._x()[-1] + 1721424.5)
-            lastdate2 = QtCore.QDate.fromJulianDay(self.output._baseoutputs[0]._x()[-2] + 1721424.5)
+            lastdate1 = QtCore.QDate.fromJulianDay(self.output.inputs.x[-1] + 1721424.5)
+            lastdate2 = QtCore.QDate.fromJulianDay(self.output.inputs.x[-2] + 1721424.5)
             self.interval.xdate1.setDate(lastdate2)
             self.interval.xdate2.setDate(lastdate1)
         else:
-            lastx1 = str(self.output._baseoutputs[0]._x()[-1])
-            lastx2 = str(self.output._baseoutputs[0]._x()[-2])
+            lastx1 = str(self.output.inputs.x[-1])
+            lastx2 = str(self.output.inputs.x[-2])
             self.interval.x1.setText(lastx2)
             self.interval.x2.setText(lastx1)
 
@@ -1018,7 +944,11 @@ class CurveFitWidget(QtWidgets.QWidget):
         uy = any(arr.uy != 0)
         ux = any(arr.ux != 0)
         for i in range(len(arr)):
-            self.pginput.table.setItem(i, 0, QtWidgets.QTableWidgetItem(str(arr.x[i])))
+            if arr.xdate:
+                x = mdates.num2date(arr.x[i]).strftime('%d-%b-%Y')
+                self.pginput.table.setItem(i, 0, QtWidgets.QTableWidgetItem(x))
+            else:
+                self.pginput.table.setItem(i, 0, QtWidgets.QTableWidgetItem(str(arr.x[i])))
             self.pginput.table.setItem(i, 1, QtWidgets.QTableWidgetItem(str(arr.y[i])))
             if uy:
                 self.pginput.table.setItem(i, 2, QtWidgets.QTableWidgetItem(str(arr.uy[i])))
@@ -1038,7 +968,6 @@ class CurveFitWidget(QtWidgets.QWidget):
         self.pginput.model.tblGuess.blockSignals(False)
         self.pginput.model.custom.blockSignals(False)
         self.pginput.settings.chkAbsoluteSigma.blockSignals(False)
-        self.pginput.settings.chkDates.setChecked(self.fitcalc.xdates)
         self.pginput.updateplot()
 
     def get_menu(self):
@@ -1092,6 +1021,12 @@ class CurveFitWidget(QtWidgets.QWidget):
         except TypeError as e:
             if 'Improper input' in str(e):
                 QtWidgets.QMessageBox.warning(self, 'Curve Fit', 'Polynomial is overfit. Reduce order.')
+            else:
+                QtWidgets.QMessageBox.warning(self, 'Curve Fit', 'Could not compute solution!')
+                print(str(e))
+        except ValueError as e:
+            if 'beta0' in str(e):
+                QtWidgets.QMessageBox.warning(self, 'Curve Fit', 'Please provide initial guess.')
             else:
                 QtWidgets.QMessageBox.warning(self, 'Curve Fit', 'Could not compute solution!')
                 print(str(e))

@@ -22,13 +22,9 @@ Under the terms of Contract DE-NA0003525 with NTESS, the U.S. Government
 retains certain rights in this software.
 '''
 
-import pint
-ureg = pint.UnitRegistry(autoconvert_offset_to_baseunit=True)
-ureg.define('micro- = 1e-6 = µ-')  # Print micro as mu symbol.
-pint.set_application_registry(ureg)  # Allows loading pickles containing pint units
-
 from .uncertainty import UncertCalc, UncertaintyCalc, InputUncert, InputVar
 from .unc_complex import UncertComplex
 from .version import __version__, __date__
-from . import risk, curvefit, dataset, reverse, sweeper, ttable
+from . import risk, curvefit, dataset, reverse, sweeper, ttable, unitmgr
+
 

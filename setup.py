@@ -28,8 +28,8 @@ setup(
         'markdown>=3.1',
         'pyyaml>=5.1',
         ],
-    packages=['suncal', 'suncal.gui', 'psluncert'],
-    package_dir={'suncal': 'suncal', 'suncal.gui': 'suncal/gui', 'psluncert': 'suncal'},
+    packages=['suncal', 'suncal.gui', 'suncal.intervals', 'psluncert'],
+    package_dir={'suncal': 'suncal', 'suncal.gui': 'suncal/gui', 'suncal.intervals': 'suncal/intervals', 'psluncert': 'suncal'},
     entry_points={
         'console_scripts': ['suncal = suncal.__main__:main_unc',
                             'suncalf = suncal.__main__:main_setup',

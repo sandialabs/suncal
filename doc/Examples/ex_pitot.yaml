@@ -20,8 +20,8 @@
       k: '2'
       name: u(Delta)
       unc: '.1'
-      units: H2O * inch
-    units: H2O * inch
+      units: inch_H2O
+    units: inch_H2O
   - desc: Air Temperature
     mean: 67.4
     name: T
@@ -32,8 +32,8 @@
       k: '2'
       name: u(T)
       unc: '0.2'
-      units: delta_degF
-    units: degF
+      units: delta_degree_Fahrenheit
+    units: degree_Fahrenheit
   - desc: Air Pressure
     mean: 14.7
     name: p

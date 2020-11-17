@@ -6,7 +6,7 @@ import numpy as np
 import sympy
 from pint import DimensionalityError, UndefinedUnitError, OffsetUnitCalculusError
 from PyQt5 import QtWidgets, QtGui, QtCore
-import matplotlib as mpl
+import matplotlib.pyplot as plt
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
@@ -125,18 +125,18 @@ class FunctionTableWidget(QtWidgets.QTableWidget):
         self.setColumnWidth(self.COL_REPT, 50)
         self.fixSize()
 
-    def setFunclist(self, funclist):
-        ''' Set a list of functions '''
+    def setFunclist(self, model):
+        ''' Set the measurement Model (list of functions) '''
         self.blockSignals(True)
         self.clear()
         self.blockSignals(False)
-        for row, f in enumerate(funclist):
+        for row, (name, expr, unit, desc) in enumerate(zip(model.outnames, model.exprs, model.outunits, model.descriptions)):
             self.addRow()
             # Let signals populate the other tables
-            self.setItem(row, self.COL_NAME, TableItemTex(f.name))
-            self.setItem(row, self.COL_EXPR, TableItemTex(str(f.function)))
-            self.setItem(row, self.COL_UNIT, gui_widgets.EditableTableItem(f.outunits))
-            self.setItem(row, self.COL_DESC, gui_widgets.EditableTableItem(f.desc))
+            self.setItem(row, self.COL_NAME, TableItemTex(name))
+            self.setItem(row, self.COL_EXPR, TableItemTex(expr))
+            self.setItem(row, self.COL_UNIT, gui_widgets.EditableTableItem(unit))
+            self.setItem(row, self.COL_DESC, gui_widgets.EditableTableItem(desc))
             chk = QtWidgets.QCheckBox()
             chk.setCheckState(QtCore.Qt.Checked)
             chk.stateChanged.connect(lambda x, row=row, col=self.COL_REPT: self.itemEdit(row, col))
@@ -444,7 +444,7 @@ class MeasTableWidget(QtWidgets.QTableWidget):
         self.clear()
         self.setEditTriggers(QtWidgets.QTableWidget.NoEditTriggers)  # Only start editing manually
 
-        self.inputlist = []
+        self.inputs = None  # uncertainty.Input object
         self.setStyleSheet(TABLESTYLE)
         self._delegate = gui_widgets.LatexDelegate()
         self.setItemDelegateForColumn(self.COL_VARNAME, self._delegate)
@@ -492,14 +492,14 @@ class MeasTableWidget(QtWidgets.QTableWidget):
             (uncert is not None and column not in [self.COL_VALNAME, self.COL_STDUNC])):
             self.editItem(item)
 
-    def filltable(self, inputlist=None):
-        ''' Fill the table with inputs defined in inputlist, or refresh using existing inputlist '''
+    def filltable(self, inputs=None):
+        ''' Fill the table with inputs defined in Input object, or refresh using existing Input '''
         self.blockSignals(True)
-        if inputlist is not None:
-            self.inputlist = inputlist
+        if inputs is not None:
+            self.inputs = inputs
         self.clear()
         COLOR2 = QtGui.QBrush(QtGui.QColor(246, 246, 246, 255))
-        for inpt in self.inputlist:
+        for inpt in sorted(self.inputs, key=lambda x: x.name):
             self.setRowCount(self.rowCount() + 1)
             row = self.rowCount() - 1
             inptitem = TableItemTex(inpt.name)
@@ -1055,7 +1055,7 @@ class UncertPreview(QtWidgets.QWidget):
             self.component = comp
 
         if self.component is not None:
-            with mpl.rc_context({'font.size': 8}):
+            with plt.style.context({'font.size': 8}):
                 self.figure.clf()
                 ax = self.figure.add_subplot(1, 1, 1)
                 x, y = self.component.pdf()
@@ -1138,7 +1138,7 @@ class CorrelationTableWidget(QtWidgets.QTableWidget):
         self.cellChanged.emit(0, 0)
         self.fixSize()
 
-    def addRow(self):
+    def addRow(self, name1=None, name2=None, corr=None):
         ''' Add a row to the table. '''
         row = self.rowCount()
         self.blockSignals(True)
@@ -1151,6 +1151,8 @@ class CorrelationTableWidget(QtWidgets.QTableWidget):
         self.setCellWidget(row, 1, v2)
         val = gui_widgets.EditableTableItem('0')
         self.setItem(row, 2, val)
+        if name1 is not None:
+            self.setRow(row, name1, name2, corr)
         v1.currentIndexChanged.connect(lambda idx, r=row, c=0: self.cmbchange(r, c))
         v2.currentIndexChanged.connect(lambda idx, r=row, c=1: self.cmbchange(r, c))
         self.blockSignals(False)
@@ -1191,9 +1193,10 @@ class SettingsWidget(QtWidgets.QTableWidget):
     COL_VALUE = 1
     ROW_SAMPLES = 0
     ROW_SEED = 1
-    ROW_CNT = 2
+    ROW_SYMBOLIC = 2
+    ROW_CNT = 3
 
-    changed = QtCore.pyqtSignal(str, str)
+    changed = QtCore.pyqtSignal(str, object)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -1210,6 +1213,11 @@ class SettingsWidget(QtWidgets.QTableWidget):
         self.setItem(self.ROW_SAMPLES, self.COL_VALUE, gui_widgets.EditableTableItem(str(gui_common.settings.getSamples())))
         self.setItem(self.ROW_SEED, self.COL_NAME, gui_widgets.ReadOnlyTableItem('Random Seed'))
         self.setItem(self.ROW_SEED, self.COL_VALUE, gui_widgets.EditableTableItem(str(gui_common.settings.getRandomSeed())))
+        self.setItem(self.ROW_SYMBOLIC, self.COL_NAME, gui_widgets.ReadOnlyTableItem('Symbolic GUM Solution Only'))
+        chkbox = QtWidgets.QCheckBox()
+        chkbox.stateChanged.connect(lambda x: self.valuechange(self.item(self.ROW_SYMBOLIC, self.COL_NAME)))
+        self.setCellWidget(self.ROW_SYMBOLIC, self.COL_VALUE, chkbox)
+
         self.resizeColumnsToContents()
         self.itemChanged.connect(self.valuechange)
 
@@ -1220,7 +1228,10 @@ class SettingsWidget(QtWidgets.QTableWidget):
         ''' A setting value was changed. '''
         row = self.row(item)
         name = self.item(row, self.COL_NAME).text()
-        value = item.text()
+        if row == self.ROW_SYMBOLIC:
+            value = self.cellWidget(self.ROW_SYMBOLIC, self.COL_VALUE).isChecked()
+        else:
+            value = item.text()
         self.changed.emit(name, value)
 
     def setvalue(self, name, value):
@@ -1228,7 +1239,10 @@ class SettingsWidget(QtWidgets.QTableWidget):
         item = self.findItems(name, QtCore.Qt.MatchExactly)
         assert len(item) == 1
         row = item[0].row()
-        self.item(row, self.COL_VALUE).setText(str(value))
+        if row == self.ROW_SYMBOLIC:
+            self.cellWidget(self.ROW_SYMBOLIC, self.COL_VALUE).setChecked(value)
+        else:
+            self.item(row, self.COL_VALUE).setText(str(value))
 
 
 class PageInput(QtWidgets.QWidget):
@@ -1238,6 +1252,7 @@ class PageInput(QtWidgets.QWidget):
     def __init__(self, unccalc, parent=None):
         super().__init__(parent)
         self.unccalc = unccalc
+        self.symbolicmode = False
         # Set up widgets
         self.funclist = FunctionTableWidget()
         self.meastable = MeasTableWidget(unccalc)
@@ -1272,6 +1287,7 @@ class PageInput(QtWidgets.QWidget):
         self.funclist.resizerows.connect(self.panel.fixSize)
         self.meastable.resizerows.connect(self.panel.fixSize)
         self.corrtable.resizerows.connect(self.panel.fixSize)
+        self.settings.changed.connect(self.settingchanged)
 
         calclayout = QtWidgets.QHBoxLayout()
         calclayout.addStretch()
@@ -1288,6 +1304,13 @@ class PageInput(QtWidgets.QWidget):
     def isValid(self):
         ''' Check if all inputs are valid '''
         return self.funclist.isValid() and self.meastable.isValid()
+
+    def settingchanged(self, name, value):
+        ''' A setting was changed in Settings table '''
+        if name == 'Symbolic GUM Solution Only':
+            self.symbolicmode = value
+            self.meastable.setVisible(not value)
+            self.panel.hide('Measured Values and Uncertainties', value)
 
 
 #------------------------------------------------------------
@@ -1631,12 +1654,14 @@ class PageOutput(QtWidgets.QWidget):
     ''' Page for viewing output values '''
     back = QtCore.pyqtSignal()
 
+    allitems = ['Summary', 'Comparison Plots', 'Expanded Uncertainties', 'Uncertainty Budget',
+                'GUM Derivation', 'GUM Validity', 'Monte Carlo Distribution',
+                'Monte Carlo Input Plots', 'Monte Carlo Convergence', 'Full Report']
+
     def __init__(self, uncCalc, parent=None):
         super().__init__(parent)
         self.outputSelect = QtWidgets.QComboBox()
-        self.outputSelect.addItems(['Summary', 'Comparison Plots', 'Expanded Uncertainties', 'Uncertainty Budget',
-                                    'GUM Derivation', 'GUM Validity', 'Monte Carlo Distribution',
-                                    'Monte Carlo Input Plots', 'Monte Carlo Convergence', 'Full Report'])
+        self.outputSelect.addItems(self.allitems)
         self.outputPlot = OutputPlotWidget()
         self.outputExpanded = OutputExpandedWidget()
         self.outputMCsample = OutputMCSampleWidget()
@@ -1722,7 +1747,7 @@ class PageOutput(QtWidgets.QWidget):
                                        'norm': self.outputExpanded.GUMexpanded.GUMtype.currentText() == 'Normal/k',
                                        'shortest': self.outputExpanded.MCexpanded.MCtype.currentText() == 'Shortest'},
                     'gumvalues': self.outputGUMderiv.showvalues.isChecked(),
-                    'mchistparams': {'joint': self.outputMCsample.cmbjoint.currentText() == 'Joint PDF' and len(self.outdata.ucalc.get_baseinputs()) > 1,
+                    'mchistparams': {'joint': self.outputMCsample.cmbjoint.currentText() == 'Joint PDF' and len(self.outdata.inputs) > 1,
                                      'plotargs': {'bins': self.outputMCsample.bins.value(),
                                      'points': self.outputMCsample.points.value(),
                                      'contour': self.outputMCsample.cmbscat.currentText() == 'Contours',
@@ -1744,10 +1769,10 @@ class PageOutput(QtWidgets.QWidget):
                                       'cmapmc': gui_common.settings.getColormap('cmapscatter')}}
                     }
         if self.outputPlot.intervals.isChecked():
-            rptsetup['outplotparams']['plotargs']['intervals'] = self.outputPlot.MCexpanded.get_covlist()
-            rptsetup['outplotparams']['plotargs']['intTypeMC'] = self.outputPlot.MCexpanded.MCtype.currentText()
-            rptsetup['outplotparams']['plotargs']['intervalsGUM'] = self.outputPlot.GUMexpanded.get_covlist()
-            rptsetup['outplotparams']['plotargs']['intTypeGUMt'] = self.outputPlot.GUMexpanded.GUMtype.currentText() == 'Student-t'
+            rptsetup['outplotparams']['plotargs']['intervalsmc'] = self.outputPlot.MCexpanded.get_covlist()
+            rptsetup['outplotparams']['plotargs']['intervaltypemc'] = self.outputPlot.MCexpanded.MCtype.currentText()
+            rptsetup['outplotparams']['plotargs']['intervalsgum'] = self.outputPlot.GUMexpanded.get_covlist()
+            rptsetup['outplotparams']['plotargs']['intervaltypegum'] = 't' if 'Student' in self.outputPlot.GUMexpanded.GUMtype.currentText() else 'k'
 
         self.outputReportSetup.report = self.outdata.report_all(**rptsetup)  # Cache report for displaying/saving
         self.outputupdate()
@@ -1758,17 +1783,6 @@ class PageOutput(QtWidgets.QWidget):
         PLOT = 0
         TEXT = 1
         option = self.outputSelect.currentText()
-
-        # If these names change, make sure corresponding option in "if" below is updated.
-        assert self.outputSelect.findText('Summary') != -1
-        assert self.outputSelect.findText('Expanded Uncertainties') != -1
-        assert self.outputSelect.findText('Uncertainty Budget') != -1
-        assert self.outputSelect.findText('GUM Validity') != -1
-        assert self.outputSelect.findText('GUM Derivation') != -1
-        assert self.outputSelect.findText('Comparison Plots') != -1
-        assert self.outputSelect.findText('Monte Carlo Input Plots') != -1
-        assert self.outputSelect.findText('Monte Carlo Distribution') != -1
-        assert self.outputSelect.findText('Full Report') != -1
         if (option in ['Summary', 'Expanded Uncertainties', 'Uncertainty Budget', 'GUM Validity', 'GUM Derivation',
                        'Monte Carlo Components', 'Full Report', 'Warnings']):
             self.outputStack.setCurrentIndex(TEXT)
@@ -1806,10 +1820,10 @@ class PageOutput(QtWidgets.QWidget):
 
         elif option == 'GUM Derivation':
             solve = self.outputGUMderiv.showvalues.isChecked()
-            self.txtOutput.setReport(self.outdata.report_derivation(solve=solve))
+            self.txtOutput.setReport(self.outdata.gum.report_derivation(solve=solve))
 
         elif option == 'Monte Carlo Convergence':
-            self.outdata.plot_converge(plot=self.fig, relative=self.outputMCconv.relative.isChecked())
+            self.outdata.mc.plot_converge(plot=self.fig, relative=self.outputMCconv.relative.isChecked())
             self.canvas.draw_idle()
             self.fig.tight_layout()
 
@@ -1828,15 +1842,15 @@ class PageOutput(QtWidgets.QWidget):
                         'cmap': gui_common.settings.getColormap('cmapcontour'),
                         'cmapmc': gui_common.settings.getColormap('cmapscatter')}
             if self.outputPlot.intervals.isChecked():
-                plotargs['intervals'] = self.outputPlot.MCexpanded.get_covlist()
-                plotargs['intTypeMC'] = self.outputPlot.MCexpanded.MCtype.currentText()
-                plotargs['intervalsGUM'] = self.outputPlot.GUMexpanded.get_covlist()
-                plotargs['intTypeGUMt'] = self.outputPlot.GUMexpanded.GUMtype.currentText() == 'Student-t'
+                plotargs['intervalsmc'] = self.outputPlot.MCexpanded.get_covlist()
+                plotargs['intervaltypemc'] = self.outputPlot.MCexpanded.MCtype.currentText().lower()
+                plotargs['intervalsgum'] = self.outputPlot.GUMexpanded.get_covlist()
+                plotargs['intervaltypegum'] = 't' if 'Student' in self.outputPlot.GUMexpanded.GUMtype.currentText() else 'k'
 
             assert self.outputPlot.GUMexpanded.GUMtype.findText('Student-t') != -1   # In case name changes from 'Student-t' it needs to be updated here
 
             if self.outputPlot.joint():
-                self.outdata.plot_outputscatter(plot=self.fig, **plotargs)
+                self.outdata.plot_correlation(plot=self.fig, **plotargs)
             else:
                 self.outdata.plot_pdf(plot=self.fig, **plotargs)
             self.canvas.draw_idle()
@@ -1844,7 +1858,7 @@ class PageOutput(QtWidgets.QWidget):
         elif option == 'Monte Carlo Input Plots':
             assert self.outputMCsample.cmbjoint.findText('Joint PDF') != -1  # Update below if names change
             assert self.outputMCsample.cmbscat.findText('Contours') != -1  # Update below if names change
-            numinpts = len(self.outdata.ucalc.get_baseinputs())
+            numinpts = len(self.outdata.inputs)
             joint = self.outputMCsample.cmbjoint.currentText() == 'Joint PDF' and numinpts > 1
             plotargs = {'bins': self.outputMCsample.bins.value(),
                         'points': self.outputMCsample.points.value(),
@@ -1853,9 +1867,9 @@ class PageOutput(QtWidgets.QWidget):
                         'inpts': self.outputMCsample.ilist.getSelectedIndexes(),
                         'cmap': gui_common.settings.getColormap('cmapcontour')}
             if joint:
-                self.outdata.plot_xscatter(plot=self.fig, **plotargs)
+                self.outdata.mc.plot_xscatter(plot=self.fig, **plotargs)
             else:
-                self.outdata.plot_xhists(plot=self.fig, **plotargs)
+                self.outdata.mc.plot_xhists(plot=self.fig, **plotargs)
             self.canvas.draw_idle()
 
         elif option == 'GUM Validity':
@@ -1866,7 +1880,7 @@ class PageOutput(QtWidgets.QWidget):
         elif option == 'Monte Carlo Distribution':
             fidx = self.outputMCdist.cmbfunc.currentIndex()
             dist = self.outputMCdist.cmbdist.currentText()
-            y = self.outdata.foutputs[fidx].mc.samples.magnitude
+            y = self.outdata.mc.samples(fidx).magnitude
             fitparams = plotting.fitdist(y, distname=dist, plot=self.fig, qqplot=True, bins=100, points=200)
             with suppress(IndexError):  # Raises if axes weren't added (maybe invalid samples)
                 self.fig.axes[0].set_title('Distribution Fit')
@@ -1878,23 +1892,37 @@ class PageOutput(QtWidgets.QWidget):
         else:
             raise NotImplementedError
 
-    def update(self, outdata):
+    def update(self, outdata, symonly=False):
         ''' Calculation run, update the page '''
         self.outdata = outdata
-        funclist = [f.name for f in self.outdata.ucalc.functions if f.show]
-        self.outputPlot.set_funclist(funclist)
-        self.outputMCdist.set_funclist(funclist)
-        self.outputMCsample.set_inptlist(self.outdata.ucalc.get_baseinputnames())
-        self.outputReportSetup.report = None
-        idx = self.outputSelect.findText('Warnings')
-        if len(self.outdata.report_warns().get_md().strip()) > 0:
-            if idx < 0 or idx is None:
-                self.outputSelect.addItem('Warnings')
-            self.outputSelect.setCurrentIndex(self.outputSelect.count()-1)
-        elif idx >= 0:
-            self.outputSelect.removeItem(idx)
-        if self.outputSelect.currentText() == 'Full Report':
-            self.refresh_fullreport()
+        funclist = [self.outdata.names[i] for i in range(self.outdata.nouts) if self.outdata.show[i]]
+        if not symonly:
+            if self.outputSelect.count() < len(self.allitems):
+                # Switched from symbolic back to full
+                self.outputSelect.blockSignals(True)
+                self.outputSelect.clear()
+                self.outputSelect.addItems(self.allitems)
+                self.outputSelect.blockSignals(False)
+            self.outputPlot.set_funclist(funclist)
+            self.outputMCdist.set_funclist(funclist)
+            self.outputMCsample.set_inptlist(self.outdata.inputs.names)
+            self.outputReportSetup.report = None
+            idx = self.outputSelect.findText('Warnings')
+            if len(self.outdata.report_warns().get_md().strip()) > 0:
+                if idx < 0 or idx is None:
+                    self.outputSelect.addItem('Warnings')
+                self.outputSelect.setCurrentIndex(self.outputSelect.count()-1)
+            elif idx >= 0:
+                self.outputSelect.removeItem(idx)
+            if self.outputSelect.currentText() == 'Full Report':
+                self.refresh_fullreport()
+                self.outputupdate()
+        else:
+            self.outputSelect.blockSignals(True)
+            self.outputSelect.clear()
+            self.outputSelect.addItems(['GUM Derivation'])
+            self.outputSelect.blockSignals(False)
+            self.ctrlStack.setCurrentIndex(0)
             self.outputupdate()
 
     def goback(self):
@@ -1975,6 +2003,7 @@ class UncertPropWidget(QtWidgets.QWidget):
 
     def backbutton(self):
         ''' Back button pressed. '''
+        self.uncCalc.clearout()
         self.stack.setCurrentIndex(0)
         self.actSaveReport.setEnabled(False)
         self.mnuSaveSamples.setEnabled(False)
@@ -2004,9 +2033,8 @@ class UncertPropWidget(QtWidgets.QWidget):
         self.uncCalc.set_function(fdict['expr'], idx=row, name=fdict['name'], desc=fdict['desc'],
                                   show=fdict.get('report', True), outunits=fdict['unit'])
         self.uncCalc.add_required_inputs()
-        baseinputs = self.uncCalc.get_baseinputs()
-        self.pginput.meastable.filltable(baseinputs)
-        self.pginput.corrtable.setVarNames(self.uncCalc.get_reqd_inputs())
+        self.pginput.meastable.filltable(self.uncCalc.inputs)
+        self.pginput.corrtable.setVarNames(self.uncCalc.required_inputs)
         self.actSweep.setEnabled(True)
         self.actReverse.setEnabled(True)
 
@@ -2059,7 +2087,7 @@ class UncertPropWidget(QtWidgets.QWidget):
 
     def importdistributions(self):
         ''' Load uncertainty components from data for multiple input variables '''
-        varnames = self.uncCalc.get_baseinputnames()
+        varnames = self.uncCalc.inputs.names
         dlg = page_dataimport.DistributionSelectWidget(singlecol=False, project=self.uncCalc.project, coloptions=varnames)
         if dlg.exec_():
             dists = dlg.get_dist()
@@ -2077,7 +2105,7 @@ class UncertPropWidget(QtWidgets.QWidget):
                     if nom is not None:
                         self.uncCalc.set_input(varname, nom=nom)
                     self.uncCalc.set_uncert(varname, name=f'u({varname})', degf=params.get('df', np.inf),
-                                            units=str(self.uncCalc.get_input(varname).units), **params)
+                                            units=str(self.uncCalc.get_inputvar(varname).units), **params)
                 self.pginput.meastable.filltable()
                 self.backbutton()
 
@@ -2087,16 +2115,16 @@ class UncertPropWidget(QtWidgets.QWidget):
         if not (self.pginput.funclist.isValid() and self.pginput.meastable.isValid()):
             msg = 'Invalid input parameter!'
 
-        elif len(self.uncCalc.functions) < 1:
+        elif len(self.uncCalc.model.exprs) < 1:
             msg = 'No functions to compute!'
 
-        elif self.uncCalc.check_circular():
+        elif self.uncCalc.model.check_circular():
             msg = 'Circular reference in function definitions'
 
-        else:
+        elif not self.pginput.symbolicmode:
             try:
-                self.uncCalc.check_dimensionality()
-            except (DimensionalityError, UndefinedUnitError) as e:
+                self.uncCalc.model.check_dimensionality()
+            except (TypeError, DimensionalityError, UndefinedUnitError) as e:
                 msg = 'Units Error: {}'.format(e)
             except OffsetUnitCalculusError as e:
                 badunit = re.findall(r'\((.+ )', str(e))[0].split()[0].strip(', ')
@@ -2106,7 +2134,7 @@ class UncertPropWidget(QtWidgets.QWidget):
 
         if msg is None:
             try:
-                self.uncCalc.calculate()
+                self.uncCalc.calculate(mc=not self.pginput.symbolicmode)
             except OffsetUnitCalculusError as e:
                 badunit = re.findall(r'\((.+ )', str(e))[0].split()[0].strip(', ')
                 msg = 'Ambiguous unit {}. Try "{}".'.format(badunit, 'delta_{}'.format(badunit))
@@ -2117,7 +2145,7 @@ class UncertPropWidget(QtWidgets.QWidget):
 
         if msg is None:
             self.stack.setCurrentIndex(self.PG_OUTPUT)
-            self.pgoutput.update(self.uncCalc.out)
+            self.pgoutput.update(self.uncCalc.out, symonly=self.pginput.symbolicmode)
             self.pgoutput.outputupdate()
             self.actSaveReport.setEnabled(True)
             self.mnuSaveSamples.setEnabled(True)
@@ -2133,17 +2161,17 @@ class UncertPropWidget(QtWidgets.QWidget):
         self.pginput.funclist.blockSignals(True)
         self.pgoutput.set_unccalc(self.uncCalc)
         self.pginput.set_unccalc(self.uncCalc)
-        self.pginput.funclist.setFunclist(calc.functions)
-        self.pginput.corrtable.setVarNames([i.name for i in self.uncCalc.get_baseinputs()])
-        self.pginput.settings.setvalue('Monte Carlo Samples', self.uncCalc.samples)
-        self.pginput.settings.setvalue('Random Seed', self.uncCalc.seed)
+        self.pginput.funclist.setFunclist(self.uncCalc.model)
+        self.pginput.corrtable.setVarNames(self.uncCalc.inputs.names)
+        self.pginput.settings.setvalue('Monte Carlo Samples', self.uncCalc.inputs.nsamples)
+        self.pginput.settings.setvalue('Random Seed', self.uncCalc.inputs.seed)
         self.pginput.description.setPlainText(str(self.uncCalc.longdescription))
 
-        if self.uncCalc._corr is not None:
-            for v1, v2, c in self.uncCalc.get_corr_list():
+        if len(self.uncCalc.inputs.corr_list) > 0:
+            for v1, v2, c in self.uncCalc.inputs.corr_list:
                 if c != 0.:
-                    self.pginput.corrtable.addRow()
-                    self.pginput.corrtable.setRow(self.pginput.corrtable.rowCount()-1, v1, v2, c)
+                    self.pginput.corrtable.addRow(v1, v2, c)
+            self.pginput.corrtable.blockSignals(False)
         if self.uncCalc.longdescription:
             self.pginput.panel.expand('Notes')
         self.stack.setCurrentIndex(self.PG_INPUT)

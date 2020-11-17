@@ -33,7 +33,7 @@ class TargetSetupWidget(QtWidgets.QTableWidget):
         self.setSizePolicy(QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Minimum)
         self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
         self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
-        
+
         self.setItem(self.ROW_FUNC, self.COL_NAME, gui_widgets.ReadOnlyTableItem('Function'))
         self.setItem(self.ROW_TARG, self.COL_NAME, gui_widgets.ReadOnlyTableItem('Target Value'))
         self.setItem(self.ROW_TUNC, self.COL_NAME, gui_widgets.ReadOnlyTableItem('Target Uncertainty'))
@@ -66,7 +66,7 @@ class TargetSetupWidget(QtWidgets.QTableWidget):
         self.txtTarget.editingFinished.connect(self.update_values)
         self.txtTargetUnc.editingFinished.connect(self.update_values)
         self.fixSize()
-    
+
     def fixSize(self):
         height = max(self.horizontalHeader().height()+20, self.verticalHeader().length() + self.horizontalHeader().height())
         self.setFixedHeight(height)
@@ -79,7 +79,7 @@ class TargetSetupWidget(QtWidgets.QTableWidget):
         self.cmbFunction.addItems(self.ucalc.get_functionnames())
         self.cmbFunction.setCurrentIndex(self.cmbFunction.findText(current_f))
         self.cmbSolveFor.clear()
-        self.cmbSolveFor.addItems(self.ucalc.get_baseinputnames())
+        self.cmbSolveFor.addItems(self.ucalc.model.inputnames)
         self.cmbSolveFor.setCurrentIndex(self.cmbSolveFor.findText(current_v))
 
     def update_values(self):
@@ -151,7 +151,7 @@ class UncertReverseWidget(page_uncertprop.UncertPropWidget):
             QtWidgets.QMessageBox.warning(self, 'Uncertainty Calculator', 'Invalid Input Parameter!')
             valid = False
 
-        elif len(self.uncReverse.functions) < 1:
+        elif len(self.uncReverse.model.exprs) < 1:
             QtWidgets.QMessageBox.warning(self, 'Uncertainty Calculator', 'Need at least one measurement function to calculate.')
             valid = False
 

@@ -1,0 +1,77 @@
+- I0: 180
+  assets:
+    A:
+      enddates:
+      - 735399.0
+      - 735601.0
+      - 735847.0
+      - 736029.0
+      - 736151.0
+      passfail:
+      - 1.0
+      - 1.0
+      - 1.0
+      - 1.0
+      - 1.0
+      startdates:
+      - 735127.0
+      - 735399.0
+      - 735601.0
+      - 735847.0
+      - 736029.0
+    B:
+      enddates:
+      - 735488.0
+      - 735759.0
+      - 736156.0
+      passfail:
+      - 0.0
+      - 0.0
+      - 0.0
+      startdates:
+      - 735211.0
+      - 735488.0
+      - 735968.0
+    C:
+      enddates:
+      - 735590.0
+      - 735869.0
+      - 736056.0
+      - 736186.0
+      passfail:
+      - 1.0
+      - 1.0
+      - .nan
+      - 1.0
+      startdates:
+      - 735251.0
+      - 735590.0
+      - 735869.0
+      - 736056.0
+    D:
+      enddates:
+      - 735793.0
+      - 735977.0
+      - 736159.0
+      passfail:
+      - 1.0
+      - 1.0
+      - 1.0
+      startdates:
+      - 735601.0
+      - 735793.0
+      - 735977.0
+  conf: 0.5
+  desc: 'Four assets with pass/fail data and nominal interval of 180 days are entered.
+    Reliability target of 95% used to calculate a new interval.
+
+    '
+  maxchange: 2
+  maxint: 1865
+  mindelta: 5
+  minint: 14
+  mode: intervaltestasset
+  name: interval
+  target: 0.95
+  thresh: 999
+  tol: 56

@@ -53,8 +53,8 @@ class SweepSetupTable(gui_widgets.FloatTableWidget):
         self.sweepcalc = calc
         self.inptlist = []
         self.setStyleSheet(page_uncertprop.TABLESTYLE)
-        
-        # This is stupid and ugly but otherwise the keyboard navigation doesn't work with a table 
+
+        # This is stupid and ugly but otherwise the keyboard navigation doesn't work with a table
         # embedded in a tree. It works fine when table isn't embedded in tree.
         self.setEditTriggers(QtWidgets.QTableWidget.AllEditTriggers)
 
@@ -67,10 +67,10 @@ class SweepSetupTable(gui_widgets.FloatTableWidget):
 
             for i, val in enumerate(values):
                 self.setItem(i, swpidx, QtWidgets.QTableWidgetItem(str(val)))
-            inptname = swp.get('inptname')
+            var = swp.get('var')
             comp = swp.get('comp')
             param = swp.get('param')
-            if inptname == 'corr':
+            if var == 'corr':
                 sweepstr = 'corr({}, {})'.format(swp.get('var1'), swp.get('var2'))
             elif comp == 'nom':
                 sweepstr = 'Mean({})'.format(swp.get('var'))
@@ -153,7 +153,7 @@ class SweepSetupTable(gui_widgets.FloatTableWidget):
         dlg = page_dataimport.ArraySelectWidget(singlecol=True, project=self.sweepcalc.project)
         ok = dlg.exec_()
         if ok:
-            sweep = dlg.get_array().y
+            sweep = dlg.get_array().get('y')
             if sweep is not None:
                 self.blockSignals(True)
                 if len(sweep) > self.rowCount():
@@ -309,9 +309,14 @@ class SweepParamWidget(QtWidgets.QDialog):
         varidx = [v.name for v in self.inptlist].index(varname)
         compname = self.unccomp.currentText()
         if compname:
-            compidx = [u.name for u in self.inptlist[varidx].uncerts].index(compname)
+            try:
+                compidx = [u.name for u in self.inptlist[varidx].uncerts].index(compname)
+            except ValueError:   # No uncertainty components!
+                items = []
+            else:
+                items = self.inptlist[varidx].uncerts[compidx].args.keys()
             self.uncparam.clear()
-            self.uncparam.addItems(self.inptlist[varidx].uncerts[compidx].args.keys())
+            self.uncparam.addItems(items)
         self.blockSignals(False)
 
     def get_sweepstr(self):
@@ -402,7 +407,6 @@ class PageOutputSweep(page_uncertprop.PageOutput):
     def sliderchange(self):
         ''' Slider was changed, update the unccalc report '''
         i = self.slider.value()
-        self.set_unccalc(self.sweepReport.outputlist[i].ucalc)
         self.update(self.sweepReport.outputlist[i])
         # TODO: update slider to show math image instead of text only, get_single_desc would return latex
         self.slider.setLblTxt(self.sweepReport.get_single_desc(i))
@@ -450,8 +454,7 @@ class UncertSweepWidget(page_uncertprop.UncertPropWidget):
     def funcchanged(self, row, fdict):
         ''' Sweep function has changed '''
         super().funcchanged(row, fdict)
-        baseinputs = self.uncSweep.unccalc.get_baseinputs()
-        self.sweepsetup.set_inptlist(baseinputs)
+        self.sweepsetup.set_inptlist(self.uncSweep.unccalc.inputs)
         with suppress(AttributeError):  # May not be defined yet
             self.actNewUnc.setEnabled(True)
 
@@ -468,7 +471,7 @@ class UncertSweepWidget(page_uncertprop.UncertPropWidget):
             QtWidgets.QMessageBox.warning(self, 'Uncertainty Calculator', 'Invalid Input Parameter!')
             valid = False
 
-        elif len(self.uncSweep.unccalc.functions) < 1:
+        elif len(self.uncSweep.unccalc.model.exprs) < 1:
             QtWidgets.QMessageBox.warning(self, 'Uncertainty Calculator', 'Need at least one measurement function to calculate.')
             valid = False
 
@@ -537,8 +540,7 @@ class UncertReverseSweepWidget(page_uncertprop.UncertPropWidget):
     def funcchanged(self, row, fdict):
         ''' Function has changed '''
         super().funcchanged(row, fdict)
-        baseinputs = self.uncCalc.get_baseinputs()
-        self.sweepsetup.set_inptlist(baseinputs)
+        self.sweepsetup.set_inptlist(self.uncCalc.inputs)
         self.targetsetup.update_names()
         with suppress(AttributeError):
             self.actNewSwp.setEnabled(True)
@@ -559,7 +561,7 @@ class UncertReverseSweepWidget(page_uncertprop.UncertPropWidget):
             QtWidgets.QMessageBox.warning(self, 'Uncertainty Calculator', 'Invalid Input Parameter!')
             valid = False
 
-        elif len(self.uncCalc.functions) < 1:
+        elif len(self.uncCalc.model.exprs) < 1:
             QtWidgets.QMessageBox.warning(self, 'Uncertainty Calculator', 'Need at least one measurement function to calculate.')
             valid = False
 

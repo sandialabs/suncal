@@ -13,41 +13,39 @@ from suncal import curvefit
 def test_chain():
     ''' Test chaining of functions '''
     u = uc.UncertaintyCalc(seed=0)
-    varid = id(u.variables)  # Make sure this doesn't change!
     u.set_input('x', nom=100, std=1)  # Test adding uncertainties via set_input()
     u.set_input('y', nom=50, std=1)
     u.set_function('x+y', name='f')
     u.set_function('2*f', name='g')
     u.set_function('2*g', name='h')
     u.calculate()
-    assert np.isclose(u.out.f.gum.mean.magnitude, u.out.g.gum.mean.magnitude/2)
-    assert np.isclose(u.out.g.gum.mean.magnitude, u.out.h.gum.mean.magnitude/2)
-    assert np.isclose(u.out.f.gum.uncert.magnitude, u.out.g.gum.uncert.magnitude/2)
-    assert np.isclose(u.out.g.gum.uncert.magnitude, u.out.h.gum.uncert.magnitude/2)
+    assert np.isclose(u.out.gum.nom('f').magnitude, u.out.gum.nom('g').magnitude/2)
+    assert np.isclose(u.out.gum.nom('g').magnitude, u.out.gum.nom('h').magnitude/2)
+    assert np.isclose(u.out.gum.uncert('f').magnitude, u.out.gum.uncert('g').magnitude/2)
+    assert np.isclose(u.out.gum.uncert('g').magnitude, u.out.gum.uncert('h').magnitude/2)
 
-    assert np.isclose(u.out.f.mc.mean.magnitude, u.out.g.mc.mean.magnitude/2, rtol=.02)
-    assert np.isclose(u.out.g.mc.mean.magnitude, u.out.h.mc.mean.magnitude/2, rtol=.02)
-    assert np.isclose(u.out.f.mc.uncert.magnitude, u.out.g.mc.uncert.magnitude/2, rtol=.05)
-    assert np.isclose(u.out.g.mc.uncert.magnitude, u.out.h.mc.uncert.magnitude/2, rtol=.05)
+    assert np.isclose(u.out.mc.nom('f').magnitude, u.out.mc.nom('g').magnitude/2, rtol=.02)
+    assert np.isclose(u.out.mc.nom('g').magnitude, u.out.mc.nom('h').magnitude/2, rtol=.02)
+    assert np.isclose(u.out.mc.uncert('f').magnitude, u.out.mc.uncert('g').magnitude/2, rtol=.05)
+    assert np.isclose(u.out.mc.uncert('g').magnitude, u.out.mc.uncert('h').magnitude/2, rtol=.05)
 
     # Now change the base equation and verify everything trickles down
-    oldh_mean = u.out.h.gum.mean.magnitude
-    oldh_unc = u.out.h.gum.uncert.magnitude
+    oldh_mean = u.out.gum.nom('h').magnitude
+    oldh_unc = u.out.gum.uncert('h').magnitude
     u.set_function('(x+y)/2', name='f')
     u.calculate()
-    assert oldh_mean/2 == u.out.h.gum.mean.magnitude
-    assert oldh_unc/2 == u.out.h.gum.uncert.magnitude
+    assert oldh_mean/2 == u.out.gum.nom('h').magnitude
+    assert oldh_unc/2 == u.out.gum.uncert('h').magnitude
 
-    assert np.isclose(u.out.f.gum.mean.magnitude, u.out.g.gum.mean.magnitude/2)
-    assert np.isclose(u.out.g.gum.mean.magnitude, u.out.h.gum.mean.magnitude/2)
-    assert np.isclose(u.out.f.gum.uncert.magnitude, u.out.g.gum.uncert.magnitude/2)
-    assert np.isclose(u.out.g.gum.uncert.magnitude, u.out.h.gum.uncert.magnitude/2)
+    assert np.isclose(u.out.gum.nom('f').magnitude, u.out.gum.nom('g').magnitude/2)
+    assert np.isclose(u.out.gum.nom('g').magnitude, u.out.gum.nom('h').magnitude/2)
+    assert np.isclose(u.out.gum.uncert('f').magnitude, u.out.gum.uncert('g').magnitude/2)
+    assert np.isclose(u.out.gum.uncert('g').magnitude, u.out.gum.uncert('h').magnitude/2)
 
-    assert np.isclose(u.out.f.mc.mean.magnitude, u.out.g.mc.mean.magnitude/2, rtol=.02)
-    assert np.isclose(u.out.g.mc.mean.magnitude, u.out.h.mc.mean.magnitude/2, rtol=.02)
-    assert np.isclose(u.out.f.mc.uncert.magnitude, u.out.g.mc.uncert.magnitude/2, rtol=.02)
-    assert np.isclose(u.out.g.mc.uncert.magnitude, u.out.h.mc.uncert.magnitude/2, rtol=.02)
-    assert id(u.variables) == varid
+    assert np.isclose(u.out.mc.nom('f').magnitude, u.out.mc.nom('g').magnitude/2, rtol=.02)
+    assert np.isclose(u.out.mc.nom('g').magnitude, u.out.mc.nom('h').magnitude/2, rtol=.02)
+    assert np.isclose(u.out.mc.uncert('f').magnitude, u.out.mc.uncert('g').magnitude/2, rtol=.05)
+    assert np.isclose(u.out.mc.uncert('g').magnitude, u.out.mc.uncert('h').magnitude/2, rtol=.05)
 
     # Double-chaining, order shouldn't matter
     u2 = uc.UncertaintyCalc(['g = a*b*f', 'f = a+b*c+h', 'h=a+d'])
@@ -57,8 +55,7 @@ def test_chain():
     u2.set_input('d', nom=1, std=.5)
     u2.calculate()
     u2.out.report_sens()  # This was crashing before
-    symbols = u2.functions[0].get_basefunc()
-    symbols = [str(s) for s in u2.functions[0].get_basefunc().free_symbols]
+    symbols = u2.model.inputnames
     assert 'a' in symbols
     assert 'b' in symbols
     assert 'c' in symbols
@@ -74,23 +71,23 @@ def test_callable():
         return a + b**2
 
     u = uc.UncertaintyCalc(myfunc, seed=0)
-    reqinpts = u.get_reqd_inputs()
+    reqinpts = u.required_inputs
     assert 'a' in reqinpts
     assert 'b' in reqinpts
     assert len(reqinpts) == 2
     u.add_required_inputs()
-    assert len(u.variables) == 3  # a, b, myfunc
-    assert 'a' in u.functions[0].get_basenames()
-    assert 'b' in u.functions[0].get_basenames()
+    assert len(u.inputs) == 2  # a, b
+    assert 'a' in u.model.inputnames
+    assert 'b' in u.model.inputnames
 
     u.set_input('a', nom=5)
     u.set_input('b', nom=2)
     u.set_uncert('a', std=.05)
     u.set_uncert('b', std=.02)
-    assert u.functions[0].get_basemeans()['a'] == 5
+    assert u.inputs.means()['a'] == 5
 
     u.calculate()
-    assert np.isclose(u.out.get_output(method='gum').mean.magnitude, 9)
+    assert np.isclose(u.out.gum.nom().magnitude, 9)
 
 
 def test_callablekwargs():
@@ -103,9 +100,8 @@ def test_callablekwargs():
     with pytest.raises(ValueError):  # Error if function takes unnamed kwargs and kwnames parameter not specified
         u = uc.UncertaintyCalc(myfunc, seed=0)
 
-    u = uc.UncertaintyCalc(seed=0)
-    u.set_function(myfunc, kwnames=['x', 'y'])
-    reqinpts = u.get_reqd_inputs()
+    u = uc.UncertaintyCalc(myfunc, finnames=['x', 'y'], seed=0)
+    reqinpts = u.required_inputs
     assert 'x' in reqinpts
     assert 'y' in reqinpts
     assert len(reqinpts) == 2
@@ -115,7 +111,7 @@ def test_callablekwargs():
     u.set_uncert('x', std=.1)
     u.set_uncert('y', std=.2)
     u.calculate()
-    assert np.isclose(u.out.get_output(method='gum').mean.magnitude, 8)
+    assert np.isclose(u.out.gum.nom().magnitude, 8)
 
 
 def test_chaincallable():
@@ -126,33 +122,29 @@ def test_chaincallable():
     def myfunc2(myfunc1):
         return myfunc1 + 100
 
-    u = uc.UncertaintyCalc(seed=0)
-    u.set_function(myfunc1)
-    u.set_function(myfunc2)
-    reqinpts = u.get_reqd_inputs()
+    def myfunc(x, y):
+        m = myfunc1(x, y)
+        return m, myfunc2(m)
+
+    u = uc.UncertaintyCalc(myfunc, seed=0, samples=10)
+    reqinpts = u.required_inputs
     assert 'x' in reqinpts
     assert 'y' in reqinpts
     u.add_required_inputs()
-    assert 'x' in u.functions[0].get_basenames()
-    assert 'y' in u.functions[0].get_basenames()
-    assert len(u.functions[0].get_basenames()) == 2
-    assert 'myfunc1' in u.functions[1].get_basenames()
-    assert len(u.functions[1].get_basenames()) == 1
+    assert 'x' in u.inputs.names
+    assert 'y' in u.inputs.names
+    assert len(u.model.outnames) == 2
+    assert 'myfunc_1' in u.model.outnames  # Can't automagically get name when output is a tuple
 
     u.set_input('x', nom=2)
     u.set_input('y', nom=10)
     u.set_uncert('x', std=.1)
     u.set_uncert('y', std=.5)
-    u.calcGUM()
-    assert np.isclose(u.out.get_output(fidx=0, method='gum').mean.magnitude, 20)
-    assert np.isclose(u.out.get_output(fidx=1, method='gum').mean.magnitude, 120)
+    u.calculate()
+    assert np.isclose(u.out.gum.nom(0).magnitude, 20)
+    assert np.isclose(u.out.gum.nom(1).magnitude, 120)
 
-    cont = u.get_contour(0,1)  # Test contour generation - when functions have different length arguments
-    assert cont[0].shape == (50,50)  # X grid
-    assert cont[1].shape == (50,50)  # Y grid
-    assert cont[2].shape == (50,50)  # PDF grid
 
-    
 @pytest.mark.filterwarnings('ignore')  # Will generate unitstripped warning due to use of np.vectorize with unit values
 def test_vectorize():
     ''' Make sure non-vectorized functions can run. Also tests function with kwargs arguments '''
@@ -167,8 +159,7 @@ def test_vectorize():
 
     varnames = ['T{}'.format(i+1) for i in range(4)] + ['R{}'.format(i+1) for i in range(4)]
 
-    u = uc.UncertaintyCalc(samples=1000)
-    u.set_function(tcr, kwnames=varnames)
+    u = uc.UncertaintyCalc(tcr, finnames=varnames, samples=1000)
     for i, rval in enumerate([100, 100.1, 100.2, 100.3]):
         Rname = 'R{}'.format(i+1)
         u.set_input(Rname, nom=rval)
@@ -178,8 +169,8 @@ def test_vectorize():
         u.set_input(Tname, nom=tval)
         u.set_uncert(Tname, std=.05)
     u.calculate(GUM=False)
-    MC = u.out.get_output(method='mc')
-    assert np.isclose(MC.mean.magnitude, 0.0005, atol=.0001)
+    assert np.isclose(u.out.mc.nom().magnitude, 0.0005, atol=.0001)
+
 
 @pytest.mark.filterwarnings('ignore')  # Will generate unitstripped warning due to use of np.vectorize with unit values
 def test_vectorize_units():
@@ -191,31 +182,25 @@ def test_vectorize_units():
             return x
 
     # First run has no units
-    u = uc.UncertCalc(samples=1000)
-    u.set_function(test)
+    u = uc.UncertCalc(test, samples=1000)
     u.set_input('x', nom=100, std=1)
     u.calculate(gum=False)
-    MC = u.out.get_output(method='mc')
-    assert np.isclose(MC.mean.magnitude, 200, atol=1)
-    assert str(MC.mean.units) == 'dimensionless'
+    assert np.isclose(u.out.mc.nom().magnitude, 200, atol=1)
+    assert str(u.out.mc._units[0]) == 'dimensionless'
 
     # Now input has units but output units are not specified
-    u = uc.UncertCalc(samples=1000)
-    u.set_function(test)
+    u = uc.UncertCalc(test, samples=1000)
     u.set_input('x', nom=100, std=1, units='cm')
     u.calculate(gum=False)
-    MC = u.out.get_output(method='mc')
-    assert np.isclose(MC.mean.magnitude, 200, atol=1)
-    assert str(MC.mean.units) == 'centimeter'
+    assert np.isclose(u.out.mc.nom().magnitude, 200, atol=1)
+    assert str(u.out.mc._units[0]) == 'centimeter'
 
-    # Finally, request a unit converion on the output
-    u = uc.UncertCalc(samples=1000)
-    u.set_function(test, outunits='meter')
+    # Finally, request a unit conversion on the output
+    u = uc.UncertCalc(test, units='meter', samples=1000)
     u.set_input('x', nom=100, std=1, units='cm')
     u.calculate(gum=False)
-    MC = u.out.get_output(method='mc')
-    assert np.isclose(MC.mean.magnitude, 2, atol=.1)
-    assert str(MC.mean.units) == 'meter'
+    assert np.isclose(u.out.mc.nom().magnitude, 2, atol=.1)
+    assert str(u.out.mc._units[0]) == 'meter'
 
 
 @pytest.mark.filterwarnings('ignore')  # Will generate a np warning about degrees of freedom <= 0
@@ -227,38 +212,37 @@ def test_constant():
     u.set_input('b', 5)
     u.set_uncert('b', std=0.1)
     u.calculate()
-    GUM1 = u.out.a.gum
-    GUM2 = u.out.get_output(fidx=1, method='gum')
-    assert np.isclose(GUM1.mean.magnitude, 10)
-    assert np.isclose(GUM2.mean.magnitude, 15)
+    assert np.isclose(u.out.gum.nom(0).magnitude, 10)
+    assert np.isclose(u.out.gum.nom(1).magnitude, 15)
 
 
 def test_readconfig():
     ''' Test read_configfile '''
     u = uc.UncertaintyCalc.from_configfile(os.path.join('test', 'test1.yaml'))
-    assert [f.origfunction for f in u.functions] == ['f = (a + b) / c', 'g = a - b', 'h = b * c']
-    assert u.samples == 1E6
-    assert len(u.get_baseinputs()) == 3
-    a = u.get_input('a')
+    assert u.model.outnames == ['f', 'g', 'h']
+    assert u.model.exprs == ['(a + b) / c', 'a - b', 'b * c']
+    assert u.inputs.nsamples == 1E6
+    assert len(u.inputs) == 3
+    a = u.get_inputvar('a')
     assert a.name == 'a'
     assert a.nom == 10.0
     assert float(a.uncerts[0].args['std']) == 0.2
     assert a.uncerts[0].distname == 'normal'
     assert a.degf() == 10
-    b = u.get_input('b')
+    b = u.get_inputvar('b')
     assert b.name == 'b'
     assert b.nom == 25.0
     assert float(b.uncerts[0].args['scale']) == 2.0
     assert float(b.uncerts[0].args['a']) == 5.0
     assert b.uncerts[0].distname == 'gamma'
     assert b.degf() == np.inf
-    c = u.get_input('c')
+    c = u.get_inputvar('c')
     assert c.name == 'c'
     assert c.nom == 2.0
     assert float(c.uncerts[0].args['std']) == 0.1
     assert c.uncerts[0].distname == 'normal'
     assert c.degf() == 88
-    corlist = u.get_corr_list()
+    corlist = u.inputs.corr_list
     assert ('b', 'a', -0.36) in corlist or ('a', 'b', -0.36) in corlist
     assert ('a', 'c', -0.4) in corlist or ('c', 'a', -0.4) in corlist
     assert ('b', 'c', 0.86) in corlist or ('c', 'b', 0.86) in corlist
@@ -271,12 +255,12 @@ def test_saveconfig():
     u.save_config(CHECK_FILE)
     u2 = uc.UncertaintyCalc.from_configfile(CHECK_FILE)
 
-    assert [str(f) for f in u.functions] == [str(f) for f in u2.functions]
-    assert u.variables[0].name == u2.variables[0].name
-    assert u.variables[1].name == u2.variables[1].name
-    assert u.variables[2].name == u2.variables[2].name
-    assert np.allclose(u._corr, u2._corr, rtol=1E-9, atol=0)
-    assert u.samples == u2.samples
+    assert u.model.sympyexprs == u2.model.sympyexprs
+    assert u.inputs[0].name == u2.inputs[0].name
+    assert u.inputs[1].name == u2.inputs[1].name
+    assert u.inputs[2].name == u2.inputs[2].name
+    assert np.allclose(u.inputs.correlation(), u2.inputs.correlation(), rtol=1E-9, atol=0)
+    assert u.inputs.nsamples == u2.inputs.nsamples
     os.remove(CHECK_FILE)
 
 def test_addinputs():
@@ -285,34 +269,30 @@ def test_addinputs():
     u = uc.UncertaintyCalc('a + b + c + d')
     u.set_input('a', nom=1)
     u.add_required_inputs()
-
-    assert len(u.get_baseinputs()) == 4
-    names = [i.name for i in u.variables]
-    assert 'b' in names
-    assert 'c' in names
-    assert 'd' in names
+    assert len(u.inputs) == 4
+    assert 'b' in u.inputs.names
+    assert 'c' in u.inputs.names
+    assert 'd' in u.inputs.names
 
     # and a sympy function...
     x,y,z = sympy.symbols('x y z')
     f = x+y+z
     u = uc.UncertaintyCalc(f)
     u.add_required_inputs()
-    assert len(u.get_baseinputs()) == 3
-    names = [i.name for i in u.variables]
-    assert 'x' in names
-    assert 'y' in names
-    assert 'z' in names
+    assert len(u.inputs) == 3
+    assert 'x' in u.inputs.names
+    assert 'y' in u.inputs.names
+    assert 'z' in u.inputs.names
 
     # and for callable...
     def myfunc(j,k,l):
         return j+k+l
     u = uc.UncertaintyCalc(myfunc)
     u.add_required_inputs()
-    assert len(u.get_baseinputs()) == 3
-    names = [i.name for i in u.variables]
-    assert 'j' in names
-    assert 'k' in names
-    assert 'l' in names
+    assert len(u.inputs) == 3
+    assert 'j' in u.inputs.names
+    assert 'k' in u.inputs.names
+    assert 'l' in u.inputs.names
 
 def test_checkinput():
     ''' Test InputVar.check_args '''
@@ -345,19 +325,19 @@ def test_reserved():
     # "pi" is 3.14, not a symbol
     u = uc.UncertaintyCalc('pi', seed=0)
     u.calculate(MC=False)
-    assert np.isclose(u.out.get_output(method='gum').mean.magnitude, np.pi)
+    assert np.isclose(u.out.gum.nom().magnitude, np.pi)
 
     # "gamma" is a symbol, not gamma function
     u = uc.UncertaintyCalc('gamma/2')
     u.set_input('gamma', nom=10)
     u.calculate(MC=False)
-    assert np.isclose(u.out.get_output(method='gum').mean.magnitude, 5)
+    assert np.isclose(u.out.gum.nom().magnitude, 5)
 
     # But '"cos" is the sympy cosine, not a variable
     u = uc.UncertaintyCalc('cos(x)')
     u.set_input('x', nom=np.pi)
     u.calculate(MC=False)
-    assert np.isclose(u.out.get_output(method='gum').mean.magnitude, np.cos(np.pi))
+    assert np.isclose(u.out.gum.nom().magnitude, np.cos(np.pi))
 
 def test_reorder():
     ''' Test UncertCalc.reorder() '''
@@ -375,9 +355,9 @@ def test_seed():
     u.set_uncert('a', std=.1)
     u.set_uncert('b', std=.05)
     u.calculate()
-    vals = u.out.f.mc.samples[:10]  # Check first 10 samples
+    vals = u.out.mc.samples('f')[:10]  # Check first 10 samples
     u.calculate()
-    assert (u.out.f.mc.samples[:10] == vals).all()
+    assert (u.out.mc.samples('f')[:10] == vals).all()
 
     # With seed=None, seed is randomized
     u = uc.UncertaintyCalc('f=a+b', seed=None)
@@ -386,9 +366,9 @@ def test_seed():
     u.set_uncert('a', std=.1)
     u.set_uncert('b', std=.05)
     u.calculate()
-    vals = u.out.f.mc.samples[:10]  # Check first 10 samples
+    vals = u.out.mc.samples('f')[:10]  # Check first 10 samples
     u.calculate()
-    assert not (u.out.f.mc.samples[:10] == vals).all()
+    assert not (u.out.mc.samples('f')[:10] == vals).all()
 
 def test_change():
     ''' Test changing function name to an existing variable. Bug found in 0.09.
@@ -401,22 +381,18 @@ def test_change():
     '''
     u = uc.UncertaintyCalc('R = V/I')
     u.add_required_inputs()
-    names = [i.name for i in u.variables]
-    assert 'R' in names
-    assert 'V' in names
-    assert 'I' in names
-    assert isinstance(u.get_input('R'), uncertainty.InputFunc)
-    assert isinstance(u.get_input('V'), uncertainty.InputVar)
-    assert isinstance(u.get_input('I'), uncertainty.InputVar)
+    assert 'V' in u.inputs.names
+    assert 'I' in u.inputs.names
+    assert isinstance(u.get_inputvar('V'), uncertainty.InputVar)
+    assert isinstance(u.get_inputvar('I'), uncertainty.InputVar)
 
     u.set_function('I*R', idx=0, name='V')
     u.add_required_inputs()
-    assert 'R' in names
-    assert 'V' in names
-    assert 'I' in names
-    assert isinstance(u.get_input('R'), uncertainty.InputVar)
-    assert isinstance(u.get_input('V'), uncertainty.InputFunc)
-    assert isinstance(u.get_input('I'), uncertainty.InputVar)
+    assert 'R' in u.inputs.names
+    assert 'I' in u.inputs.names
+    assert isinstance(u.get_inputvar('R'), uncertainty.InputVar)
+    assert isinstance(u.get_inputvar('I'), uncertainty.InputVar)
+
 
 def test_expanded():
     ''' Test expanded uncertainty of MC using shortest and symmetric intervals.
@@ -429,11 +405,6 @@ def test_expanded():
     arr = curvefit.Array(x, y, uy=uy)
     fit = curvefit.CurveFit(arr)
     fit.calculate(mc=True)
-    mins, maxs, ks = fit.out.mc.expanded()
-    mins2, maxs2, ks2 = fit.out.mc.expanded(shortest=True)
-    assert np.allclose([m.magnitude for m in mins], [m.magnitude for m in mins2], atol=.1)
-    assert np.allclose([m.magnitude for m in maxs], [m.magnitude for m in maxs2], atol=.1)
-    assert np.allclose(ks, ks2, atol=.1)
 
 
 def test_savesamples(tmpdir):
@@ -447,9 +418,9 @@ def test_savesamples(tmpdir):
     nfile = os.path.join(tmpdir, 'samples.npz')
     u.save_samples(sfile, fmt='csv')
     u.save_samples(nfile, fmt='npz')
-    
+
     # Load in and compare (only comparing output column here)
     loadedsamples = np.genfromtxt(sfile, skip_header=1)
-    assert np.allclose(loadedsamples[:,2], u.out.get_output('f', method='mc').properties['samples'].magnitude)
+    assert np.allclose(loadedsamples[:,2], u.out.mc.samples('f').magnitude)
     loadednpz = np.load(nfile)
-    assert np.allclose(loadednpz['samples'][:,2], u.out.get_output('f', method='mc').properties['samples'].magnitude)
+    assert np.allclose(loadednpz['samples'][:,2], u.out.mc.samples('f').magnitude)

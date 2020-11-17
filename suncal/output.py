@@ -41,9 +41,9 @@ class Output(object):
         ''' Generate a full report, including all results and plots. '''
         return self.report(**kwargs)
 
-    def get_dists(self, name=None, **kwargs):
+    def get_dists(self):
         ''' Return a distribution from the output '''
-        return None
+        return {}
 
     def get_dataset(self, name=None, **kwargs):
         ''' Return a DataSet from the output '''

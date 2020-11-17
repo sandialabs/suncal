@@ -2,24 +2,26 @@
 
 Main module for computing uncertainties.
 '''
-from contextlib import suppress
 from collections import namedtuple
 import sympy
 import numpy as np
 import scipy.stats as stat
 import inspect
 import warnings
-import yaml
 import logging
+import yaml
 from pint import DimensionalityError, UndefinedUnitError, OffsetUnitCalculusError
 
-from . import ureg
+from . import unitmgr
 from . import uparser
 from . import distributions
 from . import report
 from . import out_uncert
 
-np.seterr(all='warn', divide='ignore', invalid='ignore', under='ignore')  # Don't show div/0 warnings. We usually just want to happily return Inf.
+
+# Will get div/0 errors, for example, with degrees of freedom in W-S formula
+# Can safely ignore them and let the result be inf.
+np.seterr(divide='ignore', invalid='ignore', over='ignore')
 
 
 _COPULAS = ['gaussian', 't']  # Supported copulas
@@ -31,6 +33,65 @@ def npi64_representer(dumper, data):
     return dumper.represent_int(int(data))
 yaml.add_representer(np.float64, np64_representer)
 yaml.add_representer(np.int64, npi64_representer)
+
+
+GUMout = namedtuple('GUMoutput', ['uncert', 'nom', 'degf', 'Uy', 'Ux', 'Cx', 'symbolic', 'warnings'], defaults=(None,)*8)
+MCout = namedtuple('MCoutput', ['uncert', 'nom', 'samples', 'warnings'], defaults=(None,)*4)
+
+
+def matmul(a, b):
+    ''' Matrix multiply. Manually looped to preserve units since Pint
+        doesn't allow matrices with different units on each element
+    '''
+    result = []
+    for i in range(len(a)):
+        row = []
+        for j in range(len(b[0])):
+            product = 0
+            for v in range(len(a[i])):
+                if a[i][v] == 1:   # Symbolic gets ugly when multiplying by 1
+                    product += b[v][j]
+                elif b[v][j] == 1:
+                    product += a[i][v]
+                else:
+                    product += a[i][v] * b[v][j]
+            row.append(product)
+        result.append(row)
+    return result
+
+
+def diagonal(a):
+    ''' Return diagonal of square matrix '''
+    if len(a) > 0 and a[0]:
+        return [a[i][i] for i in range(len(a))]
+    else:
+        return []
+
+
+def transpose(a):
+    ''' Transpose list-of-list matrix a (to preserve units) '''
+    return list(map(list, zip(*a)))
+
+
+def eval_matrix(U, values):
+    ''' Evaluate matrix (list of lists) of sympy expressions U with values '''
+    U_eval = []
+    for row in U:
+        U_row = []
+        for expr in row:
+            df = sympy.lambdify(values.keys(), expr, 'numpy')  # Can't subs() with pint Quantities
+            U_row.append(df(**values))
+        U_eval.append(U_row)
+    return U_eval
+
+
+def eval_list(U, values):
+    ''' Evaluate a list of sympy expressions U with values '''
+    U_eval = []
+    for expr in U:
+        df = sympy.lambdify(values.keys(), expr, 'numpy')  # Can't subs() with pint Quantities
+        U_eval.append(df(**values))
+    return U_eval
 
 
 def multivariate_t_rvs(mean, corr, df=np.inf, size=1):
@@ -84,7 +145,7 @@ class InputVar(object):
         '''
     def __init__(self, name, nom=1, units=None, desc=''):
         self.name = name
-        self.nom = nom
+        self.nom = np.float64(nom)  # Keep float64 to avoid /0 errors
         self.desc = desc
         self.uncerts = []
         self.normsamples = None
@@ -108,7 +169,7 @@ class InputVar(object):
             Combined standard uncertainty: float
         '''
         if str(self.units) in ['degC', 'degF', 'celsius', 'fahrenheit']:
-            dfltunits = getattr(ureg, 'delta_'+str(self.units))   # stdev of temperature units must be delta_
+            dfltunits = getattr(unitmgr.ureg, 'delta_'+str(self.units))   # stdev of temperature units must be delta_
         else:
             dfltunits = self.units
 
@@ -127,7 +188,7 @@ class InputVar(object):
             -------
             Mean value: float
         '''
-        return self.nom * self.units
+        return unitmgr.Quantity(self.nom, self.units)
 
     def degf(self):
         ''' Get effective degrees of freedom, combining all uncertainty components
@@ -142,7 +203,7 @@ class InputVar(object):
 
         num2 = np.nansum([u.var().magnitude for u in self.uncerts])
         denom = np.nansum([u.var().magnitude**2 / u.degf for u in self.uncerts])
-        return np.float64(num2)**2 / denom  # Use numpy float so div/0 returns inf.
+        return np.float64(num2)**2 / denom if denom != 0 else np.inf # Use numpy float so div/0 returns inf.
 
     def add_comp(self, name, dist='normal', degf=np.inf, desc='', units=None, **args):
         ''' Add uncertainty component to this variable. If uncertainty name
@@ -223,14 +284,14 @@ class InputVar(object):
         ''' Set the expected (nominal) value for this variable '''
         if isinstance(mean, str):
             try:
-                self.nom = float(uparser.callf(mean))
+                self.nom = np.float64(uparser.callf(mean))
             except (AttributeError, ValueError, TypeError, OverflowError):
                 return False  # Don't change - error
         else:
-            self.nom = mean
+            self.nom = np.float64(mean)
 
         for u in self.uncerts:
-            u.nom = self.nom
+            u.nom = np.float64(self.nom)
         self.normsamples = None
         self.sampledvalues = None
         return True
@@ -244,7 +305,7 @@ class InputVar(object):
     def sample(self, samples=1000000):
         ''' Generate random samples for this variable, stored in self.sampledvalues. '''
         if self.sampledvalues is None:
-            self.sampledvalues = np.ones(samples) * self.nom * self.units
+            self.sampledvalues = unitmgr.Quantity(np.full(samples, self.nom), self.units)
             for u in self.uncerts:
                 self.sampledvalues += u.sample(samples=samples, inc_nom=False)
         return self.sampledvalues
@@ -297,7 +358,7 @@ class InputUncert(object):
         self.name = name
         self.distname = dist
         self.degf = degf
-        self.nom = nom
+        self.nom = np.float64(nom)
         self.parentunits = uparser.parse_unit(parentunits)
         self.args = args.copy()  # User-entered arguments   (e.g. '5%' with nom=100)
         self.savedargs = {}      # Saved argument entries keep if distribution changes then changes back.
@@ -338,7 +399,7 @@ class InputUncert(object):
         self.required_args = distributions.get_argnames(self.distname)
         for aname, aval in distargs.items():
             if isinstance(aval, str):  # Convert string arguments to float
-                nom = (self.nom*self.parentunits).to(self.units).magnitude  # Convert nominal to same units as uncertainty
+                nom = unitmgr.Quantity(self.nom, self.parentunits).to(self.units).magnitude  # Convert nominal to same units as uncertainty
 
                 # Allow entering % as % of nominal
                 # or %range(X) as percent of X range
@@ -349,17 +410,23 @@ class InputUncert(object):
                 aval = aval.replace('ppbrange(', '/1E9*(')
                 aval = aval.replace('ppm', '/1E6*{}'.format(nom))
                 aval = aval.replace('ppb', '/1E9*{}'.format(nom))
-                val = aval.replace('%', '/100*{}'.format(nom))
+                aval = aval.replace('%', '/100*{}'.format(nom))
                 try:
-                    val = float(uparser.callf(val))
+                    aval = np.float64(uparser.callf(aval))
                 except (AttributeError, ValueError, TypeError):
-                    val = np.nan
+                    aval = np.nan
                 except OverflowError:
-                    val = np.inf
-                distargs[aname] = val
+                    aval = np.inf
+            if hasattr(aval, 'units'):
+                assert aval.units == self.units
+                aval = aval.magnitude
+            distargs[aname] = aval
 
         if 'df' in self.required_args and 'df' not in distargs:
-            distargs['df'] = self.degf
+            if not np.isfinite(self.degf):
+                distargs['df'] = 1E9  # Essentially inf, but works with scipy.stats
+            else:
+                distargs['df'] = self.degf
         elif 'df' in self.args:
             self.degf = float(distargs['df'])
 
@@ -412,15 +479,15 @@ class InputUncert(object):
         '''
         s = self.distribution.std()
         med = self.distribution.median()
-        x = np.linspace(med-s*stds, med+s*stds, num=100)*self.units
+        x = unitmgr.Quantity(np.linspace(med-s*stds, med+s*stds, num=100), self.units)
         try:
             y = self.distribution.pdf(x.magnitude)
         except AttributeError:
             # Discrete dists don't have PDF
             try:
-                samples = self.distribution.rvs(1000000).astype(float) * self.units
+                samples = unitmgr.Quantity(self.distribution.rvs(1000000).astype(float), self.units)
                 if inc_nom:
-                    samples += (self.nom*self.parentunits)
+                    samples += unitmgr.Quantity(self.nom, self.parentunits)
                     samples.to(self.parentunits).magnitude
                 y, x = np.histogram(samples, bins=200)
                 x = x[1:]
@@ -428,7 +495,7 @@ class InputUncert(object):
                 x, y = [], []
         else:
             if inc_nom:
-                x = x + (self.nom*self.parentunits)
+                x = x + unitmgr.Quantity(self.nom, self.parentunits)
                 x.to(self.parentunits).magnitude
         return x, y
 
@@ -448,7 +515,7 @@ class InputUncert(object):
             self.sampledvalues = self.distribution.ppf(self.normsamples)
         if inc_nom:
             self.sampledvalues += self.nom
-        return self.sampledvalues * self.units
+        return unitmgr.Quantity(self.sampledvalues, self.units)
 
     def clear(self):
         ''' Clear the Monte Carlo samples '''
@@ -457,11 +524,11 @@ class InputUncert(object):
 
     def std(self):
         ''' Return the standard deviation of the distribution function '''
-        return self.distribution.std() * self.units
+        return unitmgr.Quantity(self.distribution.std(), self.units)
 
     def var(self):
         ''' Return the variance of the distribution function'''
-        return self.distribution.var() * self.units**2
+        return unitmgr.Quantity(self.distribution.var(), self.units**2)
 
     def check_args(self):
         ''' Return true if all arguments are valid. '''
@@ -485,625 +552,960 @@ class InputUncert(object):
         return report.Unit(self.units).prettytext()
 
 
-class InputFunc(object):
-    ''' Class for an input function. Can be used as an InputVar.
+class Inputs():
+    ''' All InputVars in the system '''
+    def __init__(self):
+        self.inputvars = []
+        self.corr_list = []  # list of correlation pairs (v1, v2, corr)
+        self.copula = 'gaussian'
+        self.nsamples = 1000000
+        self.seed = None
 
-        Parameters
-        ----------
-        function: string, sympy expression, or callable
-            The function to evaluate
-        variables: list of InputVar objects
-            The variables (and any other InputFunc objects) used to
-            compute the value of this function
-        name: string
-            Name for the function. Required if this function is used
-            as an input to other functions.
-        desc: string
-            Description
+    def __len__(self):
+        return len(self.inputvars)
 
-        Attributes
-        ----------
-        function: sympy or callable
-            The function as callable expression
-        ftype: str
-            Function type 'sympy' or 'callable'
-        sampledvalues: array
-            Monte Carlo samples of function value
-        '''
-    def __init__(self, function=None, variables=None, outunits=None, name=None, desc=''):
-        self.variables = variables if variables is not None else []
-        self.output = {}  # Dictionary of output objects for various methods
-        self.sampledvalues = None
-        self.desc = desc
-        self.outunits = outunits   # CAN be None to leave units alone
-        self.show = True
+    def __getitem__(self, i):
+        return self.inputvars[i]
 
-        if isinstance(function, (sympy.Basic, str)):
-            self.origfunction = function  # Keep original, un-sympyfied string
-            if not isinstance(function, sympy.Basic):
-                # Not sympy expression, convert it
-                function = uparser.parse_math(function, name=name)
-            self.ftype = 'sympy'
-            self.function = function
+    @property
+    def names(self):
+        ''' Get list of input names '''
+        return [v.name for v in self.inputvars]
 
-            self.name = name if name is not None else ''
-            if name is not None:
-                self.origfunction = '{} = {}'.format(name, self.origfunction)
+    @property
+    def units(self):
+        return [v.units for v in self.inputvars]
 
-        elif callable(function):
-            self.ftype = 'callable'
-            self.function = function
-            self.origfunction = function
-            self.kwnames = None   # Names of keyword arguments if function is callable
-            if name is None:
-                if hasattr(function, '__name__'):
-                    self.name = function.__name__
-                elif isinstance(function, np.vectorize):
-                    # Get here using UncertCalc(np.vectorize(mufunc)), for example.
-                    self.name = function.pyfunc.__name__
+    @property
+    def symbols(self):
+        ''' Get list of names as sympy.Symbols '''
+        return [sympy.Symbol(n) for n in self.names]
+
+    @property
+    def unc_symbols(self):
+        ''' Get list of uncertainty names as sympy.Symbols '''
+        return [sympy.Symbol('u_{}'.format(n)) for n in self.names]
+
+    def reorder(self, names):
+        ''' Inputs must remain in same order as model. This lets model change order just before computing '''
+        newidx = [self.names.index(f) for f in names]
+        self.inputvars = [self.inputvars[i] for i in newidx]
+
+    def means(self):
+        ''' Get dictionary of mean/nominal values for each input variable '''
+        return {v.name: v.mean() for v in self.inputvars}
+
+    def stdunc(self):
+        ''' Get dictionary of standard uncertainty values for each input variable '''
+        return {'u_{}'.format(v.name): v.stdunc() for v in self.inputvars}
+
+    def degfs(self):
+        ''' Get degrees of freedom for each input variable '''
+        return {'nu_{}'.format(v.name): v.degf() for v in self.inputvars}
+
+    def clear_samples(self):
+        ''' Clear MC samples on each variable '''
+        for v in self.inputvars:
+            v.clear()
+
+    def sample(self):
+        ''' Generate random samples for each variable '''
+        if self.seed:
+            np.random.seed(self.seed)
+
+        self.clear_samples()
+
+        covok = True
+        if len(self.corr_list) > 0:
+            covok = self._gen_corr_samples()
+
+        self.sampledvalues = {}
+        for v in self.inputvars:
+            self.sampledvalues[v.name] = v.sample(self.nsamples)
+        return self.sampledvalues, covok
+
+    def correlation(self):
+        ''' Get correlation matrix as entered '''
+        corr = np.eye(len(self.inputvars))
+        names = self.names
+        for v1, v2, c in self.corr_list:
+            idx1 = names.index(v1)
+            idx2 = names.index(v2)
+            corr[idx1, idx2] = c
+            corr[idx2, idx1] = c
+        return corr
+
+    @property
+    def corr_symbols(self):
+        ''' Get list of symbols of nonzero correlation coefficients '''
+        symb = []
+        for v1, v2, c in self.corr_list:
+            symb.append(sympy.Symbol('sigma_{}{}'.format(v1, v2)))
+        return symb
+
+    def correlation_sym(self):
+        ''' Get correlation matrix as symbols (including symbols for 0 correlations) '''
+        corr = []
+        names = self.names
+        for idx1, name1 in enumerate(names):
+            row = []
+            for idx2, name2 in enumerate(names):
+                if name1 == name2:
+                    row.append(1.0)
                 else:
-                    self.name = 'func'   # Shouldn't get here?
+                    if idx1 < idx2:
+                        row.append(sympy.Symbol(f'sigma_{names[idx1]}{names[idx2]}'))
+                    else:
+                        row.append(sympy.Symbol(f'sigma_{names[idx2]}{names[idx1]}'))
+            corr.append(row)
+        return corr
+
+    def corr_values(self):
+        ''' Get dictionary of correlation coefficient values '''
+        corr = {}
+        names = self.names
+        for idx1, name1 in enumerate(names):
+            for idx2, name2 in enumerate(names):
+                if idx1 < idx2:
+                    corr[f'sigma_{name1}{name2}'] = 0.0
+
+        for v1, v2, c in self.corr_list:
+            name1 = f'sigma_{v1}{v2}'
+            name2 = f'sigma_{v2}{v1}'
+            if name1 in corr:
+                corr[name1] = c
+            elif name2 in corr:
+                corr[name2] = c
             else:
-                self.name = name
-        else:
-            raise ValueError('Unknown function type')
+                assert False
+        return corr
 
-    def __str__(self):
-        ''' Get string representation of the function. Could be name parameter,
-            or sympy string
+    def covariance(self):
+        ''' Get covariance matrix [Ux] (numerical values) '''
+        # Make sure ALL values in matrix, including 0's, have correct units
+        # why we're looping instead of just subbing into covariance_sym.
+        corr = self.correlation()
+        Ux = []
+        for i, v1 in enumerate(self.inputvars):
+            row = []
+            for j, v2 in enumerate(self.inputvars):
+                if i == j:
+                    row.append(v1.stdunc()**2)
+                elif corr[i, j] != 0:
+                    row.append(v1.stdunc() * v2.stdunc() * corr[i, j])
+                else:
+                    row.append(v1.stdunc() * v2.stdunc() * 0)  # *0 produces a 0 with correct units
+            Ux.append(row)
+        return Ux
+
+    def covariance_sym(self):
+        ''' Get covariance matrix [Ux] as list of sympy expressions '''
+        S = []
+        for i, v in enumerate(self.inputvars):
+            row = [0]*i
+            row.append(sympy.Symbol('u_{}'.format(v.name)))
+            row.extend([0]*(len(self.inputvars) - i - 1))
+            S.append(row)
+
+        corr = self.correlation_sym()
+        Ux = matmul(matmul(S, corr), S)
+        return Ux
+
+    def set_input(self, name, nom=1, desc='', units=None, **kwargs):
+        ''' Add or update an input nominal value and description in the system.
+
+            Parameters
+            ----------
+            name: string
+                Name of variable to update
+            nom: float
+                Nominal value
+            desc: string
+                Description
+
+            Keyword Arguments
+            -----------------
+            uname: str
+                Name of an uncertainty component to add to this input
+            dist: str
+                Name of a distribution for the uname uncertainty component
+            degf: float
+                Degrees of freedom for the uncertainty component
+            ...:
+                Other keyword arguments passed to the distribution (e.g. 'std', 'unc', 'k', etc.)
+
+            Note
+            ----
+            The Keyword Arguments will be passed to set_uncert() and may be used to set
+            one uncertainty component on this input variable. Additional components
+            may be added with explicit calls to set_uncert().
         '''
-        if self.ftype == 'sympy' and self.name != '':
-            return '{} = {}'.format(self.name, str(self.function))
-        if self.name == '' or self.name is None:
-            return str(self.function)
-        return self.name
+        names = self.names
+        if hasattr(nom, 'units'):
+            if units is not None and str(nom.units) != units:
+                raise TypeError('Nominal value units do not match units argument')
+            units = str(nom.units)
+            nom = nom.magnitude
 
-    def __repr__(self):
-        return '<InputFunc> ' + self.__str__()
+        if name not in names:
+            inpt = InputVar(name=name, nom=nom, desc=desc, units=units)
+            self.inputvars.append(inpt)
+        else:  # Existing variable, update it
+            idx = names.index(name)
+            inpt = self.inputvars[idx]
+            inpt.nom = np.float64(nom)
+            inpt.desc = desc
+            if units is not None:
+                inpt.units = uparser.parse_unit(units)
 
-    def clear(self):
-        ''' Clear the output data and sampled values '''
-        self.output = {}
-        self.out = None
-        self.sampledvalues = None
-        for i in self.variables:
-            if i.sampledvalues is not None:
-                i.clear()
+        # Add the uncertainty
+        if len(kwargs) > 0:
+            self.set_uncert(var=name,
+                            name=kwargs.pop('uname', 'u({})'.format(name)),
+                            **kwargs)
 
-    def sample(self, samples=1000000):
-        ''' Pull random samples from all inputs and combine. Returns array of samples. '''
-        self.varsamples = {}
-        for i in self.get_basevars():
-            self.varsamples[i.name] = i.sample(samples)
+        return inpt
 
-        basefunc = self.get_basefunc()
+    def set_uncert(self, var, name=None, dist='normal', degf=np.inf, units=None, desc='', **args):
+        ''' Add or update an uncertainty component.
+
+            Parameters
+            ----------
+            var: string
+                Name of input variable to add uncertainty to
+            name: string
+                Name for uncertainty component
+            dist: string or rv_continuous instance
+                Distribution for uncertainty component
+            degf: float
+                Degrees of freedom for this component
+            desc: string
+                Description of uncertainty
+
+            Keyword Arguments
+            -----------------
+            Keyword arguments defining distribution will be passed to the
+            rv_continuous instance in scipy.stats.
+        '''
+        names = self.names
+        if var not in names:
+            raise ValueError('Variable {} not defined'.format(var))
+
+        idx = names.index(var)
+
+        if name is None:
+            name = '{}{}'.format(self.inputvars[idx].name, len(self.inputvars[idx].uncerts))
+
+        self.inputvars[idx].add_comp(name=name, dist=dist, degf=degf, desc=desc, units=units, **args)
+
+    def remove_input(self, name):
+        ''' Remove input from list '''
+        idx = self.names.index(name)
+        self.inputvars.pop(idx)
+
+    def correlate_vars(self, var1, var2, correlation):
+        ''' Set correlation between two inputs.
+
+            Parameters
+            ----------
+            var1: string
+            var2: string
+                Names of the variables correlate
+            correlation: float
+                Correlation coefficient for the two variables
+        '''
+        if var1 == var2:
+            return
         try:
-            self.sampledvalues = uparser.callf(basefunc, self.varsamples)
-            # Must have N samples in, N samples out... but only if there's actually variables in the equation.
-            if len(self.varsamples) > 0 and len(self.sampledvalues) != samples: raise ValueError
+            self.corr_list.append((var1, var2, float(correlation)))
+        except ValueError:
+            return  # Failed to convert to float
+
+    def set_copula(self, copula='gaussian'):
+        ''' Set the copula for correlating inputs.
+
+            Parameters
+            ----------
+            copula: string
+                Name of coupla to use. Must be 'gaussian' or 't'.
+        '''
+        assert copula in _COPULAS
+        self.copula = copula
+
+    def _gen_corr_samples(self, **args):
+        ''' Generate random samples for each of the inputs '''
+        covok = True
+
+        corr = self.correlation()
+        # Note: correlation==covariance since all std's are 1 right now.
+
+        # Generate correlated random samples, save to each input
+        if self.copula == 'gaussian':
+            with warnings.catch_warnings(record=True) as w:
+                # Roundabout way of catching a numpy warning that should really be an exception
+                warnings.simplefilter('always')
+                normsamples = stat.multivariate_normal.rvs(cov=corr, size=self.nsamples)
+                if len(w) > 0:
+                    covok = False  # Not positive semi-definite
+                normsamples = stat.norm.cdf(normsamples)
+
+        elif self.copula == 't':
+            df = args.get('df', np.inf)
+            mean = np.zeros(corr.shape[0])
+            with warnings.catch_warnings(record=True) as w:
+                warnings.simplefilter('always')
+                normsamples = multivariate_t_rvs(mean=mean, corr=corr, size=self.nsamples, df=df)
+                normsamples = stat.t.cdf(normsamples, df=df)
+                if len(w) > 0:
+                    covok = False  # Not positive semi-definite
+
+        normsamples[np.where(normsamples == 1.0)] = 1 - 1E-9  # If rounded to 1 or 0, then we get infinity.
+        normsamples[np.where(normsamples == 0.0)] = 1E-9
+        for idx, inpt in enumerate(self.inputvars):
+            inpt._set_normsamples(normsamples[:, idx])
+        return covok
+
+
+class Model():
+    ''' Generic Measurement model with N outputs '''
+    @property
+    def symbols(self):
+        ''' Get model function names as list of sympy.Symbols '''
+        return [sympy.Symbol(n) for n in self.outnames]
+
+    @property
+    def unc_symbols(self):
+        ''' Get list of uncertainty names as sympy.Symbols '''
+        return [sympy.Symbol('u_{}'.format(n)) for n in self.outnames]
+
+    @property
+    def outnames(self):
+        if self._outnames is None:
+            self._setup_output()
+        return self._outnames
+
+    @outnames.setter
+    def outnames(self, value):
+        self._outnames = value
+
+    def set_inputs(self, inputs):
+        ''' Set Inputs object '''
+        self.inputs = inputs
+
+    def check_dimensionality(self):
+        ''' Check that units are compatible. Raises DimentionalityError or UndefinedUnitsError '''
+        # Check units compatibility
+        f = self.eval().values()
+
+        for out, units in zip(f, self.outunits):
+            if units is not None:
+                if not hasattr(out, 'units'):
+                    out = unitmgr.Quantity(out, unitmgr.dimensionless)
+                out.to(units) # will raise if output units are incompatible
+
+        self.inputs.stdunc()  # will raise if uncert components are incompatible
+
+    def check_circular(self):
+        ''' Check functions list to ensure no circular dependencies. Returns True
+            if circular reference is found.
+        '''
+        try:
+            self.get_baseexprs()
+        except RecursionError:
+            return True
+        return False
+
+    def validate_inputs(self):
+        ''' Check that all inputs are defined and have compatible units
+
+            Raises
+            ------
+            ValueError: if an input isn't defined
+            DimensionalityError: if input units don't convert to output units
+        '''
+        # Check that all variables are defined
+        names = self.inputs.names
+        for inpt in self.inputnames:
+            if inpt not in names and inpt not in self.outnames:
+                raise ValueError('Required input "{}" is not defined.'.format(inpt))
+
+        self.check_circular()
+        self.check_dimensionality()
+
+    def get_baseexprs(self):
+        ''' Does nothing on callables '''
+        return
+
+    def sensitivity(self):
+        ''' Cx - (6.2.1.3 GS2) '''
+        raise NotImplementedError  # Subclass
+
+    def GUMcovariance(self):
+        ''' Calculate GUM uncertainty/covariance matrix - Uy (6.2.1.3 GS2) '''
+        raise NotImplementedError  # Subclass
+
+    def MCsample(self):
+        ''' Generate Monte Carlo samples, NxM
+
+            Returns
+            -------
+            uncert: array of standard uncertainties
+            nom: array of nominal values
+            samples: dict of Monte Carlo samples for each function output
+            warnings: list of warning strings
+        '''
+        # sample each input M times, correlated if necessary
+        # Calculate model M times, resulting in MxN
+        warns = []
+        inputsamples, covok = self.inputs.sample()
+        if not covok:
+            warns.append('Covariance matrix is not positive semi-definite.')
+
+        try:
+            self.sampledvalues = self.eval(inputsamples)
         except DimensionalityError:
             # Hack around Pint bug/inconsistency (see https://github.com/hgrecco/pint/issues/670, closed without solution)
-            #   with x = np.arange(5) * ureg.dimensionless
+            #   with x = np.arange(5) * units.dimensionless
             #   np.exp(x) --> returns dimensionless array
             #   2**x --> raises DimensionalityError
             # Since units/dimensionality has already been verified, this fix strips units and adds them back.
-            varsamples = {name: val.magnitude for name, val in self.varsamples.items()}
-            self.sampledvalues = uparser.callf(basefunc, varsamples) * ureg.dimensionless
-
+            inputsamples = {k: v.magnitude for k, v in inputsamples.items()}
+            self.sampledvalues = self.eval(inputsamples)
         except (TypeError, ValueError):
-            # Call might have failed if basefunc is not vectorizable. Use numpy vectorize
+            # Call might have failed if function is not vectorizable. Use numpy vectorize
             # to broadcast over array and try again.
-            logging.info('Vectorizing function {}...'.format(str(basefunc)))
+            logging.info('Vectorizing function {}...'.format(str(self.function)))
 
             # Vectorize will strip units - see https://github.com/hgrecco/pint/issues/828.
             # First, run a single sample through the function to determine what units come out
-            outsingle = uparser.callf(basefunc, {k: v[0] for k, v in self.varsamples.items()})
-            mcoutunits = outsingle.units if hasattr(outsingle, 'units') else ureg.dimensionless
+            outsingle = uparser.callf(self.function, {k: v[0] for k, v in inputsamples.items()})
+            mcoutunits = outsingle.units if hasattr(outsingle, 'units') else unitmgr.dimensionless
 
             # Then apply those units to whole array of sampled values.
             # vectorize() will issue a UnitStripped warning, but we're handling it outside Pint, so ignore it.
             with warnings.catch_warnings():
                 warnings.simplefilter('ignore')
-                self.sampledvalues = uparser.callf(np.vectorize(basefunc), self.varsamples) * mcoutunits
+                out = unitmgr.Quantity(uparser.callf(np.vectorize(self.function), inputsamples), mcoutunits)
+                if len(self.outnames) > 1:
+                    self.sampledvalues = dict(zip(self.outnames, out))
+                else:
+                    self.sampledvalues = {self.outnames[0]: out}
 
-            # Convert to desired output units if necessary
-            if self.outunits is not None and mcoutunits != self.outunits:
-                self.sampledvalues.ito(self.outunits)
+        # Fix weird cases where function returns array of objects instead of floats
+        for i, (k, v) in enumerate(self.sampledvalues.items()):
+            self.sampledvalues[k] = v.astype(np.float)
+            if not hasattr(v, 'magnitude'):
+                # Some functions may strip units
+                self.sampledvalues[k] = unitmgr.Quantity(v, 'dimensionless')
+            if self.outunits[i]:
+                self.sampledvalues[k] = self.sampledvalues[k].to(self.outunits[i])
 
-        return self.sampledvalues
-
-    def mean(self):
-        ''' Evaluate the function at the point specified by input nominal values.
-
-            Returns
-            -------
-            Mean value: float
-        '''
-        return uparser.callf(self.get_basefunc(), self.get_basemeans())
-
-    def stdunc(self):
-        ''' Evaluate standard deviation of the function. Uses GUM value if available, or MC if not.
-
-            Returns
-            -------
-            Standard Uncertainty: float
-        '''
-        if 'gum' in self.output:
-            return self.output['gum'].uncert
-        elif 'mc' in self.output:
-            return self.output['mc'].uncert
-        self.calc_GUM()
-        return self.output['gum'].uncert
-
-    def degf(self):
-        ''' Get effective degrees of freedom '''
-        return self._degf
-
-    def _gradient(self):
-        ''' Compute the gradient at the point specified by inputs.
-
-            Returns
-            -------
-            grad: array
-                Nx1 array of gradient values wrt each variable
-            method: string
-                Gradient method, either 'symbolic' or 'numeric'
-        '''
-        if self.ftype == 'sympy':
-            with suppress(ZeroDivisionError, ValueError):
-                return self._symgradient(), 'symbolic'
-        # Fall back to numeric
-        return self._numgradient(), 'numeric'
-
-    def _numgradient(self):
-        ''' Calculate gradient of function at the mean point numerically, using dx = 1ppm.
-            Units are stripped, returning only magnitudes.
-        '''
-        basemeans = self.get_basemeans()
-        basenames = self.get_basenames()
-        basefunc = self.get_basefunc()
-        baseuncerts = {k: v.to(basemeans[k]).magnitude for k, v in self.get_baseuncerts().items()}
-        grad = []
-        for name in basenames:
-            d1 = basemeans.copy()
-            dx = np.float64(baseuncerts[name] / 1E6) * d1[name].units # Float64 won't have div/0 errors, will go to inf
-            if dx == 0:
-                dx = 1E-6 * d1[name].units
-            d1[name] = d1[name] + dx
-            d2 = basemeans.copy()
-            d2[name] = d2[name] - dx
-            val = (uparser.callf(basefunc, d1) - uparser.callf(basefunc, d2))/(2*dx)
-            grad.append(val.to_reduced_units())
-        return grad
-
-    def _symgradient(self):
-        ''' Calculate gradient of function at the mean point using symbolic derivative.
-            Units are stripped, returning only magnitudes.
-        '''
-        basemeans = self.get_basemeans()
-        basenames = self.get_basenames()
-        basefunc = self.get_basefunc()
-
-        grad = []
-        for x in basenames:
+        nom = [v.mean() for v in self.sampledvalues.values()]
+        uncert = []
+        for i, (out, vals) in enumerate(self.sampledvalues.items()):
             try:
-                dfunc = sympy.Derivative(basefunc, sympy.Symbol(x), evaluate=True)
-                f = sympy.lambdify(basenames, dfunc, 'numpy')
-                grad.append(f(**basemeans))
-            except OverflowError:
-                grad.append(None)
+                uncert.append(vals.std())
+            except AttributeError:  # Single/constant value returned from MC
+                uncert.append(0 * nom[i].units)
 
-        if None in grad:
-            raise ValueError('Unable to compute symbolic gradient')
-        return grad
+            uncert[-1].ito(nom[i].units)
 
-    def get_basefunc(self):
-        ''' Get the base function. If function is sympy expression,
-            it will be reduced to it's simplest form with only variables
-            (no chaining of functions).
+            if not all(np.isfinite(np.atleast_1d(np.float64(vals.magnitude)))):
+                warns.append('Some Monte-Carlo samples in {} are NaN. Ignoring in statistics.'.format(out))
 
-            Returns
-            -------
-            sympy or callable:
-                Sympy expression or python callable, depending on function type
-        '''
-        func = self.function
-        if self.ftype == 'callable':
-            return func
+        out = MCout(uncert, nom, self.sampledvalues, warns)
+        return out
 
-        # Recursively substitute each function in until the function doesn't change anymore
-        oldfunc = None
-        count = 0
-        while oldfunc != func and count < 100:
-            oldfunc = func
-            for v in reversed(self.variables):
-                if isinstance(v, InputFunc) and v.ftype == 'sympy':
-                    func = func.subs(v.name, v.function)
-            count += 1
-        if count >= 100:
-            raise RecursionError('Circular reference in function set')
-        return func
-
-    def get_basevars(self):
-        ''' Get base variables used by this function.
+    def MCsensitivity(self):
+        ''' Calculate Monte Carlo non-linear sensitivity coefficients. Assumes MCsample has been run.
 
             Returns
             -------
-            list
-                List of InputVar objects.
+            sensitivity: matrix of sensitivity coefficients (rows = outputs, columns = inputs)
+            proportions: matrix of uncertainty contribution proportions (rows = outputs, columns = inputs)
         '''
-        if self.ftype == 'sympy':
-            free = [s.name for s in self.get_basefunc().free_symbols]
-            return [v for v in self.variables if v.name in free]
-        else:
-            if self.kwnames:
-                names = self.kwnames
-            else:
-                names = inspect.signature(self.function).parameters.keys()
-            return [v for v in self.variables if v.name in names]
+        if self.sampledvalues is None:
+            self.MCsample()
 
-    def get_basesymbols(self):
-        ''' Get symbols for each base variable
+        nom = self.inputs.means()
+        uncert = [v.std() for v in self.sampledvalues.values()]
 
-            Returns
-            -------
-            dict:
-                Dictionary of {variablename: sympy symbol} for each input variable
-        '''
-        return [sympy.Symbol(v.name) for v in self.get_basevars()]
+        # Set all input values to the nominal
+        for x in nom.keys():
+            nom[x] = unitmgr.Quantity(np.full(self.inputs.nsamples, nom[x].magnitude), nom[x].units)
 
-    def get_basemeans(self):
-        ''' Get mean values of base variables
-
-            Returns
-            -------
-            dict:
-                Dictionary of {variablename: mean} for each input variable
-        '''
-        return dict((i.name, i.mean()) for i in self.get_basevars())
-
-    def get_baseuncerts(self):
-        ''' Get standard uncertainty values of base variables
-
-            Returns
-            -------
-            dict:
-                Dictionary of {variablename: standard uncertainty} for each input variable
-        '''
-        return dict((i.name, i.stdunc()) for i in self.get_basevars())
-
-    def get_basenames(self):
-        ''' Get names of base variables
-
-            Returns
-            -------
-            list of string
-                List of names of each base variable
-        '''
-        return [v.name for v in self.get_basevars()]
-
-    def get_latex(self):
-        ''' Get latex representation of function
-
-            Returns
-            -------
-            latex expression: str
-        '''
-        if self.name == '':
-            return sympy.latex(self.function)
-        else:
-            return sympy.latex(uparser.parse_math(self.name, raiseonerr=False))
-
-    def full_func(self):
-        ''' Build function as "f = x + y" sympy expression (instead of just "x + y") using InputFunc object '''
-        if self.ftype == 'callable' or self.ftype == 'array':
-            func = self.name
-        elif self.name != '':
-            func = sympy.Eq(sympy.Symbol(self.name), self.function)
-        else:
-            func = self.function
-        return func
-
-    def calculate(self, **kwargs):
-        ''' Calculate all methods (gum, mc) '''
-        samples = kwargs.get('samples', 1000000)
-        gum = kwargs.get('gum', True)
-        mc = kwargs.get('mc', True)
-        lsq = kwargs.get('lsq', True)
-        self.correlation = kwargs.get('correlation', None)
-        sens = kwargs.get('sensitivity', True)
-        outputs = []
-        if gum and hasattr(self, 'calc_GUM'):
-            gumout = self.calc_GUM(correlation=self.correlation)
-            outputs.append(gumout)
-        if mc and hasattr(self, 'calc_MC'):
-            mcout = self.calc_MC(samples=samples, sensitivity=sens)
-            outputs.append(mcout)
-        if lsq and hasattr(self, 'calc_LSQ'):
-            lsqout = self.calc_LSQ()
-            outputs.append(lsqout)
-
-        self.out = out_uncert.FuncOutput(outputs, self)
-        return self.out
-
-    def calc_GUM(self, correlation=None, calc_sym=True):
-        ''' Calculate uncertainty using GUM method.
-
-            Parameters
-            ----------
-            correlation: array
-                Correlation matrix to apply
-            calc_sym: boolean
-                Calculate symbolic solution (turn off to speed up calculation)
-        '''
-        warns = []
-        basevars = self.get_basevars()
-        grad, gradtype = self._gradient()
-        if gradtype == 'numeric' and self.ftype == 'sympy':
-            warns.append('Symbolic gradient failed. Using numeric.')
-        u = [i.stdunc() for i in basevars]
-        try:
-            mean = self.mean()
-            origunits = mean.units if hasattr(mean, 'units') else ureg.dimensionless
-            units = origunits
-
-            # If Pint supported numpy arrays with different units/dimensions in a single array
-            # We could compute uncertainty (GUM eq 13) in a single line:
-            #     corr = np.triu(correlation) + np.triu(correlation).T - np.diag(correlation.diagonal())
-            #     uncert = np.sqrt(grad.dot(np.outer(u, u) * corr).dot(grad))
-            # But it doesn't so we have to loop it
-            uncert = 0
-            for dfdx, uval in zip(grad, u):
-                uncert += dfdx**2 * uval**2
-
-            if correlation is not None:
-                for i in range(len(basevars)):
-                    for j in range(i+1, len(basevars)):
-                        uncert += 2 * grad[i] * grad[j] * u[i] * u[j] * correlation[i, j]
-            uncert = np.sqrt(uncert)
-            if not hasattr(uncert, 'units'):
-                uncert = uncert * ureg.dimensionless
-
-            # Convert to desired units
-            if self.outunits is not None:
-                units = ureg.parse_units(self.outunits)
-                mean.ito(units)
-                uncertunits = units if str(units) not in ['degF', 'degC', 'celsius', 'fahrenheit'] else f'delta_{units}'
-                uncert.ito(uncertunits)
-            else:
-                try:
-                    mean.ito_reduced_units()
-                except AttributeError:   # Some callable function types won't pass through units
-                    mean *= ureg.dimensionless
-                units = mean.units
-                uncertunits = units if str(units) not in ['degF', 'degC', 'celsius', 'fahrenheit'] else f'delta_{units}'
-                uncert.ito(uncertunits)
-        except OverflowError:
-            warns.append('Overflow in GUM uncertainty calculation')
-            units = ureg.dimensionless
-            uncert = np.nan * units
-            mean = np.nan * units
-
-        # Pint/Numpy cant do arrays with differing units. Must do them the hard way.
-        gradu = []
-        for x, y in zip(grad, u):
+        CxT = []     # Transposed sensitivity matrix
+        propsT = []  # Transposed proportions
+        for i, name in enumerate(self.inputs.names):
+            x = nom.copy()
+            # Then set each input to sampled values, one at a time
+            x[name] = self.inputs[i].sampledvalues
             try:
-                gradu.append((x*y).to_reduced_units())
+                ustd = self.eval(x)  # dict of each function out   ####uparser.callf(basefunc, x).std()
             except DimensionalityError:
-                # Pint can crash on to_reduced_units() when units get complicated
-                # See https://github.com/hgrecco/pint/issues/774
-                # and https://github.com/hgrecco/pint/issues/771
-                gradu.append((x*y).to_compact())
-        gradu2 = [g*g for g in gradu]           # numpy: gradu2 = gradu * gradu
-        uncert2 = uncert*uncert
-        g2overuncert2 = [(x/uncert2).to_reduced_units() for x in gradu2]  # numpy: g2overuncert2 = gradu2 / uncert2
+                x = {name: val.magnitude for name, val in x.items()}
+                ustd = self.eval(x)
+            except AttributeError:
+                ustd = 0   # callf returns single value.. no std
 
-        if not np.isfinite(uncert) or uncert == 0:
-            residual = np.nan
-            props = np.zeros(len(u)) * np.nan
-        else:
-            residual = 1 - sum(g2overuncert2).magnitude
-            if abs(residual) < 1E-7: residual = 0
-            residual = residual * 100
-            #props = gradu2 / (uncert*uncert) * 100
-            props = [g.magnitude*100 for g in g2overuncert2]
+            ustd = [v.std() for v in ustd.values()]  # dict to list of stds for each function out
 
-        idegf = np.array([i.degf() for i in basevars])
-        gidegf = [x**4/i for x, i in zip(gradu, idegf)]
-        gidegf = [g for g in gidegf if np.isfinite(g)]
-        try:
-            self._degf = (uncert**4 / sum(gidegf)).to_reduced_units().magnitude   # numpy: uncert**4 / np.nansum(gradu**4 / idegf)
-        except AttributeError:
-            self._degf = np.inf
+            # to_reduced_units() will take care of prefix multipliers and dimensionless values
+            CxT.append([(u/self.inputs[i].stdunc()).to_reduced_units() for u in ustd])
+            propsT.append([(u/uncert[i]).to_reduced_units().magnitude**2 for i, u in enumerate(ustd)])
 
-        params = {'function': str(self),
-                  'latex': self.get_latex(),
-                  'mean': mean,
-                  'uncert': uncert,
-                  'props': props,
-                  'residual': residual,
-                  'sensitivity': grad,
-                  'ui': u,
-                  'degf': self._degf,
-                  'units': units,
-                  'origunits': origunits,   # original "natural" units, result of gum equation before converting to desired output units
-                  'name': self.name,
-                  'desc': self.desc,
-                  'warns': warns}
+        MCprops = namedtuple('MCproportions', ['sensitivity', 'proportions'])
+        return MCprops(transpose(CxT), transpose(propsT))
 
-        if self.ftype == 'sympy' and calc_sym:
-            symout = self.calc_SYM(correlation=correlation, uncert=uncert, degf=self._degf)
-            params['symbolic'] = symout
 
-        self.output['gum'] = out_uncert.create_output(method='gum', **params)
-        return self.output['gum']
+class ModelSympy(Model):
+    ''' Measurement model consisting of list of N Sympy expressions to evaluate
 
-    def calc_MC(self, samples=1000000, sensitivity=True):
-        ''' Calculate Monte Carlo uncertainty for the function.
+        Parameters
+        ----------
+        exprs: list
+            String expressions (sympyfiable) or Sympy expressions to add to the model
+        outunits: list
+            List of desired units on each model function (strings, Pint-recognizable)
+    '''
+    def __init__(self, exprs=None, outunits=None):
+        self.exprs = []   # String expressions
+        self.sympyexprs = [] # Sympy expressions
+        self.outnames = []
+        self.inputnames = []
+        self.outunits = []
+        self.descriptions = []
+        self.show = []
+        self.noutputs = len(self.exprs)
+        self.sampledvalues = None
+
+        self.inputs = Inputs()
+        if exprs is not None:
+            if outunits is None:
+                outunits = [None]*self.noutputs
+
+            for exp, unit in zip(exprs, outunits):
+                self.add_expr(exp, outunits=unit)
+
+    @property
+    def expr_symbols(self):
+        ''' Get functions as sympy expressions '''
+        return [sympy.Eq(f, exp) for f, exp in zip(self.symbols, self.sympyexprs)]
+
+    def add_expr(self, expr, name=None, idx=None, outunits=None, desc='', show=True):
+        ''' Add a function expression to the model
 
             Parameters
             ----------
-            samples: int
-                Number of samples
-            sensitivity: boolean
-                Calculate Monte Carlo sensitivity coefficients (requires running a MC for each variable)
+            expr: string or Sympy
+                The expression to add
+            name: string
+                A name for the expression. Will be extracted from expr if expr contains an equals
+            idx: int
+                Use idx to replace/overwrite an existing expression in the model
+            outunits: string
+                Desired units for output of function
+            desc: string
+                Description of the function
+            show: bool
+                Whether to show the result in output reports
+        '''
+        if isinstance(expr, sympy.Basic):
+            symexpr = expr
+            expr = str(expr)
+
+        if name is None:
+            if '=' in expr:
+                name, expr = expr.split('=')
+            else:
+                name = 'f{}'.format(len(self.exprs)+1)
+
+        name = name.strip()
+        expr = expr.strip()
+        symexpr = uparser.parse_math(expr, name=name)
+
+        if idx is None or idx >= len(self.exprs):
+            idx = len(self.exprs)
+            self.exprs.append(None)  # To be replaced later
+            self.sympyexprs.append(None)
+            self.outnames.append(None)
+            self.outunits.append(None)
+            self.descriptions.append(None)
+            self.show.append(None)
+
+        self.exprs[idx] = expr
+        self.sympyexprs[idx] = symexpr
+        self.outnames[idx] = name
+        self.outunits[idx] = outunits
+        self.descriptions[idx] = desc
+        self.show[idx] = show
+        self.get_baseexprs()  # Build inputnames
+        self.noutputs = len(self.exprs)
+
+    def remove_expr(self, idx):
+        ''' Remove expression at index '''
+        try:
+            self.exprs.pop(idx)
+            self.sympyexprs.pop(idx)
+            self.outnames.pop(idx)
+            self.outunits.pop(idx)
+            self.descriptions.pop(idx)
+            self.show.pop(idx)
+            self.inputnames = []
+        except IndexError:
+            pass
+        self.get_baseexprs()  # Build inputnames
+
+    def reorder(self, names):
+        ''' Reorder the function list using order of names array.
+
+            Parameters
+            ----------
+            names: list of strings
+                List of function names in new order
+        '''
+        fnames = self.outnames
+        newidx = [fnames.index(f) for f in names]
+
+        def order(A, newidx):
+            return [A[i] for i in newidx]
+
+        self.exprs = order(self.exprs, newidx)
+        self.sympyexprs = order(self.sympyexprs, newidx)
+        self.outnames = order(self.outnames, newidx)
+        self.outunits = order(self.outunits, newidx)
+        self.descriptions = order(self.descriptions, newidx)
+        self.show = order(self.show, newidx)
+
+    def get_baseexprs(self):
+        ''' Get model functions in terms of base inputs only (substitute any dependencies
+            on other functions in the model). Also extracts self.inputnames.
+        '''
+        # Recursively substitute each function in until the function doesn't change anymore
+        baseexprs = []
+        self.inputnames = []
+        for exp in self.sympyexprs:
+            oldfunc = None
+            count = 0
+            while oldfunc != exp and count < 100:
+                oldfunc = exp
+                for vname in exp.free_symbols:
+                    if str(vname) in self.outnames:
+                        exp = exp.subs(vname, self.sympyexprs[self.outnames.index(str(vname))])
+                count += 1
+            if count > 100:
+                raise RecursionError('Circular reference in function set')
+            baseexprs.append(exp)
+            self.inputnames.extend([str(s) for s in exp.free_symbols if str(s) not in self.outnames])
+
+        # inputnames will be alpha sorted for sympy models, but not callables
+        self.inputnames = sorted(list(set(self.inputnames)))
+        return baseexprs
+
+    def sensitivity_sym(self):
+        ''' Symbolic sensitivity matrix (Cx) '''
+        Cx = []
+        for i, exp in enumerate(self.get_baseexprs()):
+            Cx_row = []
+            for j, var in enumerate(self.inputnames):
+                df = sympy.Derivative(exp, sympy.Symbol(var), evaluate=True).simplify()
+                Cx_row.append(df)
+            Cx.append(Cx_row)
+        return Cx
+
+    def sensitivity(self):
+        ''' Sensitivity Matrix Cx evaluated at the measured values '''
+        Cx = self.sensitivity_sym()
+        return eval_matrix(Cx, self.inputs.means())
+
+    def GUMcovariance_sym(self):
+        ''' Calculate GUM uncertainty/covariance matrix
+
+            Returns
+            -------
+            uncert: list
+                List of uncertainties for each function in the model
+            nom: list
+                List of nominal values for each function
+            degf: list
+                Degrees of freedom for each function
+            Uy: matrix (list of lists)
+                Covariance matrix of output
+            Ux: matrix
+                Covariance matrix of inputs
+            Cx: matrix
+                Sensitivity coefficients
+
+            Note
+            ----
+            See GUM Supplement 2, section 6.2.1.3
+        '''
+        self.inputs.reorder(self.inputnames)  # Ensure Ux, Cx, Uy all in same variable order
+        Cx = self.sensitivity_sym()
+        CxT = transpose(Cx)
+        Ux = self.inputs.covariance_sym()
+
+        if len(Ux) == 0:
+            uncerts = [0 * self.outunits[i] if self.outunits[i] else 0 for i in range(self.noutputs)]
+            degf = [np.inf] * self.noutputs
+            Uy = [[]]
+            return GUMout(uncerts, self.sympyexprs, degf, Uy, Ux, Cx)
+
+        Uy = matmul(matmul(Cx, Ux), CxT)
+
+        # Just uncertainties (sqrt of diagonal of Uy)
+        uncerts = [sympy.sqrt(u) for u in diagonal(Uy)]
+
+        varnames = self.inputs.names
+        degfsymbols = [sympy.Symbol('nu_{}'.format(str(x))) for x in varnames]
+        uncertsymbols = [sympy.Symbol('u_{}'.format(str(x))) for x in varnames]
+
+        degf = []
+        for i, out in enumerate(self.outnames):
+            uncfsymbol = sympy.Symbol('u_{}'.format(out))
+            denom = [(u*c)**4/v for u, c, v in zip(uncertsymbols, Cx[i], degfsymbols)]
+            degf.append(uncfsymbol**4 / sympy.Add(*denom))
+
+        return GUMout(uncerts, self.sympyexprs, degf, Uy, Ux, Cx)
+
+    def GUMcovariance(self, symboliconly=False):
+        ''' Use GUM method to compute covariance in the output functions
+
+            Returns
+            -------
+            uncert: list
+                List of uncertainties for each function in the model
+            nom: list
+                List of nominal values for each function
+            degf: list
+                Degrees of freedom for each function
+            Uy: matrix (list of lists)
+                Covariance matrix of output
+            Ux: matrix
+                Covariance matrix of inputs
+            Cx: matrix
+                Sensitivity coefficients
+            symbolic: GUMout
+                Symbolic solution of the above return parameters
+            warnings: list
+                List of any warnings encountered during computation
         '''
         warns = []
-        self.sample(samples)
+        sym = self.GUMcovariance_sym()
+        if not symboliconly:
+            values = self.inputs.means()
+            uncs = self.inputs.stdunc()
+            corrs = self.inputs.corr_values()
+            values.update(uncs)
+            values.update(corrs)
+            Ux = eval_matrix(sym.Ux, values)
+            Uy = eval_matrix(sym.Uy, values)
+            Cx = eval_matrix(sym.Cx, values)
 
-        y = self.sampledvalues
-        try:
-            if self.outunits is not None:
-                y.ito(ureg.parse_units(self.outunits))
-            else:
-                y.ito_reduced_units()
-        except AttributeError:      # Callable types may not pass through units
-            y *= ureg.dimensionless
-        units = y.units
-        uncertunits = units if str(units) not in ['degF', 'degC', 'celsius', 'fahrenheit'] else ureg.parse_units(f'delta_{units}')
-        y = np.array(y.magnitude, ndmin=1, copy=False) * y.units  # MC constants may come through as scalars
+            if not all(all(np.isfinite(u) for u in k) for k in Uy):
+                warns.append('Overflow in GUM uncertainty calculation')
 
-        if not all(np.isfinite(y.magnitude)):
-            warns.append('Some Monte-Carlo samples are NaN. Ignoring in statistics.')
+            # Nominal value
+            nom = self.eval().values()
+            nom = [n.to(self.outunits[i]) if self.outunits[i] is not None else n for i, n in enumerate(nom)]
 
-        stdY = np.nanstd(y.magnitude, ddof=1) * uncertunits
-        meanY = np.nanmean(y.magnitude) * units
-        medY = np.nanmedian(y.magnitude) * units
+            # Just output uncertainties (sqrt of diagonal of Uy)
+            uncerts = eval_list(sym.uncert, values)
+            # Convert to desired units
+            uncerts = [u.to(self.outunits[i]) if self.outunits[i] is not None else u.to(nom[i].units) if hasattr(u, 'to') else u for i, u in enumerate(uncerts)]
 
-        sens = []
-        props = []
-        if sensitivity:
-            # Calculate non-linear sensitivity coefficients
-            xvals = self.get_basemeans()
-            basefunc = self.get_basefunc()
+            # Deg freedom
+            nu = self.inputs.degfs()
+            outunc = {'u_{}'.format(outname): out for outname, out in zip(self.outnames, uncerts)}
+            values.update(outunc)
+            values.update(nu)
+            degf = eval_list(sym.degf, values)
+            degf = [d.to_reduced_units().magnitude if hasattr(d, 'to_reduced_units') else d for d in degf]  # Degf is dimensionless, drop units
 
-            # Keep all inputs the same shape
-            for x in xvals.keys():
-                xvals[x] = np.full(samples, xvals[x].magnitude) * xvals[x].units
-
-            for v in self.get_basevars():  # Hold all inputs fixed but one, compare output stddev.
-                x = xvals.copy()
-                x[v.name] = v.sampledvalues
-                try:
-                    ustd = uparser.callf(basefunc, x).std()
-                except DimensionalityError:
-                    x = {name: val.magnitude for name, val in x.items()}
-                    ustd = uparser.callf(basefunc, x).std()
-                except AttributeError:
-                    ustd = 0   # callf returns single value.. no std
-                except (TypeError, ValueError):
-                    # Call might have failed if basefunc is not vectorizable. Use numpy vectorize
-                    # to broadcast over array and try again.
-                    ustd = uparser.callf(np.vectorize(basefunc), x).std()
-                sens.append((ustd/v.stdunc()).to_base_units().to_reduced_units())   # to_reduced_units() will take care of prefix multipliers and dimensionless values
-                props.append((ustd/stdY).to_base_units().to_reduced_units().magnitude**2 * 100)
-
-        params = {'mean': meanY,
-                  'expected': self.mean(),   # expected/measured value may not match mean or median of MC distribution
-                  'uncert': stdY,
-                  'median': medY,
-                  'samples': y,
-                  'units': units,
-                  'sensitivity': sens if len(sens) else None,
-                  'props': props if len(props) else None,
-                  'function': str(self),
-                  'latex': self.get_latex(),
-                  'desc': self.desc,
-                  'inputs': self.get_basenames(),
-                  'warns': warns
-                  }
-        self.output['mc'] = out_uncert.create_output(method='mc', **params)
-        return self.output['mc']
-
-    def calc_SYM(self, correlation=None, uncert=None, degf=None):
-        ''' Calculate uncertainty symbolically.
-
-            Parameters
-            ----------
-            correlation: array, optional
-                Correlation matrix
-            uncert: float
-                GUM calculated uncertainty
-            degf: float
-                Degrees of freedom
-        '''
-        if self.ftype == 'callable':
-            raise ValueError('Cant symbolically compute a callable input function')
-
-        use_corr = correlation is not None and not np.allclose(np.identity(len(correlation)), correlation)
-        basesymbols = self.get_basesymbols()
-        basefunc = self.get_basefunc()
-        Xmeans = self.get_basemeans()
-        Xuncerts = [var.stdunc() for var in self.get_basevars()]
-
-        if self.name != '':
-            fsymbol = sympy.Symbol(self.name)
-            uncfsymbol = sympy.Symbol('u_{'+self.name+'}')
+            return GUMout(uncerts, nom, degf, Uy, Ux, Cx, symbolic=sym, warnings=warns)
         else:
-            fsymbol = self.function
-            uncfsymbol = sympy.Symbol('u_c')
+            return GUMout(symbolic=sym)
 
-        partials = []        # d/dy reduced
-        partials_raw = []    # will look like [d/dy f]
-        for x in basesymbols:
-            p = sympy.Derivative(fsymbol, x)
-            partials_raw.append(p)
-            # SYMPY 1.2 CHANGE - derivative.subs(x, y) will substitute AFTER derivative is taken, leading to 0! Use replace() instead.
-            partials.append(sympy.Derivative(basefunc, x).doit())
+    def eval(self, values=None):
+        ''' Evaluate the model at the values dict '''
+        if values is None:
+            values = self.inputs.means()
 
-        uncsymbols = [sympy.Symbol('u_{}'.format(str(x))) for x in basesymbols]
-        senssymbols = [sympy.Symbol('c_{}'.format(str(x))) for x in basesymbols]
-        terms = [p**2 * u**2 for p, u in zip(partials_raw, uncsymbols)]
-        cx_terms = [c**2 * u**2 for c, u in zip(senssymbols, uncsymbols)]
-        uncform = sympy.Add(*terms)        # Formula in terms of partial derivatives
-        uncform_cx = sympy.Add(*cx_terms)  # Formula in terms of sensitivity coefficients c_x
-        if use_corr:
-            covterms = []
-            covsymbols = []
-            covvals = []
-            for i in range(len(basesymbols)):
-                for j in range(i+1, len(basesymbols)):
-                    covsymbols.append(sympy.Symbol('sigma_{},{}'.format(basesymbols[i], basesymbols[j])))
-                    covvals.append(correlation[i, j])
-                    covterms.append(2 * sympy.Derivative(fsymbol, basesymbols[i]) * sympy.Derivative(fsymbol, basesymbols[j]) * uncsymbols[i] * uncsymbols[j] * covsymbols[-1])
-            uncform = uncform + sympy.Add(*covterms)
-            uncform_cx = uncform_cx + sympy.Add(*covterms)
-        uncform = sympy.root(uncform, 2)
-        uncform_cx = sympy.root(uncform_cx, 2)
-
-        degfsymbols = [sympy.Symbol('nu_{}'.format(str(x))) for x in basesymbols]
-        dterms = [(u*c)**4/v for u, c, v in zip(uncsymbols, senssymbols, degfsymbols)]
-        degfform = uncfsymbol**4 / sympy.Add(*dterms)
-
-        partials_solved = []
-        for p in partials:
+        lambdifys = [sympy.lambdify(self.inputnames, expr, 'numpy') for expr in self.get_baseexprs()]
+        result = {}
+        for i, func in enumerate(lambdifys):
             try:
-                partials_solved.append(sympy.lambdify(Xmeans.keys(), p, 'numpy')(**Xmeans))
-            except (TypeError, ValueError, OverflowError, ZeroDivisionError):
-                partials_solved.append(sympy.nan)
-
-        symout = {'function': self.full_func(),
-                  'partials': partials,
-                  'partials_raw': partials_raw,  # Unsimplified partial derivatives
-                  'partials_solved': partials_solved,
-                  'uc_symbol': uncfsymbol,
-                  'unc_formula': uncform,        # Unsimplified uncertainty formula
-                  'unc_formula_sens': uncform_cx,  # Uncertainty formula in terms of sensitivity coefficients
-                  'uncertainty': uncform.replace(fsymbol, basefunc).doit(),  # Simplified uncertainty formula
-                  'unc_val': uncert,
-                  'var_symbols': basesymbols,  # Symbols for each variable
-                  'var_means': [Xmeans[str(k)] for k in basesymbols],
-                  'var_uncerts': Xuncerts,
-                  'unc_symbols': uncsymbols,   # Symbols for uncertainty of each variable
-                  'degf': degfform,  # Formula for degrees of freedom
-                  'degf_val': degf}
-        if use_corr:
-            symout['covsymbols'] = covsymbols
-            symout['covvals'] = covvals
-        return symout
+                res = func(**values)
+            except ZeroDivisionError:
+                res = np.inf
+                if self.outunits[i] is not None:
+                    res = unitmgr.Quantity(res, self.outunits[i])
+            else:
+                if self.outunits[i] is not None and hasattr(res, 'to'):
+                    res = res.to(self.outunits[i])
+            if not hasattr(res, 'units'):
+                res = unitmgr.Quantity(res, unitmgr.dimensionless)  # Can end up with no units for constant models, e.g.
+            result[self.outnames[i]] = res
+        return result
 
 
-class UncertCalc(object):
+class ModelCallable(Model):
+    ''' Measurement model consisting of a single callable function, with N outputs
+
+        Parameters
+        ----------
+        func: callable
+            The function to evaluate. May return tuple of multiple quantities.
+        outunits: list
+            List of desired units for each output of the function.
+        finnames: list (optional)
+            List of parameters to func. Required if func uses keyword arguments
+        foutnames: list (optional)
+            List of output parameter names from func. Can be determined automatically
+            if func returns a namedtuple, otherwise if foutnames is not provided
+            the outputs will be named func_1, _2, etc.
+        finunits, foutunits: list (optional)
+            If the function cannot directly handle Pint Quantities, use these parameters
+            to specify a list of units for each input and the resulting units for each output
+            of the function.
+    '''
+    def __init__(self, func, outunits=None, finnames=None, foutnames=None, finunits=None, foutunits=None):
+        self.function = func
+        self.inputnames = finnames
+        self._outnames = foutnames
+        self.outunits = outunits
+        self.exprs = foutnames  # No expressions, just function names
+        self.expr_symbols = foutnames
+        self.descriptions = []
+        self.show = []
+        self.inputs = None
+        self.sampledvalues = None
+        if hasattr(self.function, '__name__'):
+            self.name = self.function.__name__
+        elif isinstance(self.function, np.vectorize):
+            self.name = self.function.pyfunc.__name__
+        else:
+            self.name = 'f'   # Shouldn't get here?
+
+        if self.inputnames is None:
+            params = inspect.signature(self.function).parameters
+            if any(p.kind != inspect.Parameter.POSITIONAL_OR_KEYWORD for p in params.values()):
+                raise ValueError('Callable function uses keyword arguments. Please specify finnames parameter.')
+            self.inputnames = sorted(list(params.keys()))
+
+        # Wrap function with in/out units if specified
+        if finunits and foutunits:
+            if not isinstance(finunits, (list, tuple)):
+                raise TypeError('finunits parameter must be list')
+            if not isinstance(foutunits, (list, tuple)):
+                raise TypeError('foutunits parameter must be list')
+
+            finunits = [uparser.parse_unit(u) for u in finunits]
+            foutunits = [uparser.parse_unit(u) for u in foutunits]
+            foutunits = foutunits[0] if len(foutunits) == 1 else foutunits
+            self.function = unitmgr.ureg.wraps(foutunits, finunits)(func)
+
+    def _setup_output(self):
+        ''' Attempt to determine return value names from function '''
+        # By delaying this until AFTER inputs are defined, units can properly propagate through
+        # the function call when determining output structure
+        if self._outnames is None:
+            out = uparser.callf(self.function, self.inputs.means())
+            try:
+                if hasattr(out, '_fields'):  # Namedtuple
+                    self._outnames = out._fields
+                else:
+                    self._outnames = ['{}_{}'.format(self.name, str(i+1)) for i in range(len(out))]
+            except TypeError:
+                self._outnames = [self.name]
+
+        if self.outunits is None:
+            self.outunits = [None]*len(self._outnames)
+        if not isinstance(self.outunits, (tuple, list)):
+            self.outunits = [self.outunits]
+        if self.show is None or len(self.show) == 0:
+            self.show = [True] * len(self._outnames)
+        self.noutputs = len(self._outnames)
+
+    def sensitivity(self):
+        ''' Calculate sensitivity matrix (numerical gradient) '''
+        means = self.inputs.means()
+        uncerts = self.inputs.stdunc()
+
+        CxT = []
+        for name in self.inputnames:
+            uname = 'u_{}'.format(name)
+            d1 = means.copy()
+            dx = np.float64(uncerts[uname].to(d1[name].units).magnitude / 1E6) * d1[name].units # Float64 won't have div/0 errors, will go to inf
+            if dx == 0:
+                dx = unitmgr.Quantity(1E-6, d1[name].units)
+            d1[name] = d1[name] + dx
+            d2 = means.copy()
+            d2[name] = d2[name] - dx
+            delta = 2*dx
+            result1 = self.eval(d1)
+            result2 = self.eval(d2)
+            CxT.append([((result1[out]-result2[out])/delta).to_reduced_units() for out in self.outnames])
+        return transpose(CxT)
+
+    def GUMcovariance(self, symboliconly=False):
+        ''' Calculate GUM uncertainty/covariance matrix Uy
+
+            Returns
+            -------
+            uncert: list
+                List of uncertainties for each function in the model
+            nom: list
+                List of nominal values for each function
+            degf: list
+                Degrees of freedom for each function
+            Uy: matrix (list of lists)
+                Covariance matrix of output
+            Ux: matrix
+                Covariance matrix of inputs
+            Cx: matrix
+                Sensitivity coefficients
+
+            Note
+            ----
+            See GUM Supplement 2, section 6.2.1.3
+        '''
+        self.inputs.reorder(self.inputnames)  # Ensure Ux, Cx, Uy all in same variable order
+        Cx = self.sensitivity()
+        CxT = transpose(Cx)
+        Ux = self.inputs.covariance()
+        Uy = matmul(matmul(Cx, Ux), CxT)
+
+        nom = list(self.eval().values())
+        nom = [n.to(self.outunits[i]) if self.outunits[i] is not None else n for i, n in enumerate(nom)]
+        uncerts = [np.sqrt(Uy[i][i]) for i in range(len(Uy))]
+        uncerts = [u.to(self.outunits[i]) if self.outunits[i] is not None else u for i, u in enumerate(uncerts)]
+
+        # Deg Freedom - Welch-Satterthwaite
+        nu = self.inputs.degfs().values()
+        us = [np.sqrt(Ux[i][i]) for i in range(len(Ux))]
+        degf = []
+        for cs, uc in zip(Cx, uncerts):  # Each output in model
+            denom = sum([(ci*ui)**4 / vi for ci, ui, vi in zip(cs, us, nu)])
+            df = (uc**4 / denom).to_reduced_units().magnitude  # reduce to fix things like m**4 / mm**4
+            degf.append(df)
+        return GUMout(uncerts, nom=nom, degf=degf, Uy=Uy, Ux=Ux, Cx=Cx)
+
+    def eval(self, values=None):
+        ''' Evaluate the model at the values dict '''
+        self._setup_output()
+        if values is None:
+            values = self.inputs.means()
+
+        out = uparser.callf(self.function, values)
+
+        if len(self.outnames) > 1:
+            return dict(zip(self.outnames, out))
+        else:
+            return {self.outnames[0]: out}
+
+
+class UncertCalc():
     ''' Main Uncertainty Calculator Class.
 
         Parameters
@@ -1142,25 +1544,27 @@ class UncertCalc(object):
             **args             Keyword arguments defining the distribution, passed to stats instance.
             =================   ===============================================
 
-        Attributes
-        ----------
-        functions: list
-            List of InputFunc instances to calculate
-        variables: list
-            List of InputVar and InputFunc objects defined in the system. InputFunc are included
-            in case a function is used as an input to another function.
-        samples: int
-            Number of Monte Carlo samples to calculate
+        Keyword Arguments
+        -----------------
+        finnames: list (optional)
+            List of arguments to callable function. Required when function is callable and
+            takes keyword arguments.
+        foutnames: list (optional)
+            List of names of return values from callable function. Can be deduced automatically
+            if function returns a namedtuple
+        finunits: list (optional)
+        foutunits: list (optional)
+            "Natural" input and output units (as strings) from callable function. Informs
+            suncal that function() called with finunits on the inputs will result in
+            foutunits on the outputs. Specify these parameters if callable function cannot
+            operate on Pint Quantities.
         '''
-    def __init__(self, function=None, inputs=None, units=None, samples=1000000, seed=None, name='uncertainty'):
-        self.variables = []  # List of InputVar objects AND named InputFunc objects
-        # CAUTION: variables list is passed "by reference" to InputFuncs. Do not reassign anywhere or link will be broken!
-        # Instead, reassign using list mutation (with [:]) like this:  self.variables[:] = XYZ.
-        self.functions = []  # List of InputFunc objects
-        self.samples = int(samples)
-        self._corr = None
-        self.copula = 'gaussian'
-        self.seed = seed
+    def __init__(self, function=None, inputs=None, units=None, samples=1000000, seed=None, name='uncertainty',
+                 finnames=None, foutnames=None, finunits=None, foutunits=None):
+        self.model = None
+        self.inputs = Inputs()
+        self.inputs.seed = seed
+        self.inputs.nsamples = int(samples)
         self.longdescription = ''
         self.name = name
         self.out = None   # Output object
@@ -1170,8 +1574,18 @@ class UncertCalc(object):
                 units = [None]*len(function)
             assert len(units) == len(function)
             [self.set_function(f, outunits=u) for f, u in zip(function, units)]
-        elif function is not None:
+
+        elif isinstance(function, sympy.Basic) or isinstance(function, str):
+            assert units is None or isinstance(units, str)
             self.set_function(function, outunits=units)
+
+        elif callable(function):
+            self.model = ModelCallable(function, outunits=units, finnames=finnames, foutnames=foutnames,
+                                       finunits=finunits, foutunits=foutunits)
+            self.model.inputs = self.inputs
+
+        elif function is not None:
+            raise TypeError('Unknown function format - {}'.format(type(function)))
 
         if inputs is not None:
             for inpt in inputs:
@@ -1182,99 +1596,48 @@ class UncertCalc(object):
                 for udict in uncerts:
                     self.set_uncert(var=iname, **udict)
 
-    def clearall(self):
-        ''' Clear all inputs, resetting to blank calculator '''
-        self.functions[:] = []
-        self._corr = None
-        self.longdescription = ''
-        self.out = None
-        self.variables[:] = []
+    def get_output(self):
+        ''' Get output object (for GUI) '''
+        return self.out
 
-    def set_function(self, func, idx=None, name=None, outunits=None, desc='', show=True, kwnames=None):
-        ''' Add or update a function in the system.
+    def set_function(self, func, idx=None, name=None, outunits=None, desc='', show=True):
+        ''' Add or update a sympy function in the system.
 
             Parameters
             ----------
-            func: string, callable, or sympy expression
+            func: string, or sympy expression
                 The function to add
             idx: int, optional
                 Index of existing function. If not provided, the function names will be searched,
                 or a new function will be added if not in the function names already.
-            name: name of the function
-            desc: description for the function
-            show: boolean, show this function in the reports?
-            kwnames: list
-                List of names of keyword arguments to function if func is callable. Required
-                only if func is callable and called with kwargs or args instead of named arguments.
+            name: string
+                Name of the function
+            outunits: string
+                Convert the output to these units
+            desc: string
+                Description for the function
+            show: boolean
+                Show this function in the reports
         '''
-        if name is None and isinstance(func, str) and '=' in func:
-            name, func = func.split('=')
-            name = name.strip()
-            func = func.strip()
-        elif name is None and hasattr(func, 'name') and func.name is not None:
-            name = func.name
-        elif name is not None and hasattr(func, 'name'):
-            func.name = name
+        # Callables must use UncertCalc(callalbefunc) since only one is supported
+        assert self.model is None or isinstance(self.model, ModelSympy)
 
-        fnames = [f.name for f in self.functions]
-        if idx is None and name is not None and name in fnames:
-            idx = fnames.index(name)
-        elif idx is None and func in self.functions:
-            idx = self.functions.index(func)
+        if self.model is None:
+            self.model = ModelSympy()
+            self.model.set_inputs(self.inputs)
 
-        if idx is not None and idx >= len(self.functions):
-            idx = None
+        if idx is None and name is not None and name in self.model.outnames:
+            idx = self.model.outnames.index(name)
 
-        if not hasattr(func, 'calc_GUM'):  # isinstance(func, InputFunc)  # Doesn't seem to work across uarray module
-            func = InputFunc(func, variables=self.variables, outunits=outunits, name=name, desc=desc)  # self.variables list passed as object
+        self.model.add_expr(func, idx=idx, name=name, outunits=outunits, desc=desc, show=show)
 
-        if func.ftype == 'callable':
-            params = inspect.signature(func.function).parameters
-            if any(p.kind != inspect.Parameter.POSITIONAL_OR_KEYWORD for p in params.values()):
-                if kwnames is None:
-                    raise ValueError('Callable function uses keyword arguments. kwnames must be supplied to set_function.')
-                else:
-                    func.kwnames = kwnames
-
-        func.show = show
-        if idx is None:  # Not an existing function, add it
-            self.functions.append(func)
-        else:
-            self.functions[idx] = func
-
-        inptnames = self.get_inputnames()
-        if name is not None and name not in inptnames:  # It has a name, add it to variable list to be used in later functions
-            self.variables.append(func)
-        elif name in inptnames:  # Already in there, update it
-            i = inptnames.index(name)
-            self.variables[i] = func
-
-    def reorder(self, names):
-        ''' Reorder the function list using order of names array.
-
-            Parameters
-            ----------
-            names: list of strings
-                List of function names in new order
-        '''
-        fnames = [f.name for f in self.functions]
-        newidx = [fnames.index(f) for f in names]
-        self.functions = [self.functions[f] for f in newidx]
-        self.variables[:] = self.functions + [v for v in self.variables if not isinstance(v, InputFunc)]
-
-    def remove_function(self, idx):
-        ''' Remove function at idx '''
-        with suppress(IndexError):
-            self.functions.pop(idx)
-
-    def set_input(self, inpt, nom=1, units=None, desc='', **kwargs):
+    def set_input(self, name, nom=1, units=None, desc='', **kwargs):
         ''' Add or update an input nominal value and description in the system.
 
             Parameters
             ----------
-            inpt: string or InputVar
-                Variable to update, either existing InputVar instance or
-                string name of the variable
+            name: string
+                Name of variable to update
             nom: float
                 Nominal value
             desc: string
@@ -1297,30 +1660,10 @@ class UncertCalc(object):
             one uncertainty component on this input variable. Additional components
             may be added with explicit calls to set_uncert().
         '''
-        idx = None
-        names = self.get_inputnames()
-        if inpt in self.variables:
-            idx = self.variables.index(inpt)
-        elif inpt in names:
-            idx = names.index(inpt)
-
-        if idx is None:  # Not an existing InputVar. Add it
-            if not isinstance(inpt, InputVar):
-                inpt = InputVar(name=inpt, nom=nom, desc=desc, units=units)
-            self.variables.append(inpt)
-            idx = -1
-        else:  # Existing variable, update it
-            self.variables[idx].nom = nom
-            self.variables[idx].desc = desc
-            if units is not None:
-                self.variables[idx].units = uparser.parse_unit(units)
-
+        newinpt = self.inputs.set_input(name, nom=nom, desc=desc, units=units)
         if len(kwargs) > 0:
-            self.set_uncert(var=self.variables[idx].name,
-                            name=kwargs.pop('uname', 'u({})'.format(self.variables[idx].name)),
-                            **kwargs)
-
-        return self.variables[idx]
+            self.inputs.set_uncert(name, name=kwargs.pop('uname', 'u({})'.format(name)), **kwargs)
+        return newinpt
 
     def set_uncert(self, var, name=None, dist='normal', degf=np.inf, units=None, desc='', **args):
         ''' Add or update an uncertainty component.
@@ -1344,19 +1687,37 @@ class UncertCalc(object):
                 Keyword arguments defining distribution will be passed to the
                 rv_continuous instance in scipy.stats.
         '''
-        names = [v.name for v in self.variables]
-        if var not in names:
-            raise ValueError('Variable {} not defined'.format(var))
+        self.inputs.set_uncert(var=var, name=name, dist=dist, degf=degf, units=units, desc=desc, **args)
 
-        idx = names.index(var)
+    def clearall(self):
+        ''' Clear all inputs, resetting to blank calculator '''
+        self.model = None
+        self.inputs = Inputs()
+        self.longdescription = ''
+        self.out = None
 
-        if name is None:
-            name = '{}{}'.format(self.variables[idx].name, len(self.variables[idx].uncerts))
+    def clearout(self):
+        ''' Clear output (ie back button pressed) '''
+        self.out = None
 
-        self.variables[idx].add_comp(name=name, dist=dist, degf=degf, desc=desc, units=units, **args)
+    def reorder(self, names):
+        ''' Reorder the function list using order of names array.
 
-    def get_input(self, name):
-        ''' Return input with the given name
+            Parameters
+            ----------
+            names: list of strings
+                List of function names in new order
+        '''
+        assert isinstance(self.model, ModelSympy)
+        self.model.reorder(names)
+
+    def remove_function(self, idx):
+        ''' Remove function at idx '''
+        assert isinstance(self.model, ModelSympy)
+        self.model.remove_expr(idx)
+
+    def get_inputvar(self, name):
+        ''' Return InputVar object with the given name
 
             Parameters
             ----------
@@ -1367,82 +1728,39 @@ class UncertCalc(object):
             -------
             Input variable: InputVar
         '''
-        inpts = [x for x in self.variables if x.name == name]
-        if len(inpts) > 0:
-            return inpts[0]
-        else:
+        try:
+            idx = self.inputs.names.index(name)
+        except IndexError:
             return None
-
-    def get_inputnames(self):
-        ''' Get names of the input variables
-
-            Returns
-            -------
-            Input names: list of str
-        '''
-        return [i.name for i in self.variables]
+        else:
+            return self.inputs[idx]
 
     def get_functionnames(self):
-        ''' Get names of the functions
+        ''' Get the name of each function in the model '''
+        return self.model.outnames
 
-            Returns
-            -------
-            Function names: list of str
-        '''
-        return [i.name for i in self.functions]
-
-    def get_baseinputs(self):
-        ''' Get the base variables (only inputs, not dependent functions)
-
-            Returns
-            -------
-            Input names: list of InputVar
-        '''
-        inpts = []
-        for v in self.variables:
-            if (isinstance(v, InputVar) or (len(self.functions) > 1 and isinstance(v, InputFunc) and v.ftype == 'callable')):
-                inpts.append(v)
-        return inpts
-
-    def get_baseinputnames(self):
-        ''' Get the base variable names (only inputs, not dependent functions)
-
-            Returns
-            -------
-            Input names: list of str
-        '''
-        return [i.name for i in self.get_baseinputs()]
-
-    def get_reqd_inputs(self):
+    @property
+    def required_inputs(self):
         ''' Return a list of input names required to define the function(s). '''
-        funcnames = [f.name for f in self.functions]
-
-        inputs = set()
-        for f in self.functions:
-            if f.ftype == 'callable' and f.kwnames:
-                inputs = inputs | set(f.kwnames)
-            elif f.ftype == 'callable':
-                keys = set(inspect.signature(f.function).parameters.keys())
-                if 'kwargs' in keys:
-                    keys.remove('kwargs')
-                inputs = inputs | set(k for k in keys if k not in funcnames)
-            elif f.ftype == 'array':
-                pass
-            else:
-                inputs = inputs | set(str(s) for s in f.function.free_symbols if str(s) not in funcnames)
-
-        return [str(i) for i in inputs]
+        return self.model.inputnames
 
     def add_required_inputs(self):
         ''' Add and remove inputs so that all free variables in functions are
             defined. New variables will default to normal, mean=0, std=1.
         '''
-        inputs = self.get_reqd_inputs()
-        self.variables[:] = [i for i in self.variables if i.name in inputs and isinstance(i, InputVar)]  # And remove ones that aren't there anymore
-        [self.set_input(i, unc=1, k=2) for i in inputs if i not in [x.name for x in self.variables]]  # Add new variables
-        self.variables.extend(f for f in self.functions if f.name != '')   # but keep named functions
+        inputs = self.model.inputnames
 
-    def set_correlation(self, corr, copula='gaussian', **args):
+        # Add generic input variable if not in list
+        for inpt in inputs:
+            if inpt not in self.inputs.names:
+                self.inputs.set_input(inpt, unc=1, k=2)
+
+        # Remove inputs not in current model
+        for name in self.inputs.names:
+            if name not in inputs:
+                self.inputs.remove_input(name)
+
+    def set_correlation(self, corr, names, copula='gaussian', **args):
         ''' Set correlation of inputs as a matrix.
 
             Parameters
@@ -1450,6 +1768,8 @@ class UncertCalc(object):
             corr : array_like, shape (M,M)
                 correlation matrix. Must be square where M is number of inputs.
                 Only upper triangle is considered.
+            names: list
+                List of variable names corresponding to the rows/columns of cor
             copula : string
                 Copula for correlating the inputs. Supported copulas:
                 ['gaussian', 't']
@@ -1457,23 +1777,15 @@ class UncertCalc(object):
                 copula arguments. Only df: degrees of freedom (t copula) is supported.
         '''
         assert copula in _COPULAS
-        self._corr = corr
-        self.copula = copula
-
-    def set_copula(self, copula='gaussian'):
-        ''' Set the copula for correlating inputs.
-
-            Parameters
-            ----------
-            copula: string
-                Name of coupla to use. Must be 'gaussian' or 't'.
-        '''
-        assert copula in _COPULAS
-        self.copula = copula
+        self.inputs.copula = copula
+        for idx1, name1 in enumerate(names):
+            for idx2, name2 in enumerate(names):
+                if idx1 < idx2:
+                    self.inputs.correlate_vars(name1, name2, corr[idx1, idx2])
 
     def clear_corr(self):
         ''' Clear correlation table '''
-        self._corr = None
+        self.inputs._corr = None
 
     def correlate_vars(self, var1, var2, correlation):
         ''' Set correlation between two inputs.
@@ -1486,317 +1798,94 @@ class UncertCalc(object):
             correlation: float
                 Correlation coefficient for the two variables
         '''
-        if var1 == var2:
-            return
+        self.inputs.correlate_vars(var1, var2, correlation)
 
-        baseinputs = self.get_baseinputs()
-        if self._corr is None:
-            self._corr = np.eye(len(baseinputs))
-        Xnames = [i.name for i in baseinputs]
-        idx1 = Xnames.index(var1)
-        idx2 = Xnames.index(var2)
-        try:
-            float(correlation)
-        except ValueError:
-            return  # Fail
+    def validate_inputs(self):
+        ''' Check that all inputs are defined, unit dimensions are ok, and no circular references '''
+        self.model.validate_inputs()
 
-        self._corr[idx1, idx2] = correlation
-        self._corr[idx2, idx1] = correlation
+    def units_report(self, **kwargs):
+        ''' Create report showing units of all parameters in UncertCalc '''
+        hdr = ['Parameter', 'Units', 'Abbreviation', 'Dimensionality']
+        rows = []
+        for fidx in range(self.model.noutputs):
+            msg = None
+            name = report.Math(self.model.outnames[fidx])
+            try:
+                mean = self.model.eval()[self.model.outnames[fidx]]
+            except DimensionalityError as e:
+                msg = '<font color="red">' + str(e) + '</font>'
+                mean = None
+            except OffsetUnitCalculusError:
+                msg = '<font color="red">Ambiguous offset (temerature) units. Try delta_degC.'
+                mean = None
 
-    def get_corr_matrix(self, varnames=None):
-        ''' Get correlation matrix for the given variable names '''
-        basenames = self.get_baseinputnames()
-        if varnames is None:
-            varnames = basenames
-
-        if self._corr is None:
-            return np.eye(len(varnames))
-        elif len(varnames) == len(basenames):
-            return self._corr
-        else:
-            # Only rows/cols for varnames
-            i = [v for v in range(len(varnames)) if varnames[v] in basenames]
-            return self._corr[:, i][i, :]
-
-    def _gen_corr_samples(self, **args):
-        ''' Generate random samples for each of the inputs '''
-        covok = True
-        if self._corr is not None:
-            # Matrix be symmetric. Copy upper triangle to lower triangle
-            fullcorr = np.triu(self._corr) + np.triu(self._corr).T - np.diag(self._corr.diagonal())
-
-            # Generate correlated random samples, save to each input
-            if self.copula == 'gaussian':
-                # Note: correlation==covariance since all std's are 1 right now.
-                with warnings.catch_warnings(record=True) as w:
-                    # Roundabout way of catching a numpy warning that should really be an exception
-                    warnings.simplefilter('always')
-                    normsamples = stat.multivariate_normal.rvs(cov=fullcorr, size=self.samples)
-                    if len(w) > 0:
-                        covok = False  # Not positive semi-definite
-                    normsamples = stat.norm.cdf(normsamples)
-
-            elif self.copula == 't':
-                df = args.get('df', np.inf)
-                mean = np.zeros(fullcorr.shape[0])
-                with warnings.catch_warnings(record=True) as w:
-                    warnings.simplefilter('always')
-                    normsamples = multivariate_t_rvs(mean=mean, corr=fullcorr, size=self.samples, df=df)
-                    normsamples = stat.t.cdf(normsamples, df=df)
-                    if len(w) > 0:
-                        covok = False  # Not positive semi-definite
-
-            normsamples[np.where(normsamples == 1.0)] = 1 - 1E-9  # If rounded to 1 or 0, then we get infinity.
-            normsamples[np.where(normsamples == 0.0)] = 1E-9
-            for idx, i in enumerate(self.get_baseinputs()):
-                i._set_normsamples(normsamples[:, idx])
-        return covok
-
-    def clear_output(self):
-        ''' Clear the output calculation results '''
-        for f in self.functions:
-            f.clear()
-
-    def check_inputs(self):
-        ''' Check that all inputs are defined.
-
-            Raises
-            ------
-            ValueError
-                if required inputs are not defined.
-        '''
-        definputs = [x.name for x in self.variables]
-        reqinputs = self.get_reqd_inputs()
-        for i in reqinputs:
-            if i not in definputs:
-                raise ValueError('Required input "{}" is not defined.'.format(i))
-
-    def check_dimensionality(self):
-        ''' Check that units/dimensionality are correct.
-
-            Raises
-            ------
-            pint.DimensionalityError if units are incompatible
-        '''
-        for func in self.functions:
-            mean = func.mean()
-            if func.outunits is not None:
-                if not hasattr(mean, 'units'):
-                    mean = mean * ureg.dimensionless
-                mean.to(func.outunits)
-        for inpt in self.get_baseinputs():
-            inpt.stdunc()
-
-    def check_circular(self):
-        ''' Check the functions list to ensure no circular dependencies
-
-            Returns
-            -------
-            True if the function set has a circular reference
-        '''
-        if len(self.functions) > 1:
-            for f in self.functions:
+            if mean is not None and self.model.outunits[fidx] is not None:
                 try:
-                    f.get_basefunc()
-                except RecursionError:
-                    return True
-        return False
+                    units = unitmgr.parse_units(self.model.outunits[fidx])
+                except UndefinedUnitError:
+                    msg = '<font color="red">Undefined Unit: {}</font>'.format(self.model.outunits[fidx])
+                    units = mean.units
+                else:
+                    try:
+                        mean.ito(self.model.outunits[fidx])
+                    except DimensionalityError as e:
+                        msg = '<font color="red">' + str(e) + '</font>'
 
-    def get_output(self):
-        return self.out
+            elif mean is not None:
+                units = mean.units  # Units not specified, use native units
+
+            if msg:
+                rows.append([name, msg, '-', '-'])
+            else:
+                rows.append([report.Math(self.model.outnames[fidx]),
+                             report.Unit(units, abbr=False, dimensionless='-'),
+                             report.Unit(units, abbr=True, dimensionless='-'),
+                             report.Unit(units.dimensionality, abbr=False, dimensionless='-')])
+
+        for inpt in self.inputs:
+            rows.append([report.Math(inpt.name),
+                         report.Unit(inpt.units, abbr=False, dimensionless='-'),
+                         report.Unit(inpt.units, abbr=True, dimensionless='-'),
+                         report.Unit(inpt.units.dimensionality, abbr=False, dimensionless='-')])
+            for comp in inpt.uncerts:
+                try:
+                    comp.std().to(inpt.units)
+                except OffsetUnitCalculusError:
+                    rows.append([report.Math(comp.name), '<font color="red">Ambiguous unit {}. Try "delta_{}".</font>'.format(comp.units, comp.units), '-', '-'])
+                except DimensionalityError:
+                    rows.append([report.Math(comp.name), '<font color="red">Cannot convert {} to {}</font>'.format(comp.units, inpt.units), '-', '-'])
+                else:
+                    rows.append([report.Math(comp.name),
+                                report.Unit(comp.units, abbr=False, dimensionless='-'),
+                                report.Unit(comp.units, abbr=True, dimensionless='-'),
+                                report.Unit(comp.units.dimensionality, abbr=False, dimensionless='-')])
+        rpt = report.Report(**kwargs)
+        rpt.table(rows, hdr)
+        return rpt
 
     def calculate(self, **kwargs):
-        ''' Run calculation and return output report.
+        ''' Calculate uncertainty of the model
 
-            Parameters
-            ----------
-            gum: boolean
-                Calculate using GUM method
-            mc: boolean
-                Calculate using Monte-Carlo method
-            lsq: boolean
-                Calculate using Least-Squares method, if available. InputFunc object
-                must have calc_LSQ method.
-            sensitivity: boolean
-                Calculate Monte Carlo sensitivity coefficients (requires running a MC for each variable)
-        '''
-        mc = kwargs.get('mc', True)
-        samples = kwargs.pop('samples', self.samples)
-        warns = None
-        self.clear_output()
-        self.check_inputs()
-        if mc:
-            if self.seed is not None:
-                np.random.seed(self.seed)
-            if self._corr is not None:
-                covok = self._gen_corr_samples()
-                if not covok:
-                    warns = ['Covariance matrix is not positive semi-definite.']
-
-        outputs = []
-        for f in self.functions:
-            correlation = self.get_corr_matrix(f.get_basenames())
-            funcout = f.calculate(samples=samples, correlation=correlation, **kwargs)
-            outputs.append(funcout)
-        self.out = out_uncert.CalcOutput(outputs, self, warns=warns)
-        return self.out
-
-    def calcGUM(self):
-        ''' Calculate GUM results only. '''
-        return self.calculate(mc=False, lsq=False)
-
-    def calcMC(self, sensitivity=True):
-        ''' Calculate Monte-Carlo Results Only.
-
-            Parameters
-            ----------
-            sensitivity: boolean
-                Calculate Monte Carlo sensitivity coefficients (requires running a MC for each variable)
-        '''
-        return self.calculate(gum=False, lsq=False, sensitivity=sensitivity)
-
-    def get_corr_list(self):
-        ''' Get correlations
+            Keyword Arguments
+            ----------------
+            gum: bool
+                Calculate GUM method
+            mc: bool
+                Calculate Monte Carlo method
+            samples: int
+                Number of Monte Carlo Samples
 
             Returns
             -------
-            list of (str, str, float) tuples:
-                Each tuple lists one correlation coefficient as (input1, input2, correlation)
+            out_uncert.UncertOutput
         '''
-        s = []
-        basenames = self.get_baseinputs()
-        for idx, iname in enumerate(basenames):
-            for idx2, iname2 in enumerate(basenames[idx+1:]):
-                s.append((iname.name, iname2.name, self._corr[idx, idx+idx2+1]))
-        return s
-
-    def get_contour(self, func1, func2, getcorr=False):
-        ''' Get contour grid for plotting of func1 vs func2
-
-        Parameters
-        ----------
-        func1: int
-            Index of first function
-        func2: int
-            Index of second function
-
-        Returns
-        -------
-        x: array
-            2D array of x points
-        y: array
-            2D array of y points
-        pdf: array
-            2D array of joint PDF values
-
-        Note
-        ----
-        The output of the function can be plotted directly using matplotlib contour().
-
-        >>> x, y, p = u.get_contour(0, 1)
-        >>> plt.contour(x, y, p)
-        '''
-        Contour = namedtuple('Contour', ['x', 'y', 'pdf'])
-        # Get mean/uncertainty in original units so they're compatible with sens coefficients
-        m0 = self.functions[func1].out.gum.mean.to(self.functions[func1].out.gum.properties['origunits']).magnitude
-        m1 = self.functions[func2].out.gum.mean.to(self.functions[func2].out.gum.properties['origunits']).magnitude
-        u0 = self.functions[func1].out.gum.uncert.to(self.functions[func1].out.gum.properties['origunits']).magnitude
-        u1 = self.functions[func2].out.gum.uncert.to(self.functions[func2].out.gum.properties['origunits']).magnitude
-
-        # Make sensitivity tables the same shape/order - basevars may be different for each function - pad with 0's.
-        s1dict = dict([v, c] for v, c in zip(self.functions[func1].get_basevars(), self.functions[func1].out.gum.sensitivity))
-        s2dict = dict([v, c] for v, c in zip(self.functions[func2].get_basevars(), self.functions[func2].out.gum.sensitivity))
-        s1dict = dict([v, c.magnitude if hasattr(c, 'magnitude') else c] for v, c in s1dict.items())
-        s2dict = dict([v, c.magnitude if hasattr(c, 'magnitude') else c] for v, c in s2dict.items())
-        baseinputs = self.get_baseinputs()
-        s1 = []
-        s2 = []
-        for i, v in enumerate(baseinputs):
-            s1.append(s1dict.get(v, 0))
-        for i, v in enumerate(baseinputs):
-            s2.append(s2dict.get(v, 0))
-
-        # See 6.2 in GUM-sup-2
-        Cx = np.vstack((s1, s2))
-        corr = self._corr if self._corr is not None else np.eye(len(baseinputs))
-        S = np.diag([i.stdunc().magnitude for i in self.get_baseinputs()])
-        Ux = S @ corr @ S   # Convert correlation to covariance
-        Uy = Cx @ Ux @ Cx.T
-
-        if getcorr:
-            return Uy[0, 1] / (u0*u1)
-
-        try:
-            rv = stat.multivariate_normal(np.array([m0, m1]), cov=Uy)
-        except (ValueError, np.linalg.LinAlgError):
-            return Contour(None, None, None)
-
-        x, y = np.meshgrid(np.linspace(m0-3*u0, m0+3*u0), np.linspace(m1-3*u1, m1+3*u1))
-        pos = np.dstack((x, y))
-        x = (x*self.functions[func1].out.gum.properties['origunits']).to(self.functions[func1].out.gum.units)
-        y = (y*self.functions[func2].out.gum.properties['origunits']).to(self.functions[func2].out.gum.units)
-        return Contour(x, y, rv.pdf(pos))
-
-    def get_config(self):
-        ''' Get configuration dictionary describing this calculation '''
-        if any([callable(f.origfunction) for f in self.functions]):
-            raise ValueError('Cannot save callable function to config file.')
-
-        d = {}
-        d['name'] = self.name
-        d['mode'] = 'uncertainty'
-        d['samples'] = self.samples
-        d['functions'] = []
-        d['inputs'] = []
-
-        for f in self.functions:
-            fdict = {'name': f.name, 'expr': str(f.function), 'desc': f.desc, 'units': format(f.outunits) if f.outunits else None}
-            d['functions'].append(fdict)
-
-        for inpt in self.get_baseinputs():
-            idict = {'name': inpt.name, 'mean': inpt.nom, 'desc': inpt.desc, 'units': format(inpt.units)}
-            ulist = []
-            if len(inpt.uncerts) > 0:
-                for unc in inpt.uncerts:
-                    udict = {'name': unc.name, 'desc': unc.desc, 'degf': unc.degf, 'units': format(unc.units) if unc.units else None}
-                    if not isinstance(unc.distname, str):
-                        udict.update(distributions.get_config(unc.distname))
-                    else:
-                        udict.update({'dist': unc.distname})
-                        udict.update(dict(unc.args))
-                    ulist.append(udict)
-                idict['uncerts'] = ulist
-            d['inputs'].append(idict)
-
-        if self.seed is not None:
-            d['seed'] = self.seed
-
-        if self._corr is not None:
-            d['correlations'] = []
-            for v1, v2, cor in self.get_corr_list():
-                d['correlations'].append({'var1': v1, 'var2': v2, 'cor': format(cor, '.4f')})
-
-        if self.longdescription is not None and self.longdescription != '':
-            d['description'] = self.longdescription
-        return d
-
-    def save_config(self, fname):
-        ''' Save configuration to file.
-
-            Parameters
-            ----------
-            fname: string or file object
-                File name or open file object to write configuration to
-        '''
-        d = self.get_config()
-        d = [d]  # Must go in list to support multi-calculation project structure
-        out = yaml.dump(d, default_flow_style=False)  # Can't use safe_dump with our np.float64 representer. But we still safe_load.
-
-        try:
-            fname.write(out)
-        except AttributeError:
-            with open(fname, 'w') as f:
-                f.write(out)
+        gum = kwargs.get('gum', True)
+        mc = kwargs.get('mc', True)
+        if 'samples' in kwargs:
+            self.inputs.nsamples = int(kwargs.get('samples'))
+        self.out = out_uncert.UncertOutput(self.model, self.inputs, gum=gum, mc=mc)
+        return self.out
 
     def save_samples(self, fname, fmt='csv', inputs=True, outputs=True):
         ''' Save Monte-Carlo samples to file.
@@ -1812,13 +1901,22 @@ class UncertCalc(object):
             outputs: bool
                 Save output samples?
         '''
+        if not (outputs or inputs):
+            return
+
+        if self.model.sampledvalues is None:
+            self.model.MCsample()
+        hdr = []
         if inputs:
-            variables = self.get_baseinputs()
+            variables = self.inputs.inputvars
             hdr = ['{}{}'.format(v.name, report.Unit(v.units).prettytext(bracket=True)) for v in variables]
-            hdr.extend(['{}{}'.format(str(f), report.Unit(ureg.parse_units(f.outunits)).prettytext(bracket=True)) for f in self.functions])
             csv = np.stack([v.sampledvalues.magnitude for v in variables], axis=1)
         if outputs:
-            out = np.array([self.out.foutputs[f].mc.samples.magnitude for f in range(len(self.functions))]).T
+            outnames = self.model.sampledvalues.keys()
+            outvals = self.model.sampledvalues.values()
+            outunits = self.model.outunits
+            out = np.array([v.magnitude for v in outvals]).T
+            hdr.extend(['{}{}'.format(str(f), report.Unit(unitmgr.parse_units(u)).prettytext(bracket=True)) for f, u in zip(outnames, outunits)])
             if inputs:
                 csv = np.hstack([csv, out])
             else:
@@ -1829,6 +1927,53 @@ class UncertCalc(object):
             np.savez_compressed(fname, samples=csv, hdr=hdr)
         else:
             raise ValueError('Unsupported file format {}'.format(fmt))
+
+    def get_config(self):
+        ''' Get configuration dictionary describing this calculation '''
+        if isinstance(self.model, ModelCallable):
+            raise ValueError('Cannot save callable function to config file.')
+
+        d = {}
+        d['name'] = self.name
+        d['mode'] = 'uncertainty'
+        d['samples'] = self.inputs.nsamples
+        d['functions'] = []
+        d['inputs'] = []
+
+        customunits = unitmgr.get_customunits()
+        if customunits:
+            d['unitdefs'] = customunits
+
+        for func, name, desc, units in zip(self.model.sympyexprs, self.model.outnames, self.model.descriptions, self.model.outunits):
+            fdict = {'name': name, 'expr': str(func), 'desc': desc, 'units': format(units) if units else None}
+            d['functions'].append(fdict)
+
+        for inpt in self.inputs.inputvars:
+            idict = {'name': inpt.name, 'mean': inpt.nom, 'desc': inpt.desc, 'units': format(inpt.units)}
+            ulist = []
+            if len(inpt.uncerts) > 0:
+                for unc in inpt.uncerts:
+                    udict = {'name': unc.name, 'desc': unc.desc, 'degf': unc.degf, 'units': format(unc.units) if unc.units else None}
+                    if not isinstance(unc.distname, str):
+                        udict.update(distributions.get_config(unc.distname))
+                    else:
+                        udict.update({'dist': unc.distname})
+                        udict.update(dict(unc.args))
+                    ulist.append(udict)
+                idict['uncerts'] = ulist
+            d['inputs'].append(idict)
+
+        if self.inputs.seed is not None:
+            d['seed'] = self.inputs.seed
+
+        if len(self.inputs.corr_list) > 0:
+            d['correlations'] = []
+            for v1, v2, cor in self.inputs.corr_list:
+                d['correlations'].append({'var1': v1, 'var2': v2, 'cor': format(cor, '.4f')})
+
+        if self.longdescription is not None and self.longdescription != '':
+            d['description'] = self.longdescription
+        return d
 
     @classmethod
     def from_config(cls, config):
@@ -1848,10 +1993,13 @@ class UncertCalc(object):
             else:
                 return val
 
+        if 'unitdefs' in config:
+            unitmgr.register_units(config['unitdefs'])
+
         u = cls()
 
         if 'samples' in config:
-            u.samples = int(get_float(config, 'samples', 1E6))  # Use int(float()) to handle exponential notation
+            u.inputs.nsamples = int(get_float(config, 'samples', 1E6))  # Use int(float()) to handle exponential notation
 
         if 'functions' in config:
             for func in config['functions']:
@@ -1870,11 +2018,11 @@ class UncertCalc(object):
                             newinpt.add_comp(**unc)
 
         if 'seed' in config:
-            u.seed = int(get_float(config, 'seed'))
+            u.inputs.seed = int(get_float(config, 'seed'))
 
         if 'correlations' in config:
             for cor in config['correlations']:
-                u.correlate_vars(cor.get('var1'), cor.get('var2'), get_float(cor, 'cor'))
+                u.inputs.correlate_vars(cor.get('var1'), cor.get('var2'), get_float(cor, 'cor'))
 
         if 'description' in config:
             u.longdescription = config['description']
@@ -1882,10 +2030,28 @@ class UncertCalc(object):
         if 'name' in config:
             u.name = config['name']
 
-        if u.functions is None or len(u.functions) == 0 or len(u.variables) == 0:
+        if u.model is None or len(u.model.exprs) == 0 or len(u.inputs) == 0:
             # No functions/inputs defined in file, probably wrong file type!
             return None
         return u
+
+    def save_config(self, fname):
+        ''' Save configuration to file.
+
+            Parameters
+            ----------
+            fname: string or file object
+                File name or open file object to write configuration to
+        '''
+        d = self.get_config()
+        d = [d]  # Must go in list to support multi-calculation project structure
+        out = yaml.dump(d, default_flow_style=False)  # Can't use safe_dump with our np.float64 representer. But we still safe_load.
+
+        try:
+            fname.write(out)
+        except AttributeError:
+            with open(fname, 'w') as f:
+                f.write(out)
 
     @classmethod
     def from_configfile(cls, fname):
@@ -1924,65 +2090,5 @@ class UncertCalc(object):
         u = cls.from_config(config)
         return u
 
-    def units_report(self, **kwargs):
-        ''' Create report showing units of all parameters in UncertCalc '''
-        hdr = ['Parameter', 'Units', 'Abbreviation', 'Dimensionality']
-        rows = []
-        for func in self.functions:
-            msg = None
-            name = report.Math(func.name) if func.name else report.Math(func.function)
-            try:
-                mean = func.mean()
-            except DimensionalityError as e:
-                msg = '<font color="red">' + str(e) + '</font>'
-                mean = None
-            except OffsetUnitCalculusError:
-                msg = '<font color="red">Ambiguous offset (temerature) units. Try delta_degC.'
-                mean = None
 
-            if mean is not None and func.outunits is not None:
-                try:
-                    units = ureg.parse_units(func.outunits)
-                except UndefinedUnitError:
-                    msg = '<font color="red">Undefined Unit: {}</font>'.format(func.outunits)
-                    units = mean.units
-                else:
-                    try:
-                        mean.ito(func.outunits)
-                    except DimensionalityError as e:
-                        msg = '<font color="red">' + str(e) + '</font>'
-
-            elif mean is not None:
-                units = mean.units  # Units not specified, use native units
-
-            if msg:
-                rows.append([name, msg, '-', '-'])
-            else:
-                rows.append([report.Math(func.name),
-                             report.Unit(units, abbr=False, dimensionless='-'),
-                             report.Unit(units, abbr=True, dimensionless='-'),
-                             report.Unit(units.dimensionality, abbr=False, dimensionless='-')])
-
-        for inpt in self.get_baseinputs():
-            rows.append([report.Math(inpt.name),
-                         report.Unit(inpt.units, abbr=False, dimensionless='-'),
-                         report.Unit(inpt.units, abbr=True, dimensionless='-'),
-                         report.Unit(inpt.units.dimensionality, abbr=False, dimensionless='-')])
-            for comp in inpt.uncerts:
-                try:
-                    comp.std().to(inpt.units)
-                except OffsetUnitCalculusError:
-                    rows.append([report.Math(comp.name), '<font color="red">Ambiguous unit {}. Try "delta_{}".</font>'.format(comp.units, comp.units), '-', '-'])
-                except DimensionalityError:
-                    rows.append([report.Math(comp.name), '<font color="red">Cannot convert {} to {}</font>'.format(comp.units, inpt.units), '-', '-'])
-                else:
-                    rows.append([report.Math(comp.name),
-                                report.Unit(comp.units, abbr=False, dimensionless='-'),
-                                report.Unit(comp.units, abbr=True, dimensionless='-'),
-                                report.Unit(comp.units.dimensionality, abbr=False, dimensionless='-')])
-        rpt = report.Report(**kwargs)
-        rpt.table(rows, hdr)
-        return rpt
-
-
-UncertaintyCalc = UncertCalc  # Support Abbreviation
+UncertaintyCalc = UncertCalc

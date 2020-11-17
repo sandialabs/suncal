@@ -1,6 +1,6 @@
 ---
 title: Sandia Primary Standards Laboratory Uncertainty Calculator User's Guide
-date: May 19, 2020
+date: November 9, 2020
 author:
 - Sandia National Laboratories^[Sandia National Laboratories is a multimission laboratory managed and operated by National Technology and Engineering Solutions of Sandia, LLC., a wholly owned subsidiary of Honeywell International, Inc., for the U.S. Department of Energy’s National Nuclear Security Administration under contract DE-NA-0003525.]
 - uncertainty@sandia.gov
@@ -30,6 +30,7 @@ The available calculation types are:
 - Analyze measured data sets, including computation of autocorrelation and analysis of variance
 - Curve fitting, accounting for uncertainty in x and y measurements, and providing uncertainty in the output curve
 - Risk analysis for determining probability of false accept and false reject
+- Calibration interval analysis for finding optimal interval lengths
 - T-Table calculator for determining values based on a Student's-t distribution
 
 
@@ -144,6 +145,8 @@ When uncertainties are entered as percents or ppm, the standard uncertainty is c
 Manufacturer's specifications are often given in terms of "percent reading + percent range", or "ppm reading + ppm range". For ease of entry, `X%range()` and `Xppmrange()` functions can
 also be entered in the uncertainty field, where `X` denotes the desired percent and the value in parenthesis is the instrument range. For example, if an uncertainty is given
 as 1% reading + 5% range, when operating on the 100 V range, enter "1% + 5%range(100)". With a nominal value of 100 V, this expression will reduce to 6 V.
+
+The abbreviations `ppb` and `ppbrange()` can also be used to specify parts per billion, where billion refers to the "short scale" definition, i.e. 1 ppb = 1 part in $10^9$.
 
 ![Entering an uncertainty as a percent reading + percent range](figs/percent.png){#id .class width=3in #fig:uncertpercent}
 
@@ -443,23 +446,77 @@ The Risk Analysis calculation computes the risk associated with process and/or t
 This tool has two operating modes: Simple and Full.
 
 In Simple mode, the risk calculation follows [@deaver] by assuming normal distributions and symmetric acceptance limits.
-Parameters are entered in terms of a test uncertainty ratio (TUR), in-tolerance probability (itp), and guard band factor.
+Parameters are entered in terms of a test uncertainty ratio (TUR), in-tolerance probability (itp), and guardband factor.
 
 ![Simple risk analysis assume both distributions are normal and symmetric.](figs/risksimple.png){#fig:risksimple}
 
-In Full mode, both process and test distributions, along with absolute acceptance limits and guard band limits, are specified. No assumptions are made about distribution type.
+In Full mode, both process and test distributions, along with absolute acceptance limits and guardband limits, are specified. No assumptions are made about distribution type.
 With only a process distribution and specification limits, the probability of a value on the distribution falling outside the limit is calculated by integrating the probability distribution function outside the limits to give the "process risk".
 When a Test Measurement is added, the total probability of false accept and total probability of false reject is computed by the double integral of the product of the two distributions falling outside the limits.
 Non-normal distributions can also be entered and are integrated numerically using the same approach.
-An optional guard band can be entered, as a relative offset to the specification limit; for example, with an upper specification limit of 2 and guard band of 0.1, the product will be rejected with a measurement over 1.9.
+An optional guardband can be entered, as a relative offset to the specification limit; for example, with an upper specification limit of 2 and guardband of 0.1, the product will be rejected with a measurement over 1.9.
+The **Risk** menu provides an option for computing a guardband.
+The guardband can be computed using one of several common methods (such as the RSS method $k = \sqrt{1-1/TUR^2}$), or by targeting a specific false accept probability.
+This method uses a numerical minimization technique to solve for the limits on the double integral, and so may not always converge or hit the target exactly.
 
 ![Full risk analysis allowing complete specification of process and test distributions](figs/risk.png){#fig:riskanalysis}
 
-A Monte Carlo calculation is also available in both Simple and Full modes. This method pulls random samples from the test and process distribution and counts the number of false accepts and false rejects to determine the PFA and PFR probabilities.
+The **Calculation** dropdown allows selection of different calculations on risk.
+Integral mode calculates PFA and PFR by numerically integrating the joint probability distribution.
+A Monte Carlo calculation is also available. This method pulls random samples from the test and process distribution and counts the number of false accepts and false rejects to determine the PFA and PFR probabilities.
 
 ![Monte Carlo risk calculation](figs/riskMC.png){#fig:riskMC}
 
-The **Risk** menu provides an option for computing a guard band. The guard band can be computed using one of several common methods (such as the RSS method $k = \sqrt{1-1/TUR^2}$), or by targeting a specific false accept probability. This method uses a numerical minimization technique to solve for the limits on the double integral, and so may not always converge or hit the target exactly.
+The Guardband Sweep mode plots how PFA and PFR change with different guardband factors and can be useful for finding an optimal trade off between false accept and false reject.
+Probability of Conformance mode plots the probability that a given measurement result is a conforming product, useful when no prior information is available on the distribution of possible products.
+The Risk Curves mode generates sweeps of PFA and PFR with TUR, itp, guardband factor, and bias. One of these variables must be selected as the sweep (x) value,
+and another can optionally be selected as the step (z) variable.
+The remaining variables are set as constants.
+The sweep values can then be entered by defining a start value, stop value, and the number of sweep points.
+Step values are entered as a comma-separated list of individual values.
+{*@fig:risksweep} shows plots of the familiar PFA vs. itp with TUR from 1.5 to 4.
+
+![Risk Curves mode](figs/risksweep.png){#fig:risksweep}
+
+
+## Calibration Intervals
+
+The Calibration Interval Analysis calculator assists in determining optimal calibration interval lengths given historical data on calibration assets.
+Upon selecting the Calibration Intervals button, a window is displayed with some options for what type of data is available.
+The calculation method depends on whether only pass or fail states are known for historical calibration data, or if actual values were saved.
+
+The Test Interval method, commonly referred to as "Method A3" from its name in NCSLI RP-1 [@RP1], is used when only pass/fail values are available and all the
+historical calibration data had equal or similar assigned intervals.
+The Binomial Interval method, referred to as "Method S2" from RP-1, uses pass/fail data but requires historical intervals of many different lengths.
+The Variables interval method should be used if actual values, not just pass/fail status, were recorded at each historical calibration.
+
+The dialog also has a choice of how to enter the data, whether all data from each individual calibration (such as start and end dates and pass/fail status),
+or summarized reliability values (such as 10 assets were in-tolerance out of 12 assets calibrated).
+
+Once these selections are made, the interval calculator is shown.
+
+When entering data on individual assets, new assets can be added or removed using the **+** and **-** buttons.
+Pass/fail statistics from all assets will be combined for the calculation.
+In all calculation modes, calibrations can be entered using calibration dates only, or interval start and end dates by checking **Enter start and end dates**.
+When start dates are not available, the first calibration is not included in the calculation because its interval length is not known.
+Dates may be entered in several common formats, including dd/mm/yyyy or dd-mm-yyyy. To eliminate ambiguity, it is suggested to spell out month abbreviations such as "19-Aug-2020".
+
+Pass and fail status may be entered as "pass" or "fail", or as 1 or 0 values. To ignore a calibration (such as when an adjustment or repair was made) but still include it in the list, enter "N/A" or "none".
+
+When the calibration data has been entered, fill out the options for the interval calculation type and hit **Calculate** to see the results.
+
+![Interval calculation using method A3](figs/intervalA3.png){#fig:intervalA3}
+
+The A3 method lists the suggested new calibration interval and other statistics. The rejection confidence gives the confidence with which one can reject the current interval in favor of the new interval. Often, if the confidence is higher than 50%, implementing the new interval is a good choice.
+In method S2, several reliability models are fit to the time vs. reliability data. The best fitting model is shown first,
+followed by its plot. Then all the models that were tested are listed along with their rejection confidence and figure of merit.
+Higher figure of merit, and lower rejection confidence, gives more assurance that the model does fit the data and the suggested interval should be implemented.
+The Variables method predicts deviation in calibrated value over time, and sets the interval to limit the uncertainty or unreliability from getting too high.
+The suggested interval from both methods is shown with plots depicting when the predicted uncertainty or reliability exceeds the limits.
+
+For more information on the calculations behind the A3 and S2 methods, and the different options for the calculation, see NCSLI RP-1 [@RP1].
+NASA Handbook 8739 [@NASA8739] details the calculations and options used in the variables method.
+
 
 ## Distribution Explorer
 
@@ -497,7 +554,7 @@ calculation (select **Import Distribution** in the **Risk** menu) to determine t
 Results of an uncertainty sweep or ANOVA data set can be loaded into a curve fit calculation (by selecting **Insert Data From** from the **Curve Fit** menu)
 or even another sweep calculation.
 After selecting the data source, a table will be filled in with data from that source. Use the **Assigned Variable** dropdown to select which columns in the table
-should be used with which options in the calculation. If the column is based on a particular x-value (such as the confidence or prediction band of a curve fit), 
+should be used with which options in the calculation. If the column is based on a particular x-value (such as the confidence or prediction band of a curve fit),
 an **X Value** option will be shown.
 Once the assignments have been made, the distribution can be imported into the calculation.
 Importing data is a one-time event. If the original calculation data changes, the data will need to be re-imported into the second calculation.
@@ -541,7 +598,12 @@ These settings will remain in place the next time the program is opened.
 The back end of the calculator can be installed and run as a Python package to allow greater flexibility in defining the calculations, loading input data, and processing the results.
 Running as a package allows for uncertainty propagation through arbitrary functions, curve fitting to any curve, and loading/saving data to any file format available to Python.
 It can also run uncertainty propagation calculations on complex valued (real and imaginary) measurement models natively.
-To install the Python package, open a terminal window in the uncertainty calculator source folder and run
+
+The Python package can be installed using pip:
+
+        pip install suncal
+
+or by downloading the source code, navigating to the source folder, and running:
 
         python setup.py install
 
@@ -549,7 +611,7 @@ The calculator can be imported into your code with
 
         import suncal
 
-Refer to the docs folder of the source code repository for examples in Jupyter Notebook format.
+Refer to the docs folder of the source code repository for usage examples in Jupyter Notebook format.
 
 
 # Command line usage
@@ -814,7 +876,7 @@ From the **Data Set** menu, choose **Load Data from CSV** and select the "pressu
 The data is laid out in rows, where the first column is the calibration date and the remaining colunms are repeated measurements on that date, so check the **Transpose** box.
 The plot now displays a single mean value with uncertainty bars at each date, effectively finding the mean and uncertainty of the five measurements on each date.
 
-![Loading 2-dimensional data](figs/driftrisk_data.png){#fig:groupdata}
+![Loading 2-dimensional data](figs/datasets.png){#fig:groupdata}
 
 To predict the drift over the next year to the calibration due date of July 1, 2019, select **Add Calculation** from the **Project Menu** and select **Curve Fit**.
 Import the data we just loaded into the curve fit by selecting **Insert Data From** from the **Curve Fit** menu.

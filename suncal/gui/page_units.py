@@ -4,7 +4,7 @@ from PyQt5 import QtWidgets
 from pint import DimensionalityError, UndefinedUnitError
 
 from . import gui_common
-from .. import ureg
+from .. import unitmgr
 from .. import report
 
 
@@ -67,7 +67,7 @@ class UnitsConverter(QtWidgets.QDialog):
             inpt = 0
 
         try:
-            uin = ureg.parse_units(self.unitin.text())
+            uin = unitmgr.parse_units(self.unitin.text())
         except (AttributeError, UndefinedUnitError, ValueError, TypeError):
             msg.append('Undefined unit {}'.format(self.unitin.text()))
             self.namein.setText('---')
@@ -80,7 +80,7 @@ class UnitsConverter(QtWidgets.QDialog):
             gui_common.setLabelTex(self.dimin, report.Unit(uin.dimensionality).latex(escape=False))
 
         try:
-            uout = ureg.parse_units(self.unitout.text())
+            uout = unitmgr.parse_units(self.unitout.text())
         except UndefinedUnitError:
             msg.append('Undefined unit {}'.format(self.unitout.text()))
             uout = None

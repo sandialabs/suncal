@@ -25,6 +25,12 @@ def t_factor(conf, degf):
     return stats.t.ppf(1-(1-conf)/2, df=degf)
 
 
+def t_onetail(conf, degf):
+    if not np.isfinite(degf):
+        degf = 1E99
+    return stats.t.ppf(conf, df=degf)
+
+
 def confidence(tp, degf):
     ''' Get confidence value given tp and degrees of freedom. Inverse of t_factor.
 

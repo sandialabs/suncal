@@ -13,18 +13,18 @@ import numpy as np
 import sympy
 from scipy import odr
 import scipy.optimize
-from scipy import interpolate
 import yaml
 
-from . import uncertainty
 from . import out_curvefit
-from . import out_uncert
 from . import uarray
 from . import uparser
 from .uarray import Array  # Explicitly import Array so it can be accessed via curvefit.Array
 
 
 Fit = namedtuple('Fit', ['coeff', 'covariance'])
+
+FitResids = namedtuple('FitResiduals', ['residuals', 'Syx', 'r', 'F', 'SSres', 'SSreg'])
+FitOut = namedtuple('FitOutput', ['coeff', 'uncert', 'covariance', 'degf', 'residuals', 'samples', 'acceptance'], defaults=(None,)*7)
 
 
 class CurveFit(object):
@@ -71,10 +71,6 @@ class CurveFit(object):
         odr: bool
             Force use of orthogonal regression
 
-        xdates: bool
-            Reports should interpret x values as dates. Note array x values must be floats,
-            ie datetime.toordinal() values.
-
         absolute_sigma: boolean
             Treat uncertainties in an absolute sense. If false, only relative
             magnitudes matter.
@@ -87,7 +83,7 @@ class CurveFit(object):
         Saving and loading to config file is only supported when func is given as a string.
     '''
     def __init__(self, arr, func='line', name='curvefit', desc='', polyorder=None, p0=None, method=None,
-                 bounds=None, odr=None, seed=None, xdates=False, absolute_sigma=True):
+                 bounds=None, odr=None, seed=None, absolute_sigma=True):
         self.seed = seed
         self.samples = 5000
         self.outputs = {}
@@ -97,7 +93,6 @@ class CurveFit(object):
         self.out = None
         self.xname = 'x'
         self.yname = 'y'
-        self.xdates = xdates
         self.absolute_sigma = absolute_sigma
         self.set_fitfunc(func, polyorder=polyorder, p0=p0, method=method, bounds=bounds, odr=odr)
 
@@ -154,7 +149,7 @@ class CurveFit(object):
 
         elif self.fitname == 'poly':
             def func(x, *p):
-                return np.poly1d(p)(x)
+                return np.poly1d(p[::-1])(x)  # Coeffs go in reverse order (...e, d, c, b, a)
 
             polyorder = int(polyorder)
             if polyorder < 1 or polyorder > 12:
@@ -258,17 +253,8 @@ class CurveFit(object):
             FuncOutput object
         '''
         self.run_uyestimate()
-        samples = kwargs.get('samples', self.samples)
-        outputs = []
-        if kwargs.get('lsq', True):
-            outputs.append(self.calc_LSQ())
-        if kwargs.get('gum', False):
-            outputs.append(self.calc_GUM())
-        if kwargs.get('mc', False):
-            outputs.append(self.calc_MC(samples=samples))
-        if kwargs.get('mcmc', False):
-            outputs.append(self.calc_MCMC(samples=samples, burnin=kwargs.get('burnin', .2)))
-        self.out = out_curvefit.CurveFitOutput(outputs, self, xdates=self.xdates)
+        self.samples = kwargs.get('samples', self.samples)
+        self.out = out_curvefit.CurveFitOutput(self, self.arr, **kwargs)
         return self.out
 
     def calc_LSQ(self):
@@ -291,34 +277,12 @@ class CurveFit(object):
             w = w/sum(w) * len(self.arr.y)      # Normalize weights so sum(wi) = N
         SSres = sum(w*resids**2)   # Sum-of-squares of residuals
         Syx = np.sqrt(SSres/degf)  # Standard error of the estimate (based on residuals)
-        cor = cov / sigmas[:, None] / sigmas[None, :]  # See numpy code for corrcoeff
         SSreg = sum(w*(self.func(self.arr.x, *coeff) - sum(w*self.arr.y)/sum(w))**2)
         r = np.sqrt(1-SSres/(SSres+SSreg))
-        params = {
-            'coeffs': coeff,
-            'sigmas': sigmas,
-            'resids': resids,
-            'Syx': Syx,
-            'r': r,
-            'F': SSreg * degf / SSres,
-            'SSres': SSres,
-            'SSreg': SSreg,
-            'func': self.func,
-            'fitname': self.fitname,
-            'expr': self.expr,
-            'pnames': self.pnames,
-            'cov': cov,
-            'cor': cor,
-            'degf': degf,
-            'data': (self.arr.x, self.arr.y, self.arr.ux, self.arr.uy),
-            'u_conf': lambda x, coeff=coeff, cov=cov, func=self.func: _get_uconf(x, coeff, cov, func),
-            'u_pred': lambda x, mode='Syx', coeff=coeff, cov=cov, func=self.func, Syx=Syx, sigy=self.arr.uy, xdata=self.arr.x: _get_upred(x, coeff, cov, func, Syx, sigy, xdata=xdata, mode=mode),
-            'axnames': (self.xname, self.yname),
-            'has_uy': self.arr.has_uy(),
-            'xdates': self.xdates
-            }
-        self.outputs['lsq'] = out_curvefit.CurveFitMethodOutput(method='lsq', **params)
-        return self.outputs['lsq']
+        resids = FitResids(resids, Syx, r, SSreg*degf/SSres, SSres, SSreg)
+        out = FitOut(coeff, sigmas, cov, degf, resids)
+        self.outputs['lsq'] = out
+        return out
 
     def sample(self, samples=1000):
         ''' Generate Monte Carlo samples '''
@@ -366,40 +330,17 @@ class CurveFit(object):
         else:
             w = (1/uy**2)  # Determine weighted Syx
             w = w/sum(w) * len(self.arr.y)   # Normalize weights so sum(wi) = N
-        y_vs_x_sample = lambda x, i: self.func(x, *self.samplecoeffs[i])
         cov = np.cov(self.samplecoeffs.T)
-        cor = np.corrcoef(self.samplecoeffs.T)
         SSres = sum(w*resids**2)   # Sum-of-squares of residuals
         Syx = np.sqrt(SSres/degf)  # Standard error of the estimate (based on residuals)
         SSreg = sum(w*(self.func(self.arr.x, *coeff) - sum(w*self.arr.y)/sum(w))**2)
         r = np.sqrt(1-SSres/(SSres+SSreg))
-        u_conf = lambda x: np.std(np.array([y_vs_x_sample(x, i) for i in range(samples)]), axis=0, ddof=1)
-        u_pred = lambda x, mode='Syx', Syx=Syx, sigy=self.arr.uy, u_conf=u_conf, xdata=self.arr.x: _get_upred_MC(x, u_conf=u_conf, Syx=Syx, sigy=sigy, xdata=xdata, mode=mode)
-        params = {
-            'coeffs': coeff,
-            'sigmas': sigma,
-            'func': self.func,
-            'expr': self.expr,
-            'fitname': self.fitname,
-            'resids': resids,
-            'Syx': Syx,
-            'r': r,
-            'F': SSreg * degf / SSres,
-            'samples': self.samplecoeffs,
-            'y_vs_x_sample': y_vs_x_sample,
-            'u_conf': u_conf,
-            'u_pred': u_pred,
-            'pnames': self.pnames,
-            'cov': cov,
-            'cor': cor,
-            'degf': degf,
-            'data': (self.arr.x, self.arr.y, self.arr.ux, uy),
-            'axnames': (self.xname, self.yname),
-            'has_uy': self.arr.has_uy(),
-            'xdates': self.xdates
-            }
-        self.outputs['mc'] = out_curvefit.CurveFitMethodOutput(method='mc', **params)
-        return self.outputs['mc']
+
+        resids = FitResids(resids, Syx, r, SSreg*degf/SSres, SSres, SSreg)
+        out = FitOut(coeff, sigma, cov, degf, resids, self.samplecoeffs)
+
+        self.outputs['mc'] = out
+        return out
 
     def calc_MCMC(self, samples=10000, burnin=0.2):
         ''' Calculate Markov-Chain Monte Carlo (Metropolis-in-Gibbs algorithm)
@@ -506,42 +447,15 @@ class CurveFit(object):
         else:
             w = (1/uy**2)  # Determine weighted Syx
             w = w/sum(w) * len(self.arr.y)   # Normalize weights so sum(wi) = N
-        y_vs_x_sample = lambda x, i, v=self.mcmccoeffs: self.func(x, *v[i, :])
         cov = np.cov(self.mcmccoeffs.T)
-        cor = np.corrcoef(self.mcmccoeffs.T)
         SSres = sum(w*resids**2)   # Sum-of-squares of residuals
         Syx = np.sqrt(SSres/degf)  # Standard error of the estimate (based on residuals)
         SSreg = sum(w*(self.func(self.arr.x, *coeff) - sum(w*self.arr.y)/sum(w))**2)
         r = np.sqrt(1-SSres/(SSres+SSreg))
-        u_conf = lambda x: np.std(np.array([y_vs_x_sample(x, i) for i in range(len(self.mcmccoeffs))]), axis=0, ddof=1)
-        u_pred = lambda x, mode='Syx', Syx=Syx, sigy=self.arr.uy, u_conf=u_conf, xdata=self.arr.x: _get_upred_MC(x, u_conf=u_conf, Syx=Syx, sigy=sigy, xdata=xdata, mode=mode)
-
-        params = {
-            'coeffs': coeff,
-            'sigmas': sigma,
-            'acceptance': accepts/samples,
-            'func': self.func,
-            'fitname': self.fitname,
-            'expr': self.expr,
-            'resids': resids,
-            'Syx': Syx,
-            'r': r,
-            'F': SSreg * degf / SSres,
-            'samples': self.mcmccoeffs,
-            'y_vs_x_sample': y_vs_x_sample,
-            'u_conf': u_conf,
-            'u_pred': u_pred,
-            'pnames': self.pnames,
-            'cov': cov,
-            'cor': cor,
-            'degf': degf,
-            'data': (self.arr.x, self.arr.y, self.arr.ux, uy),
-            'axnames': (self.xname, self.yname),
-            'has_uy': self.arr.has_uy(),
-            'xdates': self.xdates
-            }
-        self.outputs['mcmc'] = out_curvefit.CurveFitMethodOutput(method='mcmc', **params)
-        return self.outputs['mcmc']
+        resids = FitResids(resids, Syx, r, SSreg*degf/SSres, SSres, SSreg)
+        out = FitOut(coeff, sigma, cov, degf, resids, self.mcmccoeffs, accepts/samples)
+        self.outputs['mcmc'] = out
+        return out
 
     def set_mcmc_priors(self, priors):
         ''' Set prior distribution functions for each input to be used in
@@ -561,13 +475,8 @@ class CurveFit(object):
         assert len(priors) == len(self.pnames)
         self.priors = priors
 
-    def calc_GUM(self, correlation=None):
+    def calc_GUM(self):
         ''' Calculate curve fit and uncertainty using GUM Approximation.
-
-            Parameters
-            ----------
-            correlation: array, optional
-                Correlation matrix
 
             Returns
             -------
@@ -587,33 +496,14 @@ class CurveFit(object):
             w = w/sum(w) * len(self.arr.y)   # Normalize weights so sum(wi) = N
         SSres = sum(w*resids**2)
         Syx = np.sqrt(SSres/degf)  # Standard error of the estimate (based on residuals)
-        cor = cov / sigmas[:, None] / sigmas[None, :]  # See numpy code for corrcoeff
         SSreg = sum(w*(self.func(self.arr.x, *coeff) - self.arr.y.mean())**2)
         r = np.sqrt(1-SSres/(SSres+SSreg))
-        params = {
-            'coeffs': coeff,
-            'sigmas': sigmas,
-            'func': self.func,
-            'fitname': self.fitname,
-            'expr': self.expr,
-            'resids': resids,
-            'Syx': Syx,
-            'r': r,
-            'F': SSreg * degf / SSres,
-            'pnames': self.pnames,
-            'grad': grad,
-            'cov': cov,
-            'cor': cor,
-            'degf': degf,
-            'data': (self.arr.x, self.arr.y, self.arr.ux, uy),
-            'u_conf': lambda x, coeff=coeff, sigmas=sigmas, cov=cov, func=self.func: _get_uconf(x, coeff, cov, func),
-            'u_pred': lambda x, mode='Syx', coeff=coeff, cov=cov, func=self.func, Syx=Syx, sigy=self.arr.uy, xdata=self.arr.x: _get_upred(x, coeff, cov, func, Syx, sigy, xdata=xdata, mode=mode),
-            'axnames': (self.xname, self.yname),
-            'has_uy': self.arr.has_uy(),
-            'xdates': self.xdates
-            }
-        self.outputs['gum'] = out_curvefit.CurveFitMethodOutput(method='gum', **params)
-        return self.outputs['gum']
+
+        resids = FitResids(resids, Syx, r, SSreg*degf/SSres, SSres, SSreg)
+        out = FitOut(coeff, sigmas, cov, degf, resids)
+
+        self.outputs['gum'] = out
+        return out
 
     def get_config(self):
         if self.fitname == 'callable':
@@ -627,7 +517,7 @@ class CurveFit(object):
         d['odr'] = self.odr
         d['xname'] = self.xname
         d['yname'] = self.yname
-        d['xdates'] = self.xdates
+        d['xdates'] = self.arr.xdate
         d['abssigma'] = self.absolute_sigma
         if self.fitname == 'poly':
             d['order'] = self.polyorder
@@ -666,7 +556,8 @@ class CurveFit(object):
         arr = Array(np.asarray(config.get('arrx'), dtype=float),
                     np.asarray(config.get('arry'), dtype=float),
                     ux=config.get('arrux', 0.),
-                    uy=config.get('arruy', 0.))
+                    uy=config.get('arruy', 0.),
+                    xdate=config.get('xdates', False))
         newfit = cls(arr, config['curve'],
                      polyorder=config.get('order', 2),
                      name=config.get('name', None),
@@ -674,7 +565,6 @@ class CurveFit(object):
                      p0=config.get('p0', None),
                      odr=config.get('odr', None),
                      seed=config.get('seed', None),
-                     xdates=config.get('xdates', False),
                      absolute_sigma=config.get('abssigma', True))
         newfit.xname = config.get('xname', 'x')
         newfit.yname = config.get('yname', 'y')
@@ -702,401 +592,11 @@ class CurveFit(object):
 
         try:
             config = yaml.safe_load(yml)
-        except yaml.scanner.ScannerError:
+        except yaml.YAMLError:
             return None  # Can't read YAML
 
         u = cls.from_config(config[0])  # config yaml is always a list
         return u
-
-
-class CurveFitParam(uncertainty.InputFunc):
-    ''' One parameter of curve fit. Use this class to include fitting parameters in
-        a broader UncertCalc calculation (for example, take the difference
-        between two linefit slopes)
-
-        Parameters
-        ----------
-        ifunc: CurveFit
-            The curve fitting object to extract a single parameter from
-
-        pidx: int or float
-            If mode parameter is 'param', pidx is index of the desired coefficient (e.g.
-            pidx=0 for slope of linear fit). If mode parameter is 'pred', pidx is an
-            x value at which to predict the y value and its uncertainty.
-
-        mode: string
-            See pidx
-
-        name: string, optional
-            Name for the function, as used in UncertCalc
-
-        desc: string, optional
-            Description for the function, as used in UncertCalc
-    '''
-    def __init__(self, ifunc, pidx, mode='param', name='', desc='', units=None):
-        self.pidx = pidx
-        self.ifunc = ifunc
-        self.mode = mode   # param or predicted
-        self.name = name
-        self.desc = desc
-        self.uncerts = []
-        self.ftype = 'array'
-        self.sampledvalues = None
-        self.report = True
-        self.units = uparser.parse_unit(units)
-        self.outputs = {}
-
-    def __str__(self):
-        return self.name
-
-    def clear(self):
-        ''' Clear the sampled data '''
-        self.ifunc.clear()
-        self.sampledvalues = None
-        self.outputs = {}
-
-    def stdunc(self):
-        ''' Get standard uncertainty of the parameter or fit value '''
-        if self.mode == 'param':
-            if 'lsq' in self.outputs:
-                return self.outputs['lsq'].uncert * self.units
-            elif 'mc' in self.outputs:
-                return self.outputs['mc'].uncert * self.units
-            elif 'gum' in self.outputs:
-                return self.outputs['gum'].uncert * self.units
-            self.calc_LSQ()
-            return self.outputs['lsq'].uncert * self.units
-        elif self.mode == 'pred':
-            if 'lsq' in self.outputs:
-                return self.outputs['lsq'].u_pred(self.pidx) * self.units
-            elif 'mc' in self.outputs:
-                return self.outputs['mc'].u_pred(self.pidx) * self.units
-            elif 'gum' in self.outputs:
-                return self.outputs['gum'].u_pred(self.pidx) * self.units
-            self.calc_LSQ()
-            return self.outputs['lsq'].u_predy(self.pidx) * self.units
-        else:
-            raise
-
-    @property
-    def nom(self):
-        ''' Get nominal value of parameter '''
-        return self.mean() * self.units
-
-    def mean(self):
-        ''' Get mean value of the parameter or fit value '''
-        if self.mode == 'param':
-            if 'lsq' in self.outputs:
-                return self.outputs['lsq'].mean * self.units
-            elif 'mc' in self.outputs:
-                return self.outputs['mc'].mean * self.units
-            elif 'gum' in self.outputs:
-                return self.outputs['gum'].mean * self.units
-            self.calc_LSQ()
-            return self.outputs['lsq'].mean * self.units
-        elif self.mode == 'pred':
-            if 'lsq' in self.outputs:
-                return self.outputs['lsq'].y(self.pidx) * self.units
-            elif 'mc' in self.outputs:
-                return self.outputs['mc'].y(self.pidx) * self.units
-            elif 'gum' in self.outputs:
-                return self.outputs['gum'].y(self.pidx) * self.units
-            self.calc_LSQ()
-            return self.outputs['lsq'].y(self.pidx) * self.units
-
-    def degf(self):
-        ''' Get degrees of freedom '''
-        if 'lsq' in self.outputs:
-            return self.outputs['lsq'].degf
-        elif 'mc' in self.outputs:
-            return self.outputs['mc'].degf
-        elif 'gum' in self.outputs:
-            return self.outputs['gum'].degf
-        self.calc_LSQ()
-        return self.outputs['lsq'].degf
-
-    def sample(self, samples=1000):
-        ''' Generate Monte Carlo samples '''
-        self.ifunc.sample(samples)
-        self.sampledvalues = self.ifunc.samplecoeffs[:, self.pidx]
-        return self.sampledvalues * self.units
-
-    # These functions should not be called for this subclass
-    def get_basefunc(self):
-        raise NotImplementedError
-
-    def get_basevars(self):
-        return []
-
-    def get_basesymbols(self):
-        raise NotImplementedError
-
-    def get_basemeans(self):
-        raise NotImplementedError
-
-    def get_baseuncerts(self):
-        raise NotImplementedError
-
-    def get_basenames(self):
-        return []
-
-    def get_latex(self):
-        ''' Get LaTeX representation of this function '''
-        return sympy.latex(sympy.Symbol(self.name))
-
-    def calculate(self, **kwargs):
-        ''' Calculate all available methods.
-
-            Keyword Arguments
-            -----------------
-            gum: bool
-                Calculate GUM method
-            mc: bool
-                Calculate Monte Carlo method
-            mcmc: bool
-                Calculate Markov-Chain Monte Carlo method
-            lsq: bool
-                Calculate analytical Least Squares method
-            samples: int
-                Number of Monte Carlo samples
-
-            Returns
-            -------
-            FuncOutput object
-        '''
-        samples = kwargs.get('samples', 5000)
-        outs = []
-        if kwargs.get('gum', True):
-            self.outputs['gum'] = self.calc_GUM(kwargs.get('correlation'))
-            outs.append(self.outputs['gum'])
-        if kwargs.get('mc', True):
-            self.outputs['mc'] = self.calc_MC(samples=samples)
-            outs.append(self.outputs['mc'])
-        if kwargs.get('mcmc', False):
-            self.outputs['mcmc'] = self.calc_MCMC(samples=samples)
-            outs.append(self.outputs['mc'])
-        if kwargs.get('lsq', True):
-            self.outputs['lsq'] = self.calc_LSQ()
-            outs.append(self.outputs['lsq'])
-        self.out = out_uncert.FuncOutput(outs, self)
-        return self.out
-
-    def calc_GUM(self, correlation=None):
-        ''' Calculate the GUM solution
-
-            Parameters
-            ----------
-            correlation: array, optional
-                Correlation matrix
-
-            Returns
-            -------
-            BaseOutput object
-        '''
-        gumout = self.ifunc.calc_GUM()
-        if self.mode == 'param':
-            self.outputs['gum'] = out_uncert.create_output('gum', mean=gumout.coeffs[self.pidx], uncert=gumout.sigmas[self.pidx], **gumout.properties)
-        elif self.mode == 'pred':
-            self.outputs['gum'] = out_uncert.create_output('gum', mean=gumout.y(self.pidx), uncert=gumout.u_pred(self.pidx), **gumout.properties)
-        return self.outputs['gum']
-
-    def calc_MC(self, samples=1000, sensitivity=None):
-        ''' Calculate Monte Carlo solution
-
-            Parameters
-            ----------
-            samples: int
-                Number of Monte Carlo samples
-            sensitivity: bool
-                Run sensitivity calculation (requires additional Monte Carlo runs)
-
-            Returns
-            -------
-            BaseOutputMC object
-        '''
-        mcout = self.ifunc.calc_MC(samples=samples, sensitivity=sensitivity)
-        samples = mcout.properties.pop('samples')[:, self.pidx]
-        samples = np.atleast_2d(samples).T
-        if self.mode == 'param':
-            self.outputs['mc'] = out_uncert.create_output('mc', mean=mcout.coeffs[self.pidx], uncert=mcout.sigmas[self.pidx], samples=samples, **mcout.properties)
-        elif self.mode == 'pred':
-            self.outputs['mc'] = out_uncert.create_output('mc', mean=mcout.y(self.pidx), uncert=mcout.u_pred(self.pidx), samples=samples, **mcout.properties)
-        return self.outputs['mc']
-
-    def calc_MCMC(self, samples=1000, sensitivity=None, **kwargs):
-        ''' Calculate Markov Chain Monte Carlo solution
-
-            Parameters
-            ----------
-            samples: int
-                Number of Monte Carlo samples (including burnin)
-            sensitivity: bool
-                Run sensitivity calculation (requires additional Monte Carlo runs)
-
-            Returns
-            -------
-            BaseOutputMC object
-        '''
-        mcout = self.ifunc.calc_MCMC(samples=samples, burnin=kwargs.get('burnin', 0.2))
-        samples = mcout.properties.pop('samples')[:, self.pidx]
-        samples = np.atleast_2d(samples).T
-        if self.mode == 'param':
-            self.outputs['mcmc'] = out_uncert.create_output('mcmc', mean=mcout.coeffs[self.pidx], uncert=mcout.sigmas[self.pidx], samples=samples, **mcout.properties)
-        elif self.mode == 'pred':
-            self.outputs['mcmc'] = out_uncert.create_output('mcmc', mean=mcout.y(self.pidx), uncert=mcout.u_pred(self.pidx), samples=samples, **mcout.properties)
-        return self.outputs['mcmc']
-
-    def calc_LSQ(self):
-        ''' Calculate analytical Least Squares solution
-
-            Returns
-            -------
-            BaseOutput object
-        '''
-        lsqout = self.ifunc.calc_LSQ()
-        if self.mode == 'param':
-            self.outputs['lsq'] = out_uncert.create_output('lsq', mean=lsqout.coeffs[self.pidx], uncert=lsqout.sigmas[self.pidx], **lsqout.properties)
-        elif self.mode == 'pred':
-            self.outputs['lsq'] = out_uncert.create_output('lsq', mean=lsqout.y(self.pidx), uncert=lsqout.u_pred(self.pidx), **lsqout.properties)
-        return self.outputs['lsq']
-
-
-def _get_uconf(x, coeff, cov, func):
-    ''' Calculate confidence band for fit curve for arbitrary nonlinear regression.
-
-        Parameters
-        ----------
-        x: float or array
-            x-value at which to determine confidence band
-        coeff: array
-            Best fit coefficient values for fit function
-        cov: array
-            Covariance matrix of fit parameters [sigmas should be sqrt(diag(cov)) here]
-        func: callable
-            Fit function
-
-        Returns
-        -------
-        uconf: array
-            Confidence band at the points in x array. Interval will be
-            y +/- k * uconf.
-
-        Reference
-        ---------
-        Christopher Cox and Guangqin Ma. Asymptotic Confidence Bands for Generalized
-        Nonlinear Regression Models. Biometrics Vol. 51, No. 1 (March 1995) pp 142-150.
-    '''
-    sigmas = np.sqrt(np.diag(cov))
-    dp = sigmas / 1E6
-    conf = []
-    for xval in np.atleast_1d(x):
-        grad = scipy.optimize.approx_fprime(coeff, lambda p: func(xval, *p), epsilon=dp)
-        conf.append(grad.T @ cov @ grad)
-    conf = np.sqrt(np.array(conf))
-    return conf[0] if np.isscalar(x) else conf
-
-
-def _get_upred(x, coeff, cov, func, Syx, sigy, xdata=None, mode='Syx'):
-    ''' Calculate prediction band for fit curve for arbitrary nonlinear regression.
-
-        Parameters
-        ----------
-        x: float or array
-            x-value at which to determine confidence band
-        coeff: array
-            Best fit coefficient values for fit function
-        cov: array
-            Covariance matrix of fit parameters [sigmas should be sqrt(diag(cov)) here]
-        func: callable
-            Fit function
-        Syx: float
-            Uncertainty in y calculated using residuals. Used when mode == 'Syx'
-        sigy: array
-            Uncertainty in each measured y value. Used when mode == 'sigy' or 'sigylast'.
-            Must be paired with xdata parameter.
-        xdata: array
-            Original measured x values. Used to interpolate Syx when it is non-constant array.
-        mode: string
-            How to apply uncertainty in new measurement. 'Syx' will use Syx calculated from
-            residuals. 'sigy' uses user-provided y-uncertainty, extrapolating between
-            values as necessary. 'sigylast' uses last sigy value (useful when x is time
-            and fit is being predicted into the future)
-
-        Returns
-        -------
-        upred: array
-            Prediction band at the points in x array. Interval will be
-            y +/- k * uconf.
-
-        Reference
-        ---------
-        Christopher Cox and Guangqin Ma. Asymptotic Confidence Bands for Generalized
-        Nonlinear Regression Models. Biometrics Vol. 51, No. 1 (March 1995) pp 142-150.
-    '''
-    if mode not in ['Syx', 'sigy', 'sigylast']:
-        raise ValueError('Prediction band mode must be Syx, sigy, or sigylast')
-
-    if mode == 'Syx' or (np.isscalar(sigy) and sigy == 0):
-        uy = Syx
-    elif np.isscalar(sigy):
-        uy = sigy
-    elif mode == 'sigy':
-        if sigy.min() == sigy.max():  # All elements equal
-            uy = sigy[0]
-        else:
-            if not np.all(np.diff(xdata) > 0):  # np.interp requires sorted data
-                idx = np.argsort(xdata)
-                xdata = xdata[idx]
-                sigy = sigy[idx]
-            uy = interpolate.interp1d(xdata, sigy, fill_value='extrapolate')(x)
-    elif mode == 'sigylast':
-        uy = sigy[-1]
-    return np.sqrt(_get_uconf(x, coeff, cov, func)**2 + uy**2)
-
-
-def _get_upred_MC(x, Syx, sigy, u_conf, xdata=None, mode='Syx'):
-    ''' Calculate prediction band for fit curve based on sampled Monte Carlo data.
-
-        Parameters
-        ----------
-        x: float or array
-            x-value at which to determine confidence band
-        u_conf: callable
-            Function for determining u_conf for this x value
-        Syx: float
-            Uncertainty in y calculated using residuals. Used when mode == 'Syx'
-        sigy: array
-            Uncertainty in each measured y value. Used when mode == 'sigy' or 'sigylast'.
-            Must be paired with xdata parameter.
-        xdata: array
-            Original measured x values. Used to interpolate Syx when it is non-constant array.
-        mode: string
-            How to apply uncertainty in new measurement. 'Syx' will use Syx calculated from
-            residuals. 'sigy' uses user-provided y-uncertainty, extrapolating between
-            values as necessary. 'sigylast' uses last sigy value (useful when x is time
-            and fit is being predicted into the future)
-
-        Returns
-        -------
-        uconf: array
-            Confidence band at the points in x array. Interval will be
-            y +/- k * uconf.
-    '''
-    if mode not in ['Syx', 'sigy', 'sigylast']:
-        raise ValueError('Prediction band mode must be Syx, sigy, or sigylast')
-
-    if mode == 'Syx' or (np.isscalar(sigy) and sigy == 0):
-        uy = Syx
-    elif np.isscalar(sigy):
-        uy = sigy
-    elif mode == 'sigy':
-        idx = np.argsort(xdata)
-        xdata = xdata[idx]
-        sigysort = sigy[idx]
-        uy = interpolate.interp1d(xdata, sigysort, fill_value='extrapolate')(x)
-    elif mode == 'sigylast':
-        uy = sigy[-1]
-    return np.sqrt(u_conf(x)**2 + uy**2)
 
 
 # Functions for fitting curves

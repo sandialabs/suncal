@@ -27,6 +27,7 @@ from . import page_risk
 from . import page_sweep
 from . import page_uncertprop
 from . import page_distribution
+from . import page_interval
 from . import page_ttable
 from . import page_units
 
@@ -65,6 +66,13 @@ class CalculationsListWidget(QtWidgets.QListWidget):
                    'reverse': 'calipers',
                    'reversesweep': 'rulersweep',
                    'data': 'boxplot',
+                   'interval': 'interval',
+                   'intervaltest': 'interval',
+                   'intervaltestasset': 'interval',
+                   'intervalbinom': 'interval',
+                   'intervalbinomasset': 'interval',
+                   'intervalvariables': 'interval',
+                   'intervalvariablesasset': 'interval',
                    'distributions': 'dists'}[mode]
         self.setIconSize(QtCore.QSize(32, 32))
         item.setIcon(gui_common.load_icon(iconame))
@@ -137,8 +145,8 @@ class InsertCalcWidget(QtWidgets.QWidget):
         self.btnReverse = ToolButton('Reverse\nPropagation', gui_common.load_icon('calipers'))
         self.btnReverseSweep = ToolButton('Reverse\nSweep', gui_common.load_icon('rulersweep'))
         self.btnDataset = ToolButton('Data Sets and\nAnalysis of\nVariance', gui_common.load_icon('boxplot'))
+        self.btnInterval = ToolButton('Calibration\nIntervals', gui_common.load_icon('interval'))
         self.btnDist = ToolButton('Distribution\nExplorer', gui_common.load_icon('dists'))
-        self.btnHelp = ToolButton('Help', gui_common.load_icon('help'))
 
         self.btnUnc.clicked.connect(lambda x: self.newcomp.emit('uncertainty'))
         self.btnCurve.clicked.connect(lambda x: self.newcomp.emit('curvefit'))
@@ -148,7 +156,7 @@ class InsertCalcWidget(QtWidgets.QWidget):
         self.btnReverseSweep.clicked.connect(lambda x: self.newcomp.emit('reversesweep'))
         self.btnDataset.clicked.connect(lambda x: self.newcomp.emit('data'))
         self.btnDist.clicked.connect(lambda x: self.newcomp.emit('distributions'))
-        self.btnHelp.clicked.connect(self.showhelp)
+        self.btnInterval.clicked.connect(lambda x: self.newcomp.emit('interval'))
 
         glayout = QtWidgets.QGridLayout()
         glayout.addWidget(self.btnUnc, 0, 0)
@@ -158,8 +166,8 @@ class InsertCalcWidget(QtWidgets.QWidget):
         glayout.addWidget(self.btnReverseSweep, 1, 1)
         glayout.addWidget(self.btnCurve, 1, 2)
         glayout.addWidget(self.btnRisk, 2, 0)
-        glayout.addWidget(self.btnDist, 2, 1)
-        glayout.addWidget(self.btnHelp, 2, 2)
+        glayout.addWidget(self.btnInterval, 2, 1)
+        glayout.addWidget(self.btnDist, 2, 2)
 
         layout = QtWidgets.QVBoxLayout()
         layout.setAlignment(QtCore.Qt.AlignHCenter)
@@ -169,6 +177,7 @@ class InsertCalcWidget(QtWidgets.QWidget):
         layout.addStretch()
         self.setLayout(layout)
 
+    # TODO: MOVE TO MAINGUI
     def showhelp(self):
         filename = gui_common.resource_path('SUNCALmanual.pdf')
         QtGui.QDesktopServices.openUrl(QtCore.QUrl(r'file:/' + filename))
@@ -328,6 +337,10 @@ class MainGUI(QtWidgets.QMainWindow):
             item = dist_explore.DistExplore()
             self.project.add_item(item)
             widget = page_distribution.DistWidget(item)
+        elif typename == 'interval':
+            item = page_interval.getNewIntervalCalc()
+            self.project.add_item(item)
+            widget = page_interval.IntervalWidget(item)
         else:
             raise NotImplementedError
 
@@ -438,6 +451,8 @@ class MainGUI(QtWidgets.QMainWindow):
                         widget = page_dataset.DataSetWidget(self.project.items[i])
                     elif mode == 'distributions':
                         widget = page_distribution.DistWidget(self.project.items[i])
+                    elif mode.startswith('interval'):
+                        widget = page_interval.IntervalWidget(self.project.items[i])
                     else:
                         raise NotImplementedError
                     self.dockwidget.projectlist.addItem(mode, self.project.items[i].name)
@@ -524,9 +539,9 @@ class MainGUI(QtWidgets.QMainWindow):
 
 
 def main():
+    QtWidgets.QApplication.setAttribute(QtCore.Qt.AA_EnableHighDpiScaling)
+    QtWidgets.QApplication.setAttribute(QtCore.Qt.AA_UseHighDpiPixmaps)
     app = QtWidgets.QApplication(sys.argv)
-    app.setAttribute(QtCore.Qt.AA_EnableHighDpiScaling)
-    app.setAttribute(QtCore.Qt.AA_UseHighDpiPixmaps)
 
     main = MainGUI()
     icon = gui_common.get_logo()

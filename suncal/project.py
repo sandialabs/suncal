@@ -31,6 +31,7 @@ from . import curvefit
 from . import risk
 from . import reverse
 from . import dist_explore
+from . import intervals
 
 
 class Project(object):
@@ -66,6 +67,18 @@ class Project(object):
             mode = 'data'
         elif isinstance(item, dist_explore.DistExplore):
             mode = 'distributions'
+        elif isinstance(item, intervals.attributes.BinomialInterval):
+            mode = 'intervalbinom'
+        elif isinstance(item, intervals.attributes.BinomialIntervalAssets):
+            mode = 'intervalbinomasset'
+        elif isinstance(item, intervals.attributes.TestInterval):
+            mode = 'intervaltest'
+        elif isinstance(item, intervals.attributes.TestIntervalAssets):
+            mode = 'intervaltestasset'
+        elif isinstance(item, intervals.variables.VariablesInterval):
+            mode = 'intervalvariables'
+        elif isinstance(item, intervals.variables.VariablesIntervalAssets):
+            mode = 'intervalvariablesasset'
         else:
             raise ValueError('Unknown item {}'.format(item))
         return mode
@@ -147,7 +160,7 @@ class Project(object):
 
         try:
             config = yaml.safe_load(yml)
-        except (yaml.scanner.ScannerError, yaml.parser.ParserError, yaml.composer.ComposerError):
+        except yaml.YAMLError:
             return None  # Can't read YAML
 
         if not isinstance(config, list):
@@ -177,6 +190,18 @@ class Project(object):
                 item = dataset.DataSet.from_config(configdict)
             elif mode == 'distributions':
                 item = dist_explore.DistExplore.from_config(configdict)
+            elif mode == 'intervalbinom':
+                item = intervals.attributes.BinomialInterval.from_config(configdict)
+            elif mode == 'intervalbinomasset':
+                item = intervals.attributes.BinomialIntervalAssets.from_config(configdict)
+            elif mode == 'intervaltest':
+                item = intervals.attributes.TestInterval.from_config(configdict)
+            elif mode == 'intervaltestasset':
+                item = intervals.attributes.TestIntervalAssets.from_config(configdict)
+            elif mode == 'intervalvariables':
+                item = intervals.variables.VariablesInterval.from_config(configdict)
+            elif mode == 'intervalvariablesasset':
+                item = intervals.variables.VariablesIntervalAssets.from_config(configdict)
             else:
                 raise ValueError('Unsupported project mode {}'.format(mode))
             newproj.add_item(item)
@@ -201,7 +226,7 @@ class Project(object):
         r = report.Report()
         for i in range(self.count()):
             r.hdr(self.items[i].name, level=1)
-            out = self.items[i].get_output()
+            out = self.items[i].out
             if out is not None:
                 r.append(out.report_all())
             else:
@@ -214,7 +239,7 @@ class Project(object):
         r = report.Report()
         for i in range(self.count()):
             r.hdr(self.items[i].name, level=1)
-            out = self.items[i].get_output()
+            out = self.items[i].out
             if out is not None:
                 r.append(out.report())
             else:
@@ -227,7 +252,7 @@ class Project(object):
         r = report.Report()
         for i in range(self.count()):
             r.hdr(self.items[i].name, level=1)
-            out = self.items[i].get_output()
+            out = self.items[i].out
             if out is not None:
                 r.append(out.report_summary())
                 r.txt('\n\n')

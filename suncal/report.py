@@ -9,8 +9,9 @@ import numpy as np
 import sympy
 import markdown
 import matplotlib as mpl
+import matplotlib.pyplot as plt
 
-from . import ureg
+from . import unitmgr
 from . import uparser
 from . import css
 from . import latexchars
@@ -306,7 +307,7 @@ class Unit(object):
         bracket = kargs.get('bracket', False)  # Enclose in ' [ ]'
         dimensionless = kargs.get('dimensionless', '')
 
-        if self.unit is None or self.unit == ureg.dimensionless:
+        if self.unit is None or unitmgr.is_dimensionless(self.unit):
             return dimensionless
 
         fmt = 'H'
@@ -331,7 +332,7 @@ class Unit(object):
         dimensionless = kargs.get('dimensionless', '')
         escape = kargs.get('escape', True)  # Enclose in $..$
 
-        if self.unit is None or self.unit == ureg.dimensionless:
+        if self.unit is None or unitmgr.is_dimensionless(self.unit):
             return dimensionless
 
         fmt = 'L'
@@ -359,7 +360,7 @@ class Unit(object):
         abbr = kargs.get('abbr', True)
         bracket = kargs.get('bracket', False)  # Enclose in ' [ ]'
         dimensionless = kargs.get('dimensionless', '')
-        if self.unit is None or self.unit == ureg.dimensionless:
+        if self.unit is None or unitmgr.is_dimensionless(self.unit):
             return dimensionless
 
         fmt = '~' if abbr else ''
@@ -382,7 +383,7 @@ class Unit(object):
         bracket = kargs.get('bracket', False)  # Enclose in ' [ ]'
         dimensionless = kargs.get('dimensionless', '')
 
-        if self.unit is None or self.unit == ureg.dimensionless:
+        if self.unit is None or unitmgr.is_dimensionless(self.unit):
             return dimensionless
 
         fmt = 'P'
@@ -438,8 +439,8 @@ class Math(object):
         '''
         math = cls()
         math.latexexpr = tex.lstrip('$').rstrip('$').encode('ascii', 'latex').decode()
-        math.prettytextexpr = None
-        math.simpletextexpr = None
+        math.prettytextexpr = math.latexexpr
+        math.simpletextexpr = math.latexexpr
         return math
 
     @classmethod
@@ -591,6 +592,9 @@ class Plot(object):
     '''
     def __init__(self, fig=None):
         self.fig = fig  # MPL figure
+
+    def __del__(self):
+        plt.close(self.fig)
 
     def _repr_markdown_(self):
         ''' Markdown representation for Jupyter '''
@@ -941,9 +945,17 @@ class Report(object):
             for col in row:
                 line.append(self._insert_obj(col))
             s += ' | '.join('{{:{}}}'.format(w).format(val) for w, val in zip(widths, line)) + '\n'
+
+        if len(hdr) == 1:
+            # Single column, need | at beginning and end
+            lines = ''
+            for line in s.splitlines():
+                lines += (('|' + line + '|\n') if len(line) > 0 else '\n')
+            s = lines
+
         self._s += s + '\n\n'
 
-    def add(self, *args):
+    def add(self, *args, end='\n'):
         ''' Add multiple items to the report
 
             Parameters
@@ -952,7 +964,7 @@ class Report(object):
                 Each arg may be a string, Number, Math, Plot, or sympy expression
         '''
         for arg in args:
-            self._s += self._insert_obj(arg)
+            self._s += self._insert_obj(arg, end=end)
 
     def append(self, report, end=''):
         ''' Append another report onto this one '''
@@ -1111,7 +1123,7 @@ class Report(object):
             f.write(html)
         return None  # No error
 
-    def save_odt(self, fname):
+    def save_odt(self, fname, **kwargs):
         ''' Save report to Open Document (ODT) format. Requires Pandoc. '''
         if pandoc_path is None:
             raise ValueError('ODT format requires Pandoc.')
@@ -1119,13 +1131,13 @@ class Report(object):
         if not fname.lower().endswith('.odt'):
             fname += '.odt'
 
-        md = self.get_md(inline=True, mathfmt='latex', figfmt='svg')
+        md = self.get_md(inline=True, mathfmt='latex', figfmt='svg', **kwargs)
         # ODT can nicely handle SVG images
         p = subprocess.Popen([pandoc_path, '-o', fname], stdin=subprocess.PIPE, stderr=subprocess.PIPE, stdout=subprocess.PIPE)
         out, err = p.communicate(md.encode('utf-8'))
         return err.decode('utf-8')
 
-    def save_docx(self, fname):
+    def save_docx(self, fname, **kwargs):
         ''' Save report to Word (docx) format. Requires Pandoc. '''
         if pandoc_path is None:
             raise ValueError('DOCX format requires Pandoc.')
@@ -1133,14 +1145,14 @@ class Report(object):
         if not fname.lower().endswith('.docx'):
             fname += '.docx'
 
-        md = self.get_md(mathfmt='latex', figfmt='png', inline=True)
+        md = self.get_md(mathfmt='latex', figfmt='png', inline=True, **kwargs)
 
         # MSWord can't do SVG... gotta rasterize it
         p = subprocess.Popen([pandoc_path, '-o', fname], stdin=subprocess.PIPE, stderr=subprocess.PIPE, stdout=subprocess.PIPE)
         out, err = p.communicate(md.encode('utf-8'))
         return err.decode('utf-8')
 
-    def save_tex(self, fname):
+    def save_tex(self, fname, **kwargs):
         ''' Save report as tex file for later processing with Latex. Requires Pandoc. '''
         if not fname.lower().endswith('.tex'):
             fname += '.tex'
@@ -1154,14 +1166,14 @@ class Report(object):
 
         # Convert utf8 markdown into plain ascii with latex codes for special characters
         # 'latex' handler was installed by importing latexchars.py
-        md = self.get_md(mathfmt='latex', figfmt='png', inline=True).encode('ascii', 'latex')
+        md = self.get_md(mathfmt='latex', figfmt='png', inline=True, **kwargs).encode('ascii', 'latex')
         fname = os.path.realpath(fname)
         filepath = os.path.dirname(fname)
         p = subprocess.Popen([pandoc_path, '--extract-media', 'images', '-s', '-o', fname], cwd=filepath, stdin=subprocess.PIPE, stderr=subprocess.PIPE, stdout=subprocess.PIPE)
         out, err = p.communicate(md)
         return err.decode('utf-8')
 
-    def save_pdf(self, fname):
+    def save_pdf(self, fname, **kwargs):
         ''' Save report to PDF format. Requires Pandoc and LaTeX. '''
         if pandoc_path is None:
             raise ValueError('PDF format requires Pandoc.')
@@ -1173,7 +1185,7 @@ class Report(object):
 
         # Convert utf8 markdown into plain ascii with latex codes for special characters
         # 'latex' handler was installed by importing latexchars.py
-        md = self.get_md(mathfmt='latex', figfmt='png', inline=True).encode('ascii', 'latex')
+        md = self.get_md(mathfmt='latex', figfmt='png', inline=True, **kwargs).encode('ascii', 'latex')
 
         # Must specify working dir for Popen because pandoc creates temp folder there.
         # Without it we get permission denied errors when running from app.

@@ -103,6 +103,13 @@ class WidgetPanel(QtWidgets.QTreeWidget):
                 self.wasexpanded(item)
                 break
 
+    def hide(self, name, hide=True):
+        ''' Show or hide an item '''
+        item = self.findItems(name, QtCore.Qt.MatchExactly, 0)
+        with suppress(IndexError):
+            item[0].setHidden(hide)
+            self.wasexpanded(item[0])
+
     def insert_widget(self, name, widget, idx, buttons=False):
         ''' Insert a widget into the tree '''
         item = QtWidgets.QTreeWidgetItem()
@@ -250,21 +257,17 @@ class FloatTableWidget(QtWidgets.QTableWidget):
         headeredit: string or None
             Editable header. If None, no editing. string options are 'str' or 'float'
             to restrict header values to strings or floats.
-        xdates: bool
-            Allow datetime values in first column. Will be converted to ordinal on get.
-        xstrings: bool
-            Allow string values in first column. Will be omitted from get_table.
         paste_multicol: bool
             Allow pasting multiple columns (and inserting columns as necessary)
     '''
     valueChanged = QtCore.pyqtSignal()
 
-    def __init__(self, movebyrows=False, headeredit=None, xdates=False, xstrings=False, paste_multicol=True, parent=None):
+    def __init__(self, movebyrows=False, headeredit=None, xstrings=False, paste_multicol=True, parent=None):
         super().__init__(parent=parent)
         self.movebyrows = movebyrows
         self.paste_multicol = paste_multicol
-        self.xdates = xdates
-        self.xstrings = xstrings
+        self.maxrows = None
+        self.maxcols = None
         self.setRowCount(1)
         self.setColumnCount(0)
         if headeredit is not None:
@@ -275,56 +278,64 @@ class FloatTableWidget(QtWidgets.QTableWidget):
         QtWidgets.QShortcut(QtGui.QKeySequence('Ctrl+c'), self).activated.connect(self._copy)
         self.cellChanged.connect(self._itemchanged)
 
+    def clear(self):
+        ''' Clear table, but not header '''
+        self.setRowCount(0)
+        self.setRowCount(1)
+
     def _paste(self):
         ''' Handle pasting data into table '''
         signalstate = self.signalsBlocked()
         self.blockSignals(True)
-        clipboard = QtWidgets.QApplication.instance().clipboard().text()
-        rowlist = clipboard.split('\n')
         startrow = self.currentRow()
         startcol = self.currentColumn()
+        clipboard = QtWidgets.QApplication.instance().clipboard().text()
+        rowlist = clipboard.split('\n')
+        if self.maxrows is not None:
+            rowlist = rowlist[:self.maxrows]
+        if self.maxcols is not None:
+            rowlist = ['\t'.join(r.split()[:self.maxcols-startcol]) for r in rowlist]
+
         j = 0
         for i, row in enumerate(rowlist):
             collist = row.split()
             if self.paste_multicol:
                 for j, st in enumerate(collist):
-                    if j == 0 and self.xdates:
-                        try:
-                            parse(st)
+                    try:
+                        val = float(st)
+                    except ValueError:
+                        if st.lower() in ['pass', 'fail', 'true', 'false', 'yes', 'no', 'n/a', 'none', 'null']:
                             val = st
-                        except ValueError:
-                            val = '-'
-                    elif j == 0 and self.xstrings:
-                        val = st
-                    else:
-                        try:
-                            val = float(st)
-                        except ValueError:
-                            val = '-'
+                        else:
+                            try:
+                                parse(st)
+                                val = st
+                            except ValueError:
+                                val = '-'
+
                     if self.rowCount() <= startrow+i:
                         self.setRowCount(startrow+i+1)
                     if self.columnCount() <= startcol+j:
                         self.setColumnCount(startcol+j+1)
                     self.setItem(startrow+i, startcol+j, QtWidgets.QTableWidgetItem(str(val)))
             else:
-                if startcol == 0 and self.xdates:
-                    try:
-                        parse(st)
+                try:
+                    val = float(st)
+                except ValueError:
+                    if st.lower() in ['pass', 'fail', 'true', 'false', 'yes', 'no', 'n/a', 'none', 'null']:
                         val = st
-                    except ValueError:
-                        val = '-'
-                elif startcol == 0 and self.xstrings:
-                    val = st
-                else:
-                    try:
-                        val = float(collist[0])
-                    except ValueError:
-                        val = '-'
+                    else:
+                        try:
+                            parse(st)
+                            val = st
+                        except ValueError:
+                            val = '-'
                 j = 0
                 self.setItem(startrow+i, startcol, QtWidgets.QTableWidgetItem(str(val)))
         self.clearSelection()
         self.setCurrentCell(startrow+i, startcol+j)
-        self.insertRow(startrow+i+1)  # Blank row at end
+        if self.maxrows is None or startrow+i+1 < self.maxrows:
+            self.insertRow(startrow+i+1)  # Blank row at end
         self.blockSignals(signalstate)
         self.valueChanged.emit()
 
@@ -353,8 +364,9 @@ class FloatTableWidget(QtWidgets.QTableWidget):
 
     def _insertrow(self):
         ''' Insert a blank row in the table '''
-        self.insertRow(max(0, self.currentRow()))
-        self.valueChanged.emit()
+        if self.maxrows is None or self.rowCount() < self.maxrows:
+            self.insertRow(max(0, self.currentRow()))
+            self.valueChanged.emit()
 
     def _removerow(self):
         ''' Remove row from table '''
@@ -392,59 +404,28 @@ class FloatTableWidget(QtWidgets.QTableWidget):
         actRemove.triggered.connect(self._removerow)
         menu.popup(QtGui.QCursor.pos())
 
-    def set_xdates(self, xdates):
-        ''' Change first column to for dates/floats. Converts any existing values. '''
-        if self.xdates == xdates:
-            return   # Nothing is changing
-
-        signalstate = self.signalsBlocked()
-        self.blockSignals(True)
-        self.xdates = xdates
-        if self.xdates:
-            for row in range(self.rowCount()):
-                if self.item(row, 0) is None:
-                    continue
-                try:
-                    val = float(self.item(row, 0).text())
-                    if val <= 1:
-                        val = '-'
-                    else:
-                        val = mdates.num2date(val).strftime('%d-%b-%Y')
-                except (AttributeError, ValueError):
-                    val = '-'
-                self.item(row, 0).setText(val)
-        else:
-            for row in range(self.rowCount()):
-                if self.item(row, 0) is None:
-                    continue
-                try:
-                    val = str(mdates.date2num(parse(self.item(row, 0).text())))
-                except (AttributeError, ValueError):
-                    val = '-'
-                self.item(row, 0).setText(val)
-        self.blockSignals(signalstate)
-
     def _itemchanged(self, row, col):
         ''' Item was changed. Add new row and move selected cell as appropriate. '''
         item = self.item(row, col)
         if item.text() != '':
-            if col == 0 and self.xdates:
-                try:
-                    parse(item.text()).toordinal()
-                except ValueError:
-                    item.setText('-')
-            elif col == 0 and self.xstrings:
-                pass   # OK as string
-            else:
-                try:
-                    float(item.text())
-                except ValueError:
-                    item.setText('-')
+            try:
+                float(item.text())
+            except ValueError:
+                if item.text().lower() not in ['pass', 'true', 'fail', 'false',  'yes', 'no', 'none', 'n/a', 'null']:
+                    try:
+                        parse(item.text()).toordinal()
+                    except ValueError:
+                        item.setText('-')
+                    try:
+                        parse(item.text()).toordinal()
+                    except ValueError:
+                        item.setText('-')
 
         if row == self.rowCount() - 1 and item is not None and item.text() != '':
             # Edited last row. Add a blank one
-            self.insertRow(row+1)
-            self.setRowHeight(row+1, self.rowHeight(row))
+            if self.maxrows is None or row+1 < self.maxrows:
+                self.insertRow(row+1)
+                self.setRowHeight(row+1, self.rowHeight(row))
 
         # Move cursor to next row or column
         if self.movebyrows:
@@ -455,25 +436,40 @@ class FloatTableWidget(QtWidgets.QTableWidget):
             self.setCurrentCell(row, col+1)
         self.valueChanged.emit()
 
+    def has_dates(self, column=0):
+        ''' Determine if the data has datetime in column '''
+        hasdates = False
+        for i in range(self.rowCount()):
+            text = self.item(i, column).text() if self.item(i, column) else ''
+            try:
+                float(text)
+            except ValueError:
+                try:
+                    mdates.date2num(parse(text))
+                except ValueError:
+                    pass
+                else:
+                    hasdates = True
+                    break
+        return hasdates
+
     def get_column(self, column):
         ''' Get array of values for one column '''
         vals = []
         for i in range(self.rowCount()):
-            if column == 0 and self.xdates:
-                try:
-                    vals.append(mdates.date2num(parse(self.item(i, column).text())))
-                except (AttributeError, ValueError):
-                    vals.append(np.nan)
-            elif column == 0 and self.xstrings:
-                try:
-                    vals.append(self.item(i, column).text())
-                except AttributeError:
-                    vals.append('')
-            else:
-                try:
-                    vals.append(float(self.item(i, column).text()))
-                except (AttributeError, ValueError):
-                    vals.append(np.nan)
+            text = self.item(i, column).text() if self.item(i, column) else ''
+            try:
+                vals.append(float(text))
+            except ValueError:
+                if text.lower() in ['pass', 'true', 'yes']:
+                    vals.append(1)
+                elif text.lower() in ['fail', 'false', 'no']:
+                    vals.append(0)
+                else:
+                    try:
+                        vals.append(mdates.date2num(parse(text)))
+                    except ValueError:
+                        vals.append(np.nan)
         return np.asarray(vals)
 
     def get_columntext(self, column):
@@ -491,10 +487,15 @@ class FloatTableWidget(QtWidgets.QTableWidget):
         vals = []
         for col in range(self.columnCount()):
             vals.append(self.get_column(col))
-        tbl = np.vstack(vals)
-        while tbl.shape[1] > 0 and all(~np.isfinite(tbl[:, -1])):
-            # Strip blank rows
-            tbl = tbl[:, :-1]
+        try:
+            tbl = np.vstack(vals)
+            while tbl.shape[1] > 0 and all(~np.isfinite(tbl[:, -1])):
+                # Strip blank rows
+                tbl = tbl[:, :-1]
+        except ValueError:
+            # No rows
+            tbl = np.array([[]])
+
         return tbl
 
 
@@ -606,13 +607,13 @@ def savereport(rpt, **kwargs):
                 err = rpt.save_html(fname, mathfmt=setup.get('mathfmt'), figfmt=setup.get('image'), **kargs)
 
             elif fmt == 'docx':
-                err = rpt.save_docx(fname)
+                err = rpt.save_docx(fname, **kargs)
 
             elif fmt == 'pdf':
-                err = rpt.save_pdf(fname)
+                err = rpt.save_pdf(fname, **kargs)
 
             elif fmt == 'odt':
-                err = rpt.save_odt(fname)
+                err = rpt.save_odt(fname, **kargs)
 
             else:
                 assert False
@@ -1106,6 +1107,46 @@ class QHLine(QtWidgets.QFrame):
         super().__init__()
         self.setFrameShape(QtWidgets.QFrame.HLine)
         self.setFrameShadow(QtWidgets.QFrame.Sunken)
+
+
+class FloatLineEdit(QtWidgets.QLineEdit):
+    ''' Line Edit with float validator '''
+    def __init__(self, text='', low=None, high=None):
+        super().__init__(text)
+        self._validator = QtGui.QDoubleValidator()
+        if low is not None:
+            self._validator.setBottom(low)
+        if high is not None:
+            self._validator.setTop(high)
+        self.setValidator(self._validator)
+
+    def value(self):
+        try:
+            val = float(self.text())
+        except ValueError:
+            val = 0
+        return val
+
+    def setValue(self, value):
+        self.setText(str(value))
+
+
+class IntLineEdit(QtWidgets.QLineEdit):
+    ''' Line Edit with integer validator '''
+    def __init__(self, text='', low=None, high=None):
+        super().__init__(text)
+        self._validator = QtGui.QIntValidator()
+        if low is not None:
+            self._validator.setBottom(low)
+        if high is not None:
+            self._validator.setTop(high)
+        self.setValidator(self._validator)
+
+    def value(self):
+        return int(self.text())
+
+    def setValue(self, value):
+        self.setText(str(int(value)))
 
 
 class LineEditLabelWidget(QtWidgets.QWidget):

@@ -29,9 +29,9 @@ from contextlib import suppress
 import numpy as np
 import yaml
 from scipy import stats
-import matplotlib as mpl
 from matplotlib.ticker import FormatStrFormatter
 import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
 from scipy.integrate import dblquad
 from scipy.optimize import brentq, fsolve
 
@@ -256,9 +256,9 @@ def guardband_specific(dtest, LL, UL, target):
     GBL = np.nan
     GBU = np.nan
     with suppress(IndexError):
-        GBL = xx[np.where(fa<=target)[0][0]]
+        GBL = xx[np.where(fa <= target)[0][0]]
     with suppress(IndexError):
-        GBU = xx[np.where(fa<=target)[0][-1]]
+        GBU = xx[np.where(fa <= target)[0][-1]]
 
     return GBL-LL, UL-GBU
 
@@ -268,7 +268,7 @@ def guardbandfactor_to_offset(gbf, LL, UL):
     return (UL-LL)/2 * (1-gbf)
 
 
-def PFA_norm(itp, TUR, GB=1, **kwargs):
+def PFA_norm(itp, TUR, GB=1, biastest=0, biasproc=0, **kwargs):
     ''' PFA for normal distributions in terms of TUR and
         in-tolerance probability
 
@@ -283,9 +283,12 @@ def PFA_norm(itp, TUR, GB=1, **kwargs):
             Guardband Factor. If GB is numeric, GB = K, where acceptance
             limit A = T * K. In Dobbert's notation, K = 1 - M/TUR where
             A = T - U*M. GB = 1 implies no guardbanding.
-
             If GB is a string, it can be one of options in guardband_norm
             method. kwargs passed to guardband_norm.
+        biastest: float
+            Bias/shift in the test measurement distribution, in percent of SL
+        biasproc: float
+            Bias/shift in the process distribution, in percent of SL
     '''
     # Convert itp to stdev of process
     # This is T in equation 2 in Dobbert's Guardbanding Strategy, with T = 1.
@@ -298,13 +301,21 @@ def PFA_norm(itp, TUR, GB=1, **kwargs):
         GB = guardband_norm(GB, TUR, itp=itp, **kwargs)
 
     A = GB  # A = T * GB = 1 * GB
-    c, _ = dblquad(lambda y, t: np.exp((-y*y)/2/sigma0**2)*np.exp(-(t-y)**2/2/sigmatest**2),
-                   -A, A, gfun=1, hfun=np.inf)
+    if biastest == 0 and biasproc == 0:
+        c, _ = dblquad(lambda y, t: np.exp(-(y-biasproc)**2/2/sigma0**2)*np.exp(-(y-t+biastest)**2/2/sigmatest**2),
+                       -A, A, gfun=1, hfun=np.inf)
+        c *= 2  # Symmetric both sides
+    else:
+        c1, _ = dblquad(lambda y, t: np.exp(-(y-biasproc)**2/2/sigma0**2)*np.exp(-(y-t+biastest)**2/2/sigmatest**2),
+                        -A, A, gfun=1, hfun=np.inf)
+        c2, _ = dblquad(lambda y, t: np.exp(-(y-biasproc)**2/2/sigma0**2)*np.exp(-(y-t+biastest)**2/2/sigmatest**2),
+                        -A, A, gfun=-np.inf, hfun=-1)
+        c = c1 + c2
     c = c / (2 * np.pi * sigmatest * sigma0)
-    return c * 2
+    return c
 
 
-def PFR_norm(itp, TUR, GB=1, **kwargs):
+def PFR_norm(itp, TUR, GB=1, biastest=0, biasproc=0, **kwargs):
     ''' PFR for normal distributions in terms of TUR and
         in-tolerance probability
 
@@ -319,9 +330,12 @@ def PFR_norm(itp, TUR, GB=1, **kwargs):
             Guardband Factor. If GB is numeric, GB = K, where acceptance
             limit A = T * K. In Dobbert's notation, K = 1 - M/TUR where
             A = T - U*M. GB = 1 implies no guardbanding.
-
             If GB is a string, it can be one of options in guardband_norm
             method. kwargs passed to guardband_norm.
+        biastest: float
+            Bias/shift in the test measurement distribution
+        biasproc: float
+            Bias/shift in the process distribution
     '''
     sigma0 = 1/stats.norm.ppf((1+itp)/2)
     sigmatest = 1/TUR/2
@@ -332,10 +346,18 @@ def PFR_norm(itp, TUR, GB=1, **kwargs):
         GB = guardband_norm(GB, TUR, itp=itp, **kwargs)
 
     A = GB
-    c, _ = dblquad(lambda y, t: np.exp((-y*y)/2/sigma0**2)*np.exp(-(t-y)**2/2/sigmatest**2),
-                   A, np.inf, gfun=-1, hfun=1)
+    if biastest == 0 and biasproc == 0:
+        c, _ = dblquad(lambda y, t: np.exp(-(y-biasproc)**2/2/sigma0**2)*np.exp(-(y-t+biastest)**2/2/sigmatest**2),
+                       A, np.inf, gfun=-1, hfun=1)
+        c *= 2  # Symmetric both sides
+    else:
+        c1, _ = dblquad(lambda y, t: np.exp(-(y-biasproc)**2/2/sigma0**2)*np.exp(-(y-t+biastest)**2/2/sigmatest**2),
+                        A, np.inf, gfun=-1, hfun=1)
+        c2, _ = dblquad(lambda y, t: np.exp(-(y-biasproc)**2/2/sigma0**2)*np.exp(-(y-t+biastest)**2/2/sigmatest**2),
+                        -np.inf, -A, gfun=-1, hfun=1)
+        c = c1 + c2
     c = c / (2 * np.pi * sigmatest * sigma0)
-    return c * 2
+    return c
 
 
 def PFA_deaver(SL, TUR, GB=1):
@@ -663,6 +685,165 @@ def PFAR_MC(dist_proc, dist_test, LL, UL, GBL=0, GBU=0, N=100000, testbias=0):
     FA = np.count_nonzero(((test_samples < UL-GBU) & (test_samples > LL+GBL)) & ((proc_samples > UL) | (proc_samples < LL))) / N
     FR = np.count_nonzero(((test_samples > UL-GBU) | (test_samples < LL+GBL)) & ((proc_samples < UL) & (proc_samples > LL))) / N
     return Result(FA, FR, proc_samples, test_samples)
+
+
+def PFA_sweep_simple(xvar='itp', zvar='TUR', xvals=None, zvals=None,
+                     GBFdflt=1, itpdflt=.95, TURdflt=4, tbias=0, pbias=0, risk='PFA'):
+    ''' Sweep PFA vs. itp, tur, or gbf for producing risk curves in simple mode
+
+        Parameters
+        ----------
+        xvar : string
+            Sweep variable for x axis - 'itp', 'tur', 'gbf', 'tbias', 'pbias'
+        zvar : string
+            Step variable - 'itp', 'tur', 'gbf', 'tbias', 'pbias'
+        xvals : array
+            List of sweep values for x axis
+        zvals : array
+            List of step values for step/z axis
+        GBFdlft : float
+            Default guardband value, if gbf is not being swept
+        itpdflt : float
+            Default itp value, if itp is not being swept
+        TURdflt : float
+            Default tur value, if tur is not being swept
+        tbias : float
+            Default test measurement bias
+        pbias : float
+            Default process distribution bias
+        risk : string
+            Calculate 'PFA' or 'PFR'
+
+        Returns
+        -------
+        risk : array
+            2D array (shape len(xvals) x len(zvals)) of risk values
+    '''
+    assert xvar.lower() in ['itp', 'tur', 'gbf', 'tbias', 'pbias']
+    assert zvar.lower() in ['itp', 'tur', 'gbf', 'tbias', 'pbias', 'none']
+    assert risk.lower() in ['pfa', 'pfr']
+    if zvar == 'none':
+        zvals = [None]
+        xx = np.array([xvals])
+        zz = np.array([])
+    else:
+        xx, zz = np.meshgrid(xvals, zvals)
+    riskfunc = PFR_norm if risk.lower() == 'pfr' else PFA_norm
+
+    if xvar.lower() == 'itp':
+        itp = xx
+    elif zvar.lower() == 'itp':
+        itp = zz
+    else:
+        itp = np.full(xx.shape, itpdflt)
+
+    if xvar.lower() == 'tur':
+        TUR = xx
+    elif zvar.lower() == 'tur':
+        TUR = zz
+    else:
+        TUR = np.full(xx.shape, TURdflt)
+
+    if xvar.lower() == 'gbf':
+        GBF = xx
+    elif zvar.lower() == 'gbf':
+        GBF = zz
+    else:
+        GBF = np.full(xx.shape, GBFdflt)
+
+    if xvar.lower() == 'tbias':
+        tbias = xx
+    elif zvar.lower() == 'tbias':
+        tbias = zz
+    else:
+        tbias = np.full(xx.shape, tbias)
+
+    if xvar.lower() == 'pbias':
+        pbias = xx
+    elif zvar.lower() == 'pbias':
+        pbias = zz
+    else:
+        pbias = np.full(xx.shape, pbias)
+
+    curves = np.empty_like(xx)
+    for zidx in range(len(zvals)):
+        for xidx in range(len(xvals)):
+            curves[zidx, xidx] = riskfunc(itp[zidx, xidx], TUR[zidx, xidx], GBF[zidx, xidx],
+                                          biastest=tbias[zidx, xidx], biasproc=pbias[zidx, xidx])
+    return curves
+
+
+def PFA_sweep(xvarparam, zvarparam, xvardist=None, zvardist=None, xvals=None, zvals=None,
+              dist_proc=None, dist_test=None, LL=-1, UL=1, GBL=0, GBU=0, testbias=0,
+              risk='PFA', approx=True):
+    ''' Sweep PFA vs. any distribution parameter for producing risk curves
+
+        Parameters
+        ----------
+        xvarparam : string
+            Name of distribution parameter for sweep variable, or 'gb', 'gbl', 'gbu'
+        zvarparam : string
+            Name of distribution parameter for step variable, or 'gb', 'gbl', 'gbu'
+        xvardist : Distribution object
+            Distribution to change in x sweep
+        zvardist : Distribution object
+            Distribution to change in z step
+        xvals : array
+            List of sweep values for x axis
+        zvals : array
+            List of step values for step/z axis
+        dist_proc : Distribution object
+            Process distribution
+        dist_test : Distribution object
+            Test measurement distribution
+        LL, UL : float
+            Lower and upper specification limits
+        GBL, GBU : float
+            Lower and upper guardbands, absolute
+        testbias : float
+            Bias in test measurement
+        risk : string
+            Calculate 'PFA' or 'PFR'
+        approx : bool
+            Use trapezoidal approximation for integral (faster but less accurate)
+
+        Returns
+        -------
+        risk : array
+            2D array (shape len(xvals) x len(zvals)) of risk values
+    '''
+    riskfunc = PFR if risk == 'pfr' else PFA
+
+    xx, zz = np.meshgrid(xvals, zvals)
+    curves = np.empty_like(xx)
+    for zidx, z in enumerate(zvals):
+        if zvarparam.lower() == 'gb':
+            GBL = z
+            GBU = z
+        elif zvarparam.lower() == 'gbl':
+            GBL = z
+        elif zvarparam.lower() == 'gbu':
+            GBU = z
+        elif zvarparam.lower() == 'bias':
+            testbias = z
+        else:
+            zvardist.update_kwds(**{zvarparam: z})
+
+        for xidx, x in enumerate(xvals):
+            if xvarparam.lower() == 'gb':
+                GBL = x
+                GBU = x
+            elif xvarparam.lower() == 'gbl':
+                GBL = x
+            elif xvarparam.lower() == 'gbu':
+                GBU = x
+            elif xvarparam.lower() == 'bias':
+                testbias = x
+            else:
+                xvardist.update_kwds(**{xvarparam: x})
+
+            curves[zidx, xidx] = riskfunc(dist_proc, dist_test, LL, UL, GBL, GBU, testbias, approx=True)
+    return curves
 
 
 class Risk(object):
@@ -1084,7 +1265,7 @@ class Risk(object):
 
         try:
             config = yaml.safe_load(yml)
-        except yaml.scanner.ScannerError:
+        except yaml.YAMLError:
             return None  # Can't read YAML
 
         u = cls.from_config(config[0])  # config yaml is always a list
@@ -1119,7 +1300,7 @@ class RiskOutput(output.Output):
             val = self.risk.get_testdist().median() + self.risk.get_testbias()
             PFx, accept = self.risk.test_risk()  # Get PFA/PFR of specific measurement
 
-            hdr.extend(['Test Measurement Risk'])
+            hdr.extend(['Specific Measurement Risk'])
             cols.append([
                 ('TUR: ', report.Number(self.risk.get_tur(), fmt='auto')),
                 ('Measured value: ', report.Number(val)),
@@ -1152,25 +1333,24 @@ class RiskOutput(output.Output):
     def report_all(self, **kwargs):
         ''' Report with table and plots '''
         if kwargs.get('mc', False):
-            with mpl.style.context(plotting.mplcontext):
-                plt.ioff()
+            with plt.style.context(plotting.plotstyle):
                 fig = plt.figure()
             r = self.report_montecarlo(fig=fig, **kwargs)
             r.plot(fig)
+            plt.close(fig)
         else:
-            with mpl.style.context(plotting.mplcontext):
-                plt.ioff()
+            with plt.style.context(plotting.plotstyle):
                 fig = plt.figure()
                 self.plot_dists(fig)
             r = report.Report(**kwargs)
             r.plot(fig)
+            plt.close(fig)
             r.append(self.report(**kwargs))
         return r
 
     def plot_dists(self, plot=None):
         ''' Plot risk distributions '''
-        with mpl.style.context(plotting.mplcontext):
-            plt.ioff()
+        with plt.style.context(plotting.plotstyle):
             fig, ax = plotting.initplot(plot)
             fig.clf()
 
@@ -1281,8 +1461,7 @@ class RiskOutput(output.Output):
 
     def report_gbsweep(self, plot=None, **kwargs):
         ''' Plot PFA/R vs guardband '''
-        with mpl.style.context(plotting.mplcontext):
-            plt.ioff()
+        with plt.style.context(plotting.plotstyle):
             fig, ax = plotting.initplot(plot)
             fig.clf()
             LL, UL = self.risk.get_speclimits()
@@ -1320,6 +1499,7 @@ class RiskOutput(output.Output):
                 if simple:
                     ax1.set_xlim(1, 0)  # Go backwards
                     ax2.set_xlim(1, 0)
+                plt.close(fig)
 
             rpt = report.Report(**kwargs)
             rpt.hdr(f'Global Risk vs {xlabel}', level=2)
@@ -1339,8 +1519,7 @@ class RiskOutput(output.Output):
 
     def report_probconform(self, plot=None, **kwargs):
         ''' Plot Probability of Conformance plot '''
-        with mpl.style.context(plotting.mplcontext):
-            plt.ioff()
+        with plt.style.context(plotting.plotstyle):
             fig, ax = plotting.initplot(plot)
             fig.clf()
             LL, UL = self.risk.get_speclimits()
@@ -1348,7 +1527,6 @@ class RiskOutput(output.Output):
 
             if dtest is not None:
                 kwds = distributions.get_distargs(dtest)
-                locorig = kwds.pop('loc', 0)
                 bias = self.risk.get_testbias()
                 w = (UL-LL)
                 xx = np.linspace(LL-w/2, UL+w/2, num=500)
@@ -1360,8 +1538,9 @@ class RiskOutput(output.Output):
                 fa_lower = np.empty(len(xx))
                 fa_upper = np.empty(len(xx))
                 for i, loc in enumerate(xx):
-                    kwds.update({'loc': loc-bias})
-                    dtestswp = dtest.dist(**kwds)
+                    dtest.set_median(loc-bias)
+                    kwds = distributions.get_distargs(dtest)
+                    dtestswp = dtest.dist(**kwds)  # Pass in rv_continuous, could be faster than Distribution object
                     fa_lower[i] = specific_risk(dtestswp, LL=LL, UL=np.inf).total
                     fa_upper[i] = specific_risk(dtestswp, LL=-np.inf, UL=UL).total
                 fa = 1-(fa_lower + fa_upper)
@@ -1377,6 +1556,7 @@ class RiskOutput(output.Output):
                     ax.axvline(LL+GBL, ls='--', label='Guardband', color='C3')
                     ax.axvline(UL-GBU, ls='--', color='C3')
                 fig.tight_layout()
+                plt.close(fig)
 
                 rpt = report.Report(**kwargs)
                 rpt.hdr('Probability of Conformance', level=2)
@@ -1390,3 +1570,68 @@ class RiskOutput(output.Output):
             rpt = report.Report(**kwargs)
             rpt.text('No test distribution')
             return rpt
+
+    def report_sweep(self, plot=None, **kwargs):
+        ''' Plot PFA(R) sweep (simple mode only for now) '''
+        xvar = kwargs.get('xvar')
+        zvar = kwargs.get('zvar')
+        xvals = kwargs.get('xvals')
+        zvals = kwargs.get('zvals')
+        yvar = kwargs.get('yvar', 'PFA')
+        threed = kwargs.get('threed', False)
+        gbmode = kwargs.get('gbf', None)
+        tbias = kwargs.get('tbias', 0)
+        pbias = kwargs.get('pbias', 0)
+
+        gbf = self.risk.get_gbf() if gbmode is None else gbmode
+
+        labels = {'tur': 'TUR', 'itp': 'In-Tolerance Probability %', 'tbias': 'Test Measurement Bias',
+                  'pbias': 'Process Distribution Bias', 'gbf': 'GBF'}
+
+        rpt = report.Report(**kwargs)
+
+        with plt.style.context(plotting.plotstyle):
+            fig, ax = plotting.initplot(plot)
+            fig.clf()
+
+            yvars = [yvar.lower()] if yvar.lower() != 'both' else ['pfa', 'pfr']
+            for k, yvar in enumerate(yvars):
+                curves = PFA_sweep_simple(xvar, zvar, xvals, zvals,
+                                          GBFdflt=gbf, itpdflt=self.risk.get_itp(),
+                                          TURdflt=self.risk.get_tur(), risk=yvar,
+                                          tbias=tbias, pbias=pbias) * 100
+
+                xlabel = labels.get(xvar, 'x')
+                zlabel = labels.get(zvar, 'z')
+                ylabel = '{} %'.format(yvar.upper())
+
+                xplot = xvals if xvar.lower() != 'itp' else xvals * 100
+                zplot = np.zeros(len(xvals)) if xvar == 'none' else zvals if zvar.lower() != 'itp' else zvals * 100
+
+                if threed:
+                    ax = fig.add_subplot(1, len(yvars), k+1, projection='3d')
+                    xx, zz = np.meshgrid(xplot, zplot)
+                    ax.plot_surface(xx, zz, curves, cmap='coolwarm')
+                    ax.set_zlabel(ylabel)
+                    ax.set_ylabel(zlabel)
+                else:
+                    ax = fig.add_subplot(1, len(yvars), k+1)
+                    for i in range(len(zvals)):
+                        ax.plot(xplot, curves[i, :], label=str(zplot[i]))
+                    ax.set_ylabel(ylabel)
+
+                ax.set_xlabel(xlabel)
+                if zvar != 'none' and not threed:
+                    ax.legend(title=zlabel)
+
+                rpt.hdr(ylabel, level=2)
+                if zvar == 'none':
+                    hdr = [xlabel, ylabel]
+                else:
+                    hdr = [xlabel] + ['{}={}'.format(zlabel, z) for z in zvals]
+                rows = [[report.Number(xvals[i])] + [report.Number(p) for p in row] for i, row in enumerate(curves.transpose())]
+                rpt.table(rows, hdr)
+
+            fig.tight_layout()
+            plt.close(fig)
+        return rpt

@@ -8,8 +8,11 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from PyQt5 import QtCore, QtWidgets
 
 # Sequential colormaps defined in matplotlib 2.0
-DFLT_CMAPS = ['viridis', 'plasma', 'inferno', 'magma', 'Greys', 'Purples', 'Blues', 'Greens', 'Oranges', 'Reds',
-              'YlOrBr', 'YlOrRd', 'OrRd', 'PuRd', 'RdPu', 'BuPu', 'GnBu', 'PuBu', 'YlGnBu', 'PuBuGn', 'BuGn', 'YlGn']
+DFLT_CMAPS = ['viridis', 'plasma', 'inferno', 'magma', 'cividis', 'Greys', 'Purples', 'Blues', 'Greens', 'Oranges', 'Reds',
+              'YlOrBr', 'YlOrRd', 'OrRd', 'PuRd', 'RdPu', 'BuPu', 'GnBu', 'PuBu', 'YlGnBu', 'PuBuGn', 'BuGn', 'YlGn',
+              'bone', 'pink', 'spring', 'summer', 'autumn', 'winter', 'cool', 'Wistia', 'hot', 'gist_heat', 'copper',
+              'twilight', 'hsv', 'ocean', 'gist_earth', 'terrain', 'gnuplot', 'cubehelix', 'brg', 'gist_rainbow', 'jet'
+              ]
 
 
 class ColorMapPickerWidget(QtWidgets.QWidget):
@@ -81,8 +84,8 @@ class ColorMapDialog(QtWidgets.QDialog):
     ''' Dialog for showing colormappicker and ok/cancel buttons '''
     def __init__(self, parent=None, selectedcmap=None):
         super().__init__(parent)
-        self.setGeometry(600, 200, 600, 600)
-        self.setWindowTitle('Data Importer')
+        self.setGeometry(600, 200, 600, 800)
+        self.setWindowTitle('Select Color Map')
 
         self.cpicker = ColorMapPickerWidget(selectedcmap)
         self.bbox = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel)

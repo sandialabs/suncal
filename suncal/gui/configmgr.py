@@ -15,7 +15,7 @@ from . import gui_common
 from . import gui_widgets
 from . import colormap
 from .. import report
-from .. import ureg
+from .. import unitmgr
 
 # List all distributions in scipy.stats!
 DISTS = [d for d in dir(stats) if isinstance(getattr(stats, d), (stats.rv_continuous, stats.rv_discrete))]
@@ -229,21 +229,23 @@ class Settings(object):
         self.settings.setValue('report/latex', value)
 
     def getUnitDefs(self):
-        return self.settings.value('units/definitions', '', type=str)
+        custom = unitmgr.get_customunits()  # Get ones that were loaded from a calc config
+        saved = self.settings.value('units/definitions', '', type=str)  # And ones saved in GUI config
+        for item in custom.splitlines():
+            if item not in saved:
+                saved += ('\n' + item)
+        return saved.strip()
 
     def setUnitDefs(self, value):
         self.settings.setValue('units/definitions', value)
-        self.registerUnits()
+        err = self.registerUnits()
+        return err
 
     def registerUnits(self):
         ''' Register unit definitions with pint UnitRegistry '''
         unitdefs = self.getUnitDefs()
-        if unitdefs:
-            for u in unitdefs.splitlines():
-                try:
-                    ureg.define(u)
-                except ValueError:
-                    pass
+        err = unitmgr.register_units(unitdefs)
+        return err
 
     def setDefaults(self):
         ''' Restore all values to default '''
@@ -710,7 +712,9 @@ class PgSettingsDlg(QtWidgets.QDialog):
         self.settings.setRptMJURL(self.pgRptOpts.mjurl.text())
         self.settings.setRptUnicode(self.pgRptOpts.chkUnicode.isChecked())
 
-        self.settings.setUnitDefs(self.pgUnits.unitdefs.toPlainText())
+        err = self.settings.setUnitDefs(self.pgUnits.unitdefs.toPlainText())
+        if err:
+            QtWidgets.QMessageBox.warning(self, 'Uncertainty Calculator', err)
 
         if self.pgRptOpts.pandoc.text() != report.pandoc_path and os.path.exists(self.pgRptOpts.pandoc.text()):  # Only save if customized and pandoc is there
             self.settings.setPandocPath(self.pgRptOpts.pandoc.text())

@@ -9,10 +9,13 @@ from matplotlib.figure import Figure
 
 from .. import dataset
 from .. import report
+from .. import distributions
 from . import gui_common
 from . import gui_widgets
 from . import page_csvload
+from . import configmgr
 
+settings = configmgr.Settings()
 
 class HistCtrlWidget(QtWidgets.QWidget):
     ''' Controls for Histogram output mode '''
@@ -21,12 +24,20 @@ class HistCtrlWidget(QtWidgets.QWidget):
     def __init__(self, parent=None):
         super().__init__(parent=parent)
         self.colSelect = QtWidgets.QComboBox()
+        self.fit = QtWidgets.QComboBox()
+        dists = settings.getDistributions()
+        dists = ['None'] + [d for d in dists if distributions.fittable(d)]
+        self.fit.addItems(dists)
+
         layout = QtWidgets.QHBoxLayout()
         layout.addWidget(QtWidgets.QLabel('Column:'))
         layout.addWidget(self.colSelect)
         layout.addStretch()
+        layout.addWidget(QtWidgets.QLabel('Distribution Fit:'))
+        layout.addWidget(self.fit)
         self.setLayout(layout)
         self.colSelect.currentIndexChanged.connect(self.changed)
+        self.fit.currentIndexChanged.connect(self.changed)
 
     def update_colnames(self, names):
         self.colSelect.blockSignals(True)
@@ -149,7 +160,6 @@ class DataSetWidget(QtWidgets.QWidget):
         self.menu.addAction(self.actSummary)
         self.menu.addSeparator()
         self.menu.addAction(self.actSaveReport)
-        self.actSaveReport.setEnabled(False)
 
         self.actImportCol.triggered.connect(self.importcolumn)
         self.actImport.triggered.connect(self.importtable)
@@ -300,9 +310,11 @@ class DataSetWidget(QtWidgets.QWidget):
 
         elif mode == 'Histogram':
             col = self.histctrls.colSelect.currentText()
+            fit = self.histctrls.fit.currentText()
+            fit = None if fit == 'None' else fit
             rpt.hdr(col, level=2)
             rpt.append(self.dataset.out.report_column(col))
-            self.dataset.out.plot_histogram(colname=col, plot=self.figure)
+            self.dataset.out.plot_histogram(colname=col, plot=self.figure, fit=fit)
 
         elif mode == 'Correlation':
             rpt.hdr('Correlation Matrix', level=2)
@@ -345,7 +357,6 @@ class DataSetWidget(QtWidgets.QWidget):
         self.table.blockSignals(False)
         self.dataset.colnames = []
         self.dataset.data = np.array([[]])
-        self.actSaveReport.setEnabled(False)
 
     def addcol(self):
         ''' Add a column to the table '''

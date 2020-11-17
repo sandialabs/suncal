@@ -9,7 +9,7 @@ import ast
 import numpy as np
 import sympy
 
-from . import ureg
+from . import unitmgr
 
 
 # List of sympy functions allowed for converting strings to sympy
@@ -42,10 +42,10 @@ _locals['log10'] = lambda x: sympy.log(x, 10)
 def parse_unit(unitstr):
     ''' Parse the unit string and return a Pint unit instance '''
     if unitstr is None or unitstr.lower() == 'none':
-        u = ureg.dimensionless
+        u = unitmgr.dimensionless
     else:
         try:
-            u = ureg.parse_units(unitstr)
+            u = unitmgr.parse_units(unitstr)
         except (ValueError, AttributeError, TypeError):
             raise ValueError('Cannot parse unit {}'.format(unitstr))
     return u
@@ -107,7 +107,7 @@ def _parse_math(expr, fns=_functions, name=None, allowcomplex=False):
     allowed = [ast.Module, ast.Expr, ast.BinOp,
                ast.Name, ast.Num, ast.UnaryOp, ast.Load,
                ast.Add, ast.Mult, ast.Sub, ast.Div, ast.Pow,
-               ast.USub, ast.UAdd
+               ast.USub, ast.UAdd, ast.Constant
                ]
 
     if not isinstance(expr, str):
@@ -185,11 +185,6 @@ def callf(func, vardict=None):
     elif callable(func):
         # Python function. Just call it.  (NOTE: Put this after sympy. A sympy symbol is also callable!)
         y = func(**vardict)
-        if isinstance(y, np.ndarray):
-            # Weird case where func() returned an array with dtype=object. Make sure it's float64.
-            y = y.astype(np.float64)
-        elif (hasattr(y, 'magnitude') and isinstance(y.magnitude, np.ndarray)):
-            y = y.magnitude.astype(np.float64) * y.units
 
     else:
         raise TypeError('Function {} is not callable'.format(func))

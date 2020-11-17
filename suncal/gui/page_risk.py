@@ -1,4 +1,5 @@
 ''' User interface for Risk Analysis '''
+from collections import namedtuple
 import numpy as np
 from PyQt5 import QtWidgets, QtGui, QtCore
 from matplotlib.figure import Figure
@@ -96,6 +97,173 @@ class SimpleRiskWidget(QtWidgets.QWidget):
     def get_gbf(self):
         ''' Get gbf value '''
         return self.gbfactor.value()
+
+
+class SweepWidget(QtWidgets.QGroupBox):
+    ''' Widget with PFA sweep controls '''
+    def __init__(self, parent=None):
+        super().__init__('Sweep Setup', parent=parent)
+        items = ['Sweep (x) variable', 'Step (z) variable', 'Constant']
+        self.itp = QtWidgets.QComboBox()
+        self.tur = QtWidgets.QComboBox()
+        self.gbf = QtWidgets.QComboBox()
+        self.procbias = QtWidgets.QComboBox()
+        self.testbias = QtWidgets.QComboBox()
+        self.itp.addItems(items)
+        self.tur.addItems(items)
+        self.procbias.addItems(items)
+        self.testbias.addItems(items)
+        self.gbf.addItems(items + ['RSS', 'Dobbert', 'RP10', '95% Test'])
+        self.tur.setCurrentIndex(1) # Z
+        self.gbf.setCurrentIndex(2) # Fixed
+        self.procbias.setCurrentIndex(2) # Fixed
+        self.testbias.setCurrentIndex(2) # Fixed
+        self.itpval = gui_widgets.FloatLineEdit('90')
+        self.turval = gui_widgets.FloatLineEdit('4')
+        self.gbfval = gui_widgets.FloatLineEdit('1')
+        self.procbiasval = gui_widgets.FloatLineEdit('0')
+        self.testbiasval = gui_widgets.FloatLineEdit('0')
+
+        self.xstart = gui_widgets.FloatLineEdit('50')
+        self.xstop = gui_widgets.FloatLineEdit('90')
+        self.xpts = gui_widgets.FloatLineEdit('20', low=2)
+        self.zvals = QtWidgets.QLineEdit()
+        self.zvals.setText('1.5, 2, 3, 4')
+        self.itpval.setVisible(False)
+        self.turval.setVisible(False)
+        self.plot3d = QtWidgets.QCheckBox('3D Plot')
+        self.plottype = QtWidgets.QComboBox()
+        self.plottype.addItems(['PFA', 'PFR', 'Both'])
+        self.btnrefresh = QtWidgets.QPushButton('Replot')
+        layout = QtWidgets.QGridLayout()
+        layout.addWidget(QtWidgets.QLabel('In-tol probability %'), 0, 0)
+        layout.addWidget(self.itp, 0, 1)
+        layout.addWidget(self.itpval, 0, 2)
+        layout.addWidget(QtWidgets.QLabel('Test uncertainty ratio'), 1, 0)
+        layout.addWidget(self.tur, 1, 1)
+        layout.addWidget(self.turval, 1, 2)
+        layout.addWidget(QtWidgets.QLabel('Guardband factor'), 2, 0)
+        layout.addWidget(self.gbf, 2, 1)
+        layout.addWidget(self.gbfval, 2, 2)
+        layout.addWidget(QtWidgets.QLabel('Process Bias %'), 3, 0)
+        layout.addWidget(self.procbias, 3, 1)
+        layout.addWidget(self.procbiasval, 3, 2)
+        layout.addWidget(QtWidgets.QLabel('Measurement Bias %'), 4, 0)
+        layout.addWidget(self.testbias, 4, 1)
+        layout.addWidget(self.testbiasval, 4, 2)
+        layout.addWidget(gui_widgets.QHLine(), 5, 0, 1, 3)
+        layout.addWidget(QtWidgets.QLabel('Sweep (x) Start:'), 6, 0)
+        layout.addWidget(self.xstart, 6, 1, 1, 2)
+        layout.addWidget(QtWidgets.QLabel('Sweep (x) Stop:'), 7, 0)
+        layout.addWidget(self.xstop, 7, 1, 1, 2)
+        layout.addWidget(QtWidgets.QLabel('# Points (x):'), 8, 0)
+        layout.addWidget(self.xpts, 8, 1, 1, 2)
+        layout.addWidget(QtWidgets.QLabel('Step Values (z):'), 9, 0)
+        layout.addWidget(self.zvals, 9, 1, 1, 2)
+        layout.addWidget(gui_widgets.QHLine(), 10, 0, 1, 3)
+        layout.addWidget(QtWidgets.QLabel('Plot'), 11, 0)
+        layout.addWidget(self.plottype, 11, 1)
+        layout.addWidget(self.plot3d, 12, 1, 1, 2)
+        layout.addWidget(self.btnrefresh, 13, 1)
+        self.setLayout(layout)
+
+        self.itp.currentIndexChanged.connect(lambda i, x=self.itp: self.cmbchange(x))
+        self.tur.currentIndexChanged.connect(lambda i, x=self.tur: self.cmbchange(x))
+        self.gbf.currentIndexChanged.connect(lambda i, x=self.gbf: self.cmbchange(x))
+        self.procbias.currentIndexChanged.connect(lambda i, x=self.procbias: self.cmbchange(x))
+        self.testbias.currentIndexChanged.connect(lambda i, x=self.testbias: self.cmbchange(x))
+
+    def cmbchange(self, boxchanged):
+        ''' Combobox changed. Ensure only one sweep/step is selected,
+            and enable constant fields
+        '''
+        # Check the box that was just changed first!
+        boxes = [self.itp, self.tur, self.gbf, self.procbias, self.testbias]
+        consts = [self.itpval, self.turval, self.gbfval, self.procbiasval, self.testbiasval]
+        boxidx = boxes.index(boxchanged)
+        boxes.pop(boxidx)
+        c = consts.pop(boxidx)
+        boxes.insert(0, boxchanged)
+        consts.insert(0, c)
+
+        havex = False
+        havez = False
+        for box, const in zip(boxes, consts):
+            if 'Sweep' in box.currentText():
+                if havex:
+                    box.setCurrentIndex(2)  # Already have a sweep, set this to const
+                const.setVisible(havex)  # enabled or visible??
+                havex = True
+            elif 'Step' in box.currentText():
+                if havez:
+                    box.setCurrentIndex(2)
+                const.setVisible(havez)
+                havez = True
+            elif 'Constant' not in box.currentText():
+                const.setVisible(False)
+            else:
+                const.setVisible(True)
+
+    def get_sweepvals(self):
+        # Convert ALL variables into lists the same length.
+        # Some will have all identical values
+        xvals = np.linspace(float(self.xstart.text()), float(self.xstop.text()), num=int(self.xpts.text()))
+        try:
+            zvals = np.array([float(z) for z in self.zvals.text().split(',')])
+        except ValueError:
+            QtWidgets.QMessageBox.warning(self, 'Risk Sweep', 'Step values must be entered as comma-separated list.')
+            return None
+
+        # Defaults if not being swept
+        itpval = float(self.itpval.text()) / 100  # Percent
+        turval = float(self.turval.text())
+        pbias = float(self.procbiasval.text()) / 100
+        tbias = float(self.testbiasval.text()) / 100
+        if self.gbf.currentText() == 'Constant':
+            gbfval = float(self.gbfval.text())
+        else:
+            gbfval = self.gbf.currentText().lower()
+            gbfval = 'test' if 'test' in gbfval else gbfval
+
+        if 'Step' in self.itp.currentText():
+            zvar = 'itp'
+        elif 'Step' in self.tur.currentText():
+            zvar = 'tur'
+        elif 'Step' in self.gbf.currentText():
+            zvar = 'gbf'
+        elif 'Step' in self.procbias.currentText():
+            zvar = 'pbias'
+        elif 'Step' in self.testbias.currentText():
+            zvar = 'tbias'
+        else:
+            zvar = 'none'
+            zvals = [None]  # Need one item to loop
+
+        if 'Sweep' in self.itp.currentText():
+            xvar = 'itp'
+        elif 'Sweep' in self.tur.currentText():
+            xvar = 'tur'
+        elif 'Sweep' in self.gbf.currentText():
+            xvar = 'gbf'
+        elif 'Sweep' in self.procbias.currentText():
+            xvar = 'pbias'
+        elif 'Sweep' in self.testbias.currentText():
+            xvar = 'tbias'
+        else:
+            QtWidgets.QMessageBox.warning(self, 'Risk Sweep', 'Please select a variable to sweep.')
+            return None
+
+        # Convert percent to decimal 0-1
+        if xvar in ['itp', 'tbias', 'pbias']:
+            xvals = xvals / 100
+        if zvar in ['itp', 'tbias', 'pbias']:
+            zvals = zvals / 100
+
+        threed = self.plot3d.isChecked()
+        y = self.plottype.currentText()
+        SweepSetup = namedtuple('SweepSetup', ['x', 'z', 'xvals', 'zvals', 'itp', 'tur', 'gbf',
+                                               'pbias', 'tbias', 'threed', 'y'])
+        return SweepSetup(xvar, zvar, xvals, zvals, itpval, turval, gbfval, pbias, tbias, threed, y)
 
 
 class GuardBandFinderWidget(QtWidgets.QDialog):
@@ -219,16 +387,18 @@ class RiskWidget(QtWidgets.QWidget):
         self.mode = QtWidgets.QComboBox()
         self.mode.addItems(['Simple', 'Full'])
         self.calctype = QtWidgets.QComboBox()
-        self.calctype.addItems(['Integral', 'Monte Carlo', 'Guardband sweep', 'Probability of Conformance'])
+        self.calctype.addItems(['Integral', 'Monte Carlo', 'Guardband sweep', 'Probability of Conformance', 'Risk Curves'])
 
         self.simple = SimpleRiskWidget()
         self.limits = DoubleLineEdit(-2, 2, 'Lower Specification Limit:', 'Upper Specification Limit:')
+        self.sweepsetup = SweepWidget()
         self.chkProc = QtWidgets.QCheckBox('Process Distribution:')
         self.chkTest = QtWidgets.QCheckBox('Test Measurement:')
         self.guardband = DoubleLineEdit(0, 0, 'Lower Guardband (relative):', 'Upper Guardband (relative):')
         self.chkGB = QtWidgets.QCheckBox('Guardband')
 
         self.limits.setVisible(False)
+        self.sweepsetup.setVisible(False)
         self.chkProc.setVisible(False)
         self.chkTest.setVisible(False)
         self.guardband.setVisible(False)
@@ -310,6 +480,7 @@ class RiskWidget(QtWidgets.QWidget):
         vlayout.addWidget(self.dtest_table)
         vlayout.addWidget(self.chkGB)
         vlayout.addWidget(self.guardband)
+        vlayout.addWidget(self.sweepsetup)
         vlayout.addWidget(QtWidgets.QLabel('Notes:'))
         vlayout.addWidget(self.txtNotes)
         rlayout = QtWidgets.QVBoxLayout()
@@ -321,16 +492,17 @@ class RiskWidget(QtWidgets.QWidget):
         self.setLayout(layout)
 
         self.mode.currentIndexChanged.connect(self.changemode)
-        self.simple.editingFinished.connect(self.replot_and_update)
+        self.simple.editingFinished.connect(self.entry_changed)
         self.chkTest.stateChanged.connect(self.testprocclick)
         self.chkProc.stateChanged.connect(self.testprocclick)
         self.chkGB.stateChanged.connect(self.gbclick)
-        self.dproc_table.changed.connect(self.replot_and_update)
-        self.dtest_table.changed.connect(self.replot_and_update)
-        self.limits.editingFinished.connect(self.replot_and_update)
-        self.guardband.editingFinished.connect(self.replot_and_update)
+        self.dproc_table.changed.connect(self.entry_changed)
+        self.dtest_table.changed.connect(self.entry_changed)
+        self.limits.editingFinished.connect(self.entry_changed)
+        self.guardband.editingFinished.connect(self.entry_changed)
         self.txtNotes.textChanged.connect(self.update_description)
         self.calctype.currentIndexChanged.connect(self.changecalc)
+        self.sweepsetup.btnrefresh.clicked.connect(self.replot_and_update)
 
         self.menu = QtWidgets.QMenu('Risk')
         self.actImportDist = QtWidgets.QAction('Import distribution...', self)
@@ -375,7 +547,7 @@ class RiskWidget(QtWidgets.QWidget):
         self.dtest_table.blockSignals(block)
         self.mode.blockSignals(block)
 
-    def changemode(self, replot=True):
+    def changemode(self, idx=0, replot=True):
         ''' Mode changed (simple to full) '''
         self.block(True)
         simple = self.mode.currentText() == 'Simple'
@@ -388,6 +560,10 @@ class RiskWidget(QtWidgets.QWidget):
             self.chkTest.setChecked(True)
             self.chkProc.setEnabled(True)
             self.chkTest.setEnabled(True)
+            self.dproc_table.set_disttype(self.urisk.get_procdist_args())
+            self.dtest_table.set_disttype(self.urisk.get_testdist_args())
+            self.dproc_table.valuechanged()
+            self.dtest_table.valuechanged()
 
         elif not simple and self.urisk.is_simple():
             self.limits.setValue(*[np.round(x, 3) for x in self.urisk.get_speclimits()])
@@ -407,38 +583,65 @@ class RiskWidget(QtWidgets.QWidget):
         self.guardband.setVisible(not simple)
         self.block(False)
         if replot:
+            self.initplot()
             self.replot_and_update()
 
     def changecalc(self):
         ''' Change calculation mode (integration vs monte carlo vs gbsweep) '''
         self.block(True)
+        simple = self.mode.currentText() == 'Simple'
         if self.calctype.currentText() == 'Monte Carlo':
+            self.mode.setEnabled(True)
             self.chkProc.setChecked(True)
             self.chkTest.setChecked(True)
             self.chkProc.setEnabled(False)
             self.chkTest.setEnabled(False)
             self.guardband.setEnabled(True)
             self.chkGB.setEnabled(True)
+            self.simple.setVisible(simple)
             self.simple.gbfactor.setEnabled(True)
             self.simple.measured.setVisible(False)
+            self.sweepsetup.setVisible(False)
         elif self.calctype.currentText() == 'Guardband sweep':
+            self.mode.setEnabled(True)
             self.chkTest.setEnabled(True)
             self.chkProc.setEnabled(True)
             self.guardband.setEnabled(False)
             self.chkGB.setEnabled(False)
+            self.simple.setVisible(simple)
             self.simple.gbfactor.setEnabled(False)
             self.simple.measured.setVisible(False)
+            self.sweepsetup.setVisible(False)
+        elif self.calctype.currentText() == 'Risk Curves':
+            self.mode.setEnabled(False)
+            self.mode.setCurrentIndex(0)
+            self.changemode(replot=False)
+            self.chkTest.setEnabled(True)
+            self.chkProc.setEnabled(True)
+            self.guardband.setEnabled(True)
+            self.chkGB.setEnabled(False)
+            self.simple.setVisible(False)
+            self.sweepsetup.setVisible(True)
         else:
+            self.mode.setEnabled(True)
             self.chkTest.setEnabled(True)
             self.chkProc.setEnabled(True)
             self.guardband.setEnabled(True)
             self.chkGB.setEnabled(True)
+            self.simple.setVisible(simple)
             self.simple.gbfactor.setEnabled(True)
             self.simple.measured.setVisible(True)
+            self.sweepsetup.setVisible(False)
             self.testprocclick()
         self.block(False)
         self.initplot()
         self.replot_and_update()
+
+    def entry_changed(self):
+        ''' An entry changed. Trigger replot except in curves mode '''
+        if self.calctype.currentText() != 'Risk Curves':
+            self.replot_and_update()
+        # Curves mode triggers replot_and_update directly with button
 
     def replot_and_update(self):
         ''' Replot and update the text fields '''
@@ -469,6 +672,8 @@ class RiskWidget(QtWidgets.QWidget):
             self.replot_gbsweep()
         elif self.calctype.currentText() == 'Probability of Conformance':
             self.replot_probconform()
+        elif self.calctype.currentText() == 'Risk Curves':
+            self.replot_sweep()
         else:
             self.update_range()
             self.replot()
@@ -480,7 +685,7 @@ class RiskWidget(QtWidgets.QWidget):
         self.fig.clf()
         self.axes = []  # List of axes (1, 2, or 3)
         self.plotlines = {}
-        if self.calctype.currentText() in ['Monte Carlo', 'Guardband sweep']:
+        if self.calctype.currentText() in ['Monte Carlo', 'Guardband sweep', 'Risk Curves']:
             pass
 
         else:
@@ -508,13 +713,15 @@ class RiskWidget(QtWidgets.QWidget):
                 self.plotlines['testdist'], = ax.plot(0, 0, color='C1', label='Test Distribution')
                 self.plotlines['testmed'] = ax.axvline(0, ls='--', color='lightgray', lw=1)
                 self.plotlines['testexpected'] = ax.axvline(0, ls='--', color='C1')
-                if self.chkProc.isChecked():
-                    self.plotlines['product'], = ax.plot(0, 0, color='C4', label='Combined Distribution')
                 self.plotlines['LL2'] = ax.axvline(LL, ls='--', color='C2', label='Specification Limits')
                 self.plotlines['UL2'] = ax.axvline(UL, ls='--', color='C2')
                 if self.chkGB.isChecked():
                     self.plotlines['GBL'] = ax.axvline(LL + GBL, ls='-.', color='C3', label='Guardband Limit')
                     self.plotlines['GBU'] = ax.axvline(UL - GBU, ls='-.', color='C3')
+                else:
+                    # Make invisible plot lines to edit later
+                    self.plotlines['GBL'] = ax.axvline(np.nan, ls='-.', color='C3', label='Guardband Limit')
+                    self.plotlines['GBU'] = ax.axvline(np.nan, ls='-.', color='C3')
                 ax.set_ylabel('Probability Density')
                 ax.set_xlabel('Value')
                 ax.legend(loc='upper left')
@@ -544,7 +751,7 @@ class RiskWidget(QtWidgets.QWidget):
             self.plotlines['LL'].set_xdata([LLplot, LLplot])
             self.plotlines['UL'].set_xdata([ULplot, ULplot])
             if self.mode.currentText() == 'Simple':
-                self.axes[plotnum].xaxis.set_major_formatter(FormatStrFormatter(r'%dSL'))
+                self.axes[plotnum].xaxis.set_major_formatter(FormatStrFormatter(r'%.1fSL'))
             else:
                 self.axes[plotnum].xaxis.set_major_formatter(ScalarFormatter())
             plotnum += 1
@@ -559,7 +766,7 @@ class RiskWidget(QtWidgets.QWidget):
             self.plotlines['LL2'].set_xdata([LLplot, LLplot])
             self.plotlines['UL2'].set_xdata([ULplot, ULplot])
             if self.mode.currentText() == 'Simple':
-                self.axes[plotnum].xaxis.set_major_formatter(FormatStrFormatter(r'%dSL'))
+                self.axes[plotnum].xaxis.set_major_formatter(FormatStrFormatter(r'%.1fSL'))
             else:
                 self.axes[plotnum].xaxis.set_major_formatter(ScalarFormatter())
 
@@ -571,9 +778,6 @@ class RiskWidget(QtWidgets.QWidget):
             if self.chkGB.isChecked():
                 self.plotlines['GBL'].set_xdata([LL+GBL, LL+GBL])
                 self.plotlines['GBU'].set_xdata([UL-GBU, UL-GBU])
-
-            if self.chkProc.isChecked():
-                self.plotlines['product'].set_data(x, ytest*yproc)
 
         [ax.relim() for ax in self.axes]
         [ax.autoscale_view(True, True, True) for ax in self.axes]
@@ -605,6 +809,19 @@ class RiskWidget(QtWidgets.QWidget):
         self.canvas.draw_idle()
         self.txtOutput.setReport(rpt)
 
+    def replot_sweep(self):
+        ''' Plot generic PFA(R) sweep '''
+        setup = self.sweepsetup.get_sweepvals()
+        if setup is None: return  # No sweep variable
+        self.urisk.set_itp(setup.itp)  # Store defaults
+        self.urisk.set_tur(setup.tur)
+        rpt = self.urisk.out.report_sweep(plot=self.fig, xvar=setup.x, zvar=setup.z, xvals=setup.xvals,
+                                          zvals=setup.zvals, yvar=setup.y, threed=setup.threed,
+                                          gbf=setup.gbf, tbias=setup.tbias, pbias=setup.pbias)
+        self.fig.tight_layout()
+        self.canvas.draw_idle()
+        self.txtOutput.setReport(rpt)
+
     def testprocclick(self):
         ''' Test Measurement or Process Distribution checkbox was clicked '''
         self.dtest_table.setEnabled(self.chkTest.isChecked())
@@ -628,13 +845,13 @@ class RiskWidget(QtWidgets.QWidget):
         self.chkGB.setEnabled(self.chkTest.isChecked())
         self.guardband.setEnabled(self.chkTest.isChecked() and self.chkGB.isChecked())
         self.initplot()
-        self.replot_and_update()
+        self.entry_changed()
 
     def gbclick(self):
         ''' Guardband checkbox was clicked '''
         self.guardband.setEnabled(self.chkGB.isChecked())
         self.initplot()
-        self.replot_and_update()
+        self.entry_changed()
 
     def get_range(self):
         ''' Returns lower, upper limit to plot range '''
@@ -642,10 +859,15 @@ class RiskWidget(QtWidgets.QWidget):
         LL, UL = min(LL, UL), max(LL, UL)
         LL = np.nan if not np.isfinite(LL) else LL
         UL = np.nan if not np.isfinite(UL) else UL
-        procmean = self.dproc_table.statsdist.mean()
-        procstd = self.dproc_table.statsdist.std()
-        LL = np.nanmin([LL, procmean-procstd*4])
-        UL = np.nanmax([UL, procmean+procstd*4])
+        procmean = procstd = testmean = teststd = np.nan
+        if self.chkProc.isChecked():
+            procmean = self.dproc_table.statsdist.mean()
+            procstd = self.dproc_table.statsdist.std()
+        if self.chkTest.isChecked():
+            testmean = self.dtest_table.statsdist.mean()
+            teststd = self.dtest_table.statsdist.std()
+        LL = np.nanmin([LL, procmean-procstd*4, testmean-teststd*4])
+        UL = np.nanmax([UL, procmean+procstd*4, testmean+teststd*4])
         return LL, UL
 
     def update_range(self):
@@ -707,7 +929,7 @@ class RiskWidget(QtWidgets.QWidget):
         ok = dlg.exec()
         if ok:
             self.urisk.set_costs(*dlg.getCost())
-        self.replot_and_update()
+        self.entry_changed()
 
     def get_report(self):
         ''' Get full report of curve fit, using page settings '''
@@ -746,4 +968,4 @@ class RiskWidget(QtWidgets.QWidget):
                 self.dtest_table.valuechanged()
                 self.chkTest.setChecked(True)
             self.block(False)
-            self.replot_and_update()
+            self.entry_changed()

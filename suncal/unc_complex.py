@@ -1,55 +1,130 @@
 ''' Uncertainty Calculator wrapper for processing complex numbers. '''
+import inspect
+from collections import namedtuple
 import sympy
 import numpy as np
 import matplotlib.pyplot as plt
 
 from . import output
+from . import out_uncert
 from . import uparser
 from . import uncertainty
 from . import report
 
+ValueRI = namedtuple('ValueRI', ['real', 'imag', 'ureal', 'uimag', 'correlation', 'units'])
+ValueMA = namedtuple('ValueMA', ['mag', 'rad', 'umag', 'urad', 'correlation', 'units'])
+ValueMAdeg = namedtuple('ValueMAdeg', ['mag', 'deg', 'umag', 'udeg', 'correlation', 'units'])
 
-def _expr_to_complex(expr):
-    ''' Convert the expression into real and imaginary parts
 
-        Each variable is replaced with real and imaginary components:
-            a -> a_r + I * a_i
-        Then the expression is simplified and split into real and imaginary
-        components, returning f_re, f_im sympy expressions.
+def _wrap_callable(func, informats=None, innames=None, outnames=None, outfmt='RI'):
+    ''' Wrap callable function by splitting out real/imaginary components
+        of each input and output
 
         Parameters
         ----------
-        expr: string
-            String expression to parse
-
-        Returns
-        -------
-        f_re, f_im: sympy expressions of real and imaginary components
+        func: callalbe
+            Function to wrap
+        informats: dict
+            Dictionary of {'argument': 'RI, 'MA', 'MAdeg'} specifying whether each
+            input is in real/imaginary or magnitude/angle format
+        innames: list
+            List of arguments to func
+        outnames: list
+            List of return values from func. Can be determined automatically if
+            return is a namedtuple
+        outfmt: string
+            Desired format for output quantity: 'RI' or 'MA'
     '''
-    expr = uparser.parse_math(expr, allowcomplex=True)
+    funcname = func.__name__
 
-    var = list(expr.free_symbols)
-    comps = [sympy.Symbol('{}_r'.format(v), real=True) for v in var]
-    comps += [sympy.Symbol('{}_i'.format(v), real=True) for v in var]
+    if informats is None:
+        informats = {}
 
-    subdict = {}
-    for v in var:
-        subdict[v] = sympy.Symbol('{}_r'.format(v), real=True) + sympy.I * sympy.Symbol('{}_i'.format(v), real=True)
-    expr_real, expr_imag = expr.subs(subdict).as_real_imag()
-    return expr_real, expr_imag
+    if innames is None:
+        innames = list(inspect.signature(func).parameters.keys())  # Complex argument names (a, b, etc.)
+    kwnames = []   # Split argument names (a_real, a_imag, b_mag, b_deg, etc.)
+    for name in innames:
+        fmt = informats.get(name, 'RI')
+        if fmt == 'MA':
+            kwnames.extend([f'{name}_mag', f'{name}_rad'])
+        elif fmt == 'MAdeg':
+            kwnames.extend([f'{name}_mag', f'{name}_deg'])
+        else:
+            kwnames.extend([f'{name}_real', f'{name}_imag'])
+
+    if outnames is None:
+        try:  # Make a test call to see return type
+            kargs = {k: np.random.random() for k in innames}
+            out = func(**kargs)
+        except (ValueError, TypeError, IndexError, NameError):
+            raise ValueError('Cannot determine output structure of callable function. Please specify foutnames parameter.')
+
+        try:
+            noutputs = len(out)
+            if hasattr(out, '_fields'):  # Namedtuple
+                outnames = out._fields
+            else:
+                outnames = ['{}_{}'.format(funcname, str(i+1)) for i in range(noutputs)]
+        except TypeError:
+            noutputs = 1
+            outnames = [funcname]
+
+    outcomps = []
+    for i, name in enumerate(outnames):
+        if outfmt == 'MA':
+            outcomps.extend([f'{name}_mag', f'{name}_rad'])
+        else:
+            outcomps.extend([f'{name}_real', f'{name}_imag'])
+
+    def wrapfunc(**kwargs):
+        ''' The wrapped function, to be called by UncertCalc '''
+        fargs = {}
+        for name in innames:
+            # Convert kwargs into complex numbers
+            fmt = informats.get(name, 'RI')
+            if fmt == 'MA':
+                mag = kwargs[f'{name}_mag']
+                rad = kwargs[f'{name}_rad']
+                fargs[name] = mag * np.cos(rad) + 1j * mag * np.sin(rad)
+            elif fmt == 'MAdeg':
+                mag = kwargs[f'{name}_mag']
+                rad = np.pi / 180 * kwargs[f'{name}_deg']  # Note: np.deg2rad does weird things to Pint Quantities here
+                fargs[name] = mag * np.cos(rad) + 1j * mag * np.sin(rad)
+            else:
+                fargs[name] = kwargs[f'{name}_real'] + 1j * kwargs[f'{name}_imag']
+        ret = func(**fargs)
+
+        outvals = []
+        for i, name in enumerate(outnames):
+            if noutputs == 1:
+                retval = ret
+            else:
+                retval = ret[i]
+            if outfmt == 'MA':
+                # note: np.angle() doesn't preserve units. np.arctan2 returns Quantity(radians)
+                outvals.extend([abs(retval), np.arctan2(retval.imag, retval.real)])
+            else:
+                outvals.extend([retval.real, retval.imag])
+
+        outtuple = namedtuple('CplxOut', outcomps)
+        result = outtuple(*outvals)
+        return result
+
+    return kwnames, outcomps, wrapfunc
 
 
 class UncertComplex(object):
-    ''' Wrap UncertCalc by first splitting each the function and inputs into
-        real and imaginary components.
+    ''' Uncertainty calculation with complex numbers. Wraps UncertCalc class
+        by splitting input and output values into their real/imaginary, or
+        magnitude/phase components.
 
         Parameters
         ----------
         funcs: string or list of strings
             Function expressions to calculate.
-        magphase: bool or list of bool
+        magphase: bool
             Show results in magnitude/phase format
-        degrees: bool or list of bool
+        degrees: bool
             Show magphase format in degrees instead of radians
         samples: int
             Number of Monte Carlo samples to run
@@ -58,12 +133,6 @@ class UncertComplex(object):
         if not isinstance(funcs, list) and not isinstance(funcs, tuple):
             funcs = [funcs]
 
-        if not isinstance(magphase, list) and not isinstance(magphase, tuple):
-            magphase = [magphase] * len(funcs)
-
-        if not isinstance(magphase, list) and not isinstance(magphase, tuple):
-            degrees = [degrees] * len(funcs)
-
         self.functions = funcs
         self.magphase = magphase
         self.degrees = degrees
@@ -71,7 +140,7 @@ class UncertComplex(object):
         self.inputs = {}
         self.corrs = []
 
-    def set_input(self, name, nom, unc, k=2, corr=None):
+    def set_input(self, name, nom, unc=0, k=2, corr=None, units=None):
         ''' Set the input value and uncertainty, measured in real and imaginary components.
 
             Parameters
@@ -81,20 +150,19 @@ class UncertComplex(object):
             nom: complex
                 Nominal/measured value of input, as complex type
             unc: complex
-                Uncertainty of input. Assumes normal distribution.
+                Uncertainty of input. Assumes normal distribution for both components.
             k: float
-                Coverage factor of entered uncertainty. k=2 specifies ~95% coverage probability.
+                Coverage factor of entered uncertainty
             corr: float
                 Correlation between real and imaginary components of uncertainty.
                 Must be between 0 and 1.
         '''
         # TODO: allow arbitrary distributions. Currently assumes normal
-        self.inputs['{}_r'.format(name)] = (np.real(nom), np.real(unc)/k)
-        self.inputs['{}_i'.format(name)] = (np.imag(nom), np.imag(unc)/k)
+        self.inputs[name] = ValueRI(nom.real, nom.imag, unc.real/k, unc.imag/k, corr, units)
         if corr is not None:
-            self.corrs.append(('{}_r'.format(name), '{}_i'.format(name), corr))
+            self.corrs.append((f'{name}_real', f'{name}_imag', corr))
 
-    def set_input_magph(self, name, mag, phase, u_mag, u_phase, k=2, degrees=True, corr=None):
+    def set_input_magph(self, name, mag, phase, u_mag, u_phase, k=2, degrees=True, corr=None, units=None):
         ''' Set the input value and uncertainty, measured as a magnitude and phase.
 
             Parameters
@@ -111,139 +179,489 @@ class UncertComplex(object):
             u_phase: float
                 Uncertainty of phase
             k: float
-                Coverage factor of entered uncertainty. k=2 specifies ~95% coverage probability.
+                Coverage factor of entered uncertainty.
             degrees: bool
                 Whether the phase and u_phase parameters are entered in degrees
             corr: float
                 Correlation between magnitude and phase components of uncertainty.
                 Must be between 0 and 1.
         '''
-        self.inputs['{}_m'.format(name)] = (mag, u_mag/k)
         if degrees:
-            u_phase = np.deg2rad(u_phase)
-        self.inputs['{}_p'.format(name)] = (phase, u_phase/k)
+            self.inputs[name] = ValueMAdeg(mag, phase, u_mag/k, u_phase/k, corr, units)
+        else:
+            self.inputs[name] = ValueMA(mag, phase, u_mag/k, u_phase/k, corr, units)
+
         if corr is not None:
-            self.corrs.append(('{}_m'.format(name), '{}_p'.format(name), corr))
+            if degrees:
+                self.corrs.append((f'{name}_mag', f'{name}_deg', corr))
+            else:
+                self.corrs.append((f'{name}_mag', f'{name}_rad', corr))
 
-    def build_ucalc(self):
+    def _build_ucalc(self):
         ''' Set up UncertCalc object from the input definitions '''
-        self.ucalc = uncertainty.UncertCalc(samples=self.samples)
 
-        # Split each function into real and imaginary functions
-        fnames = []
-        for i, func in enumerate(self.functions):
-            if '=' in func:
-                fname, func = func.split('=')
-                fname = fname.strip()
-                fnames.append('{}_r'.format(fname))
-                fnames.append('{}_i'.format(fname))
-            else:
-                fnames.append('f{}_r'.format(i))
-                fnames.append('f{}_i'.format(i))
+        # Decide what format (RI or MA) each input is defined as
+        informats = {}
+        for inpt, val in self.inputs.items():
+            informats[inpt] = 'MA' if hasattr(val, 'rad') else 'MAdeg' if hasattr(val, 'deg') else 'RI'
 
-        for i, func in enumerate(self.functions):
-            if '=' in func:
-                fname, func = func.split('=')
-                fname = fname.strip()
-            else:
-                fname = 'f_{}'.format(i)
+        if callable(self.functions[0]):
+            # Callables, use _wrap_callable to make a new function
+            outfmt = 'MA' if self.magphase else 'RI'
+            innames, outnames, func = _wrap_callable(self.functions[0], informats=informats, outfmt=outfmt)
+            self.ucalc = uncertainty.UncertCalc(func, finnames=innames, foutnames=outnames)
+        else:
+            # Sympy expressions, substitute real/imaginary variables and split the output
+            self.ucalc = uncertainty.UncertCalc(samples=self.samples)
 
-            # Substitute variables as a -> (a_r+b_i*I)
-            f_re, f_im = _expr_to_complex(func.strip())
+            # Split out equal signs in equations
+            fnames = []
+            funcs = []
+            for i, func in enumerate(self.functions):
+                if '=' in func:
+                    fname, func = func.split('=')
+                    fnames.append(fname.strip())
+                    funcs.append(func.strip())
+                else:
+                    fnames.append(f'f{i}')
+                    funcs.append(func.strip())
 
-            # Remove components that are 0 to simplify
-            zeros = {v: 0 for v in list((f_re+f_im).free_symbols) if self.inputs.get(str(v)) == (0, 0)}
-            f_re = f_re.subs(zeros)
-            f_im = f_im.subs(zeros)
+            # Convert strings to sympy expressions
+            funcs = [uparser.parse_math(expr, allowcomplex=True) for expr in funcs]
 
-            # Set up the calculator
-            self.ucalc.set_function(str(f_re), name='{}_r'.format(fname))
-            self.ucalc.set_function(str(f_im), name='{}_i'.format(fname))
+            # Substitute inputs a -> a_real, a_imag
+            for inpt, fmt in informats.items():
+                for i, func in enumerate(funcs):
+                    if fmt == 'MA':
+                        mag = sympy.Symbol(f'{inpt}_mag', real=True)
+                        rad = sympy.Symbol(f'{inpt}_rad', real=True)
+                        funcs[i] = func.subs({inpt: mag * sympy.cos(rad) + sympy.I * mag * sympy.sin(rad)})
+                    else: # fmt == 'RI':
+                        funcs[i] = func.subs({inpt: sympy.Symbol(f'{inpt}_real', real=True) + sympy.I * sympy.Symbol(f'{inpt}_imag', real=True)})
 
-            if self.magphase:
-                if ((isinstance(self.magphase, list) or isinstance(self.magphase, tuple)) and not self.magphase[i]):
-                    continue
+            # Split each function into real/imag (or mag/phase)
+            splitnames = []
+            splitfuncs = []
+            for func, fname in zip(funcs, fnames):
+                f_real, f_imag = func.as_real_imag()
+                f_real = f_real.simplify()
+                f_imag = f_imag.simplify()
 
-                f_mag = sympy.sqrt(f_re**2 + f_im**2)
-                self.ucalc.set_function(str(f_mag), name='{}_m'.format(fname))
-                f_ph = sympy.atan2(f_im, f_re)  # Radians
+                # The above as_real_imag() must have the symbols defined with real=True to avoid
+                # having an expression with re(x) and im(x) in it. But with real=True, any case of
+                # sqrt(x**2) is simplified into Abs(x), which breaks the Derivatives later on.
+                # These two lines are a stupid way to convert the expressions to standard symbols
+                # (without real=True) so that sqrt(x**2) remains sqrt(x**2) which is differentiable.
+                f_real = sympy.sympify(str(f_real))
+                f_imag = sympy.sympify(str(f_imag))
 
-                if self.degrees:
-                    f_ph = sympy.deg(f_ph)
+                if self.magphase:
+                    f_mag = sympy.sqrt(f_real**2 + f_imag**2)
+                    f_ph = sympy.atan2(f_imag, f_real)
+                    splitnames.extend([f'{fname}_mag', f'{fname}_rad'])
+                    splitfuncs.extend([f_mag, f_ph])
+                else:
+                    splitfuncs.extend([f_real, f_imag])
+                    splitnames.extend([f'{fname}_real', f'{fname}_imag'])
 
-                self.ucalc.set_function(str(f_ph), name='{}_p'.format(fname))
+            # Simplify the expressions and add to calc
+            for func, name in zip(splitfuncs, splitnames):
+                func = func.simplify()
+                self.ucalc.set_function(str(func), name=name)
 
         for inpt, val in self.inputs.items():
-            if val != (0, 0):
-                if inpt.endswith('m') or inpt.endswith('p'):
-                    basename = inpt.split('_')[0]
-                    self.ucalc.set_function('{}_m * cos({}_p)'.format(basename, basename), name='{}_r'.format(basename))
-                    self.ucalc.set_function('{}_m * sin({}_p)'.format(basename, basename), name='{}_i'.format(basename))
-                self.ucalc.set_input(inpt, nom=val[0], std=val[1])
+            # Keep angular units as dimensionless so Uy doesn't end up with degrees
+            # (which is also dimensionless) in the output
+            if hasattr(val, 'deg'):
+                self.ucalc.set_input(f'{inpt}_mag', val.mag, std=val.umag, units=val.units)
+                self.ucalc.set_input(f'{inpt}_deg', val.deg, std=val.udeg, units='dimensionless')
+            elif hasattr(val, 'rad'):
+                self.ucalc.set_input(f'{inpt}_mag', val.mag, std=val.umag, units=val.units)
+                self.ucalc.set_input(f'{inpt}_rad', val.rad, std=val.urad, units='dimensionless')
+            else:
+                self.ucalc.set_input(f'{inpt}_real', val.real, std=val.ureal, units=val.units)
+                self.ucalc.set_input(f'{inpt}_imag', val.imag, std=val.uimag, units=val.units)
 
         for var1, var2, corr in self.corrs:
             self.ucalc.correlate_vars(var1, var2, corr)
 
     def calculate(self):
         ''' Run the calculation '''
-        self.build_ucalc()
-        self.ucalc_out = self.ucalc.calculate()  # Full calc output, with f_r and f_i functions
+        self._build_ucalc()
+        self.ucalc_out = self.ucalc.calculate()  # Full calc output, with f_real and f_imag functions
         self.out = CplxCalcOutput(self.ucalc_out, self.magphase, self.degrees)
         return self.out
 
 
-class CplxCalcOutput(output.Output):
-    ''' Like output.FuncOutput, but combine f_r and f_i into a single table. '''
-    def __init__(self, fullout, magphase=False, degrees=True):
-        self.fullout = fullout
+class GUMOutputCplx(output.Output):
+    ''' Output of a Complex GUM calculation
+
+        Parameters
+        ----------
+        fullgum: out_uncert.GUMOutput
+            Output object of full GUM calculation (split into real/imag components)
+        magphase: bool
+            Results were calculated in magnitude/phase format
+        degrees: bool
+            Phases were calculated in degrees
+    '''
+    def __init__(self, fullgum, magphase=False, degrees=True):
+        self.full = fullgum
         self.magphase = magphase
         self.degrees = degrees
+        self.names = [f.rsplit('_')[0] for f in self.full.names[::2]]
+        self.nouts = len(self.names)
+
+    def _index(self, fname):
+        ''' Get index if function name '''
+        if fname is None:
+            return 0
+        else:
+            return self.names.index(fname) if isinstance(fname, str) else fname
+
+    def _basenames(self, fname=None):
+        ''' Get base names into self.full for both components '''
+        fidx = self._index(fname)
+        fname = self.names[fidx]
+        if self.magphase:
+            mag = f'{fname}_mag'
+            ph = f'{fname}_rad'
+            return mag, ph
+        else:
+            real = f'{fname}_real'
+            imag = f'{fname}_imag'
+            return real, imag
+
+    def nom(self, fname=None):
+        ''' Return nominal value as tuple of (real, imag) or (mag, phase) '''
+        x, y = self._basenames(fname)
+        return self.full.nom(x), self.full.nom(y)
+
+    def uncert(self, fname=None):
+        ''' Return uncertainty as tuple of (real, imag) or (mag, phase) '''
+        x, y = self._basenames(fname)
+        return self.full.uncert(x), self.full.uncert(y)
+
+    def degf(self, fname=None):
+        ''' Get degrees of freedom for the function '''
+        x, y = self._basenames(fname)
+        return self.full.degf(x)
+
+    def report(self, **kwargs):
+        ''' Generate report of complex values and uncertainties '''
+        hdr = ['Function', 'Nominal', 'Std. Uncertainty', 'Correlation']
+        deg = '°' if self.degrees else ' rad'
+        rows = []
+        for i, fname in enumerate(self.names):
+            cor = self.correlation(i)
+            if self.magphase:
+                mag, ph = self.nom(i)
+                umag, uph = self.uncert(i)
+                if self.degrees:
+                    ph, uph = np.rad2deg(ph), np.rad2deg(uph)
+                mag, ph, umag, uph = mag.magnitude, ph.magnitude, umag.magnitude, uph.magnitude
+                rows.append([fname,
+                             '{} ∠{}{}'.format(report.Number(mag, matchto=umag), report.Number(ph, matchto=uph), deg),
+                             '± {} ∠{}{}'.format(report.Number(umag), report.Number(uph), deg),
+                             '{:.4f}'.format(cor)])
+            else:
+                real, imag = self.nom(i)
+                ureal, uimag = self.uncert(i)
+                rows.append([fname,
+                             '{}'.format(report.Number(real + 1j*imag, matchto=ureal)),
+                             '± {}'.format(report.Number(ureal + 1j*uimag)),
+                             '{:.4f}'.format(cor)])
+
+        r = report.Report(**kwargs)
+        r.table(rows, hdr=hdr)
+        return r
+
+    def plot(self, fidx=0, ax=None, polar=True, **kwargs):
+        ''' Plot the uncertainty region on polar or rectangular axis
+
+            Parameters
+            ----------
+            fidx: int or string
+                Function index or name
+            ax: matplotlib axis
+                Axis to plot on
+            polar: bool
+                Show plot in polar format
+
+            Keyword Arguments
+            -----------------
+            contour: bool
+                Draw uncertainty region with contour lines
+            cmap: string
+                Name of Matplotlib colormap for contour lines
+            color: string
+                Name of color for shaded region (when contour = False)
+        '''
+        contour = kwargs.get('contour', True)  # Contour lines vs fill
+        cmap = kwargs.get('cmap', 'hot')
+        color = kwargs.get('color', 'C3')
+
+        fidx = self._index(fidx)
+        fname = self.names[fidx]
+
+        if ax is None:
+            fig = plt.gcf()
+            ax = fig.add_subplot(111, polar=polar)
+
+        xname, yname = self._basenames(fidx)
+
+        if contour:
+            # Draw contoured uncert region
+            fidx = fidx*2
+            x, y, p = out_uncert._contour(self.full._nom, self.full.Uy, fidx, fidx+1)
+            xunc, yunc = 0, 0
+        else:
+            x, y = self.nom(fidx)
+            xunc, yunc, k = self.expanded(fidx)
+            xunc, yunc = xunc.magnitude, yunc.magnitude
+            x, y = x.magnitude, y.magnitude
+
+        # Convert internal RI or MA into whatever's needed for plot
+        if not self.magphase:
+            # xy are RI
+            if polar:
+                # Polar plots theta first
+                y, x = np.sqrt(x**2 + y**2), np.arctan2(y, x)
+                yunc, xunc = np.sqrt(xunc**2 + yunc**2), np.arctan2(yunc, xunc)
+        else:
+            # xy are MA
+            if not polar:
+                x, y = x * np.cos(y), x * np.sin(y)
+                xunc, yunc = xunc * np.cos(yunc), xunc * np.sin(yunc)
+            else:
+                x, y = y, x
+                xunc, yunc = yunc, xunc
+
+        # Plot it
+        if contour:
+            ax.contour(x, y, p, 10, cmap=cmap)
+        else:
+            # Shade 95% region (without considering correlation)
+            ax.plot(x, y, marker='x', color=color)
+            xx = np.linspace(x-xunc, x+xunc)
+            ax.fill_between(xx, y1=np.full(len(xx), y-yunc), y2=np.full(len(xx), y+yunc), color=color, alpha=.2)
+
+        if not polar:
+            ax.set_xlabel(f'Re({fname})')
+            ax.set_ylabel(f'Im({fname})')
+
+    def correlation(self, fname=None):
+        ''' Get correlation between real/imaginary (or magnitude/phase) components '''
+        fidx = self._index(fname)
+        idx1 = fidx * 2
+        idx2 = idx1 + 1
+        return self.full.correlation(idx1, idx2)
+
+    def expanded(self, fname=None, cov=0.95, **kwargs):
+        ''' Get expanded uncertainty of the function result
+
+            Parameters
+            ----------
+            fname: string or int
+                Function name or index
+            cov: float
+                Confidence level, 0-1 range
+
+            Returns
+            -------
+            x, y: float
+                Expanded uncertainties for real/imaginary, or magnitude/phase values
+            k: float
+                K-value required to reach the level of confidence
+        '''
+        x, y = self._basenames(fname)
+        x, k = self.full.expanded(x, cov=cov, **kwargs)
+        y, _ = self.full.expanded(y, cov=cov, **kwargs)
+        return x, y, k
+
+
+class MCOutputCplx(GUMOutputCplx):
+    ''' Output of a Complex Monte Carlo calculation
+
+        Parameters
+        ----------
+        fullmc: out_uncert.MCOutput
+            Output object of full MC calculation (split into real/imag components)
+        magphase: bool
+            Results were calculated in magnitude/phase format
+        degrees: bool
+            Phases were calculated in degrees
+    '''
+    def __init__(self, fullmc, magphase=False, degrees=True):
+        super().__init__(fullmc, magphase, degrees)
+
+    def degf(self):
+        raise NotImplementedError  # MC doesn't have degf
+
+    def expanded(self, fname=None, cov=0.95, **kwargs):
+        ''' Get expanded uncertainty of the function result
+
+            Parameters
+            ----------
+            fname: string or int
+                Function name or index
+            cov: float
+                Confidence level, 0-1 range
+
+            Returns
+            -------
+            xlo, xhi: float
+                Lower and upper bounds for real or magnitude component
+            ylo, yhi: float
+                Lower and upper bounds for imaginary or phase component
+            k: float
+                K-value required to reach the level of confidence
+        '''
+        x, y = self._basenames(fname)
+        xlo, xhi, k = self.full.expanded(x, cov=cov, **kwargs)
+        ylo, yhi, _ = self.full.expanded(y, cov=cov, **kwargs)
+        return (xlo, xhi), (ylo, yhi), k
+
+    def plot(self, fidx=0, ax=None, polar=True, **kwargs):
+        ''' Plot scatterplot of samples or contours of uncertainty region
+            on polar or rectangular axis
+
+            Parameters
+            ----------
+            fidx: int or string
+                Function index or name
+            ax: matplotlib axis
+                Axis to plot on
+            polar: bool
+                Show plot in polar format
+
+            Keyword Arguments
+            -----------------
+            points: int
+                Number of samples to include (default = 5000)
+            bins: int
+                Number of bins for forming contour plot
+            contour: bool
+                Draw uncertainty region with contour lines
+            cmap: string
+                Name of Matplotlib colormap for contour lines
+            color: string
+                Name of color for shaded region (when contour = False)
+        '''
+
+        points = kwargs.get('points', 5000)
+        bins = kwargs.get('bins', 35)
+        cmap = kwargs.get('cmap', 'viridis')
+        color = kwargs.get('color', 'C2')
+        contour = kwargs.get('contour', False)
+
+        fidx = self._index(fidx)
+        fname = self.names[fidx]
+
+        if ax is None:
+            fig = plt.gcf()
+            ax = fig.add_subplot(111, polar=polar)
+
+        samplesx = self.full.samples(fidx).magnitude
+        samplesy = self.full.samples(fidx+1).magnitude
+
+        if self.magphase:
+            if not polar:
+                samplesx, samplesy = samplesx * np.cos(samplesy), samplesx * np.sin(samplesy)
+            else:
+                samplesx, samplesy = samplesy, samplesx
+        elif polar:
+            samplesy, samplesx = np.sqrt(samplesx**2 + samplesy**2), np.arctan2(samplesy, samplesx)
+
+        if contour:
+            y95 = np.percentile(samplesy, [2.5, 97.5])  # Cut off histogram at 95%.
+            x95 = np.percentile(samplesx, [2.5, 97.5])
+            counts, xbins, ybins = np.histogram2d(samplesx, samplesy, bins=bins, range=(x95, y95))
+            ax.contour(counts, 5, extent=[xbins.min(), xbins.max(), ybins.min(), ybins.max()], cmap=cmap)
+        else:
+            ax.plot(samplesx[:points], samplesy[:points], marker='.', ls='', markersize=1, color=color, zorder=0)
+
+        if not polar:
+            ax.set_xlabel(f'Re({fname})')
+            ax.set_ylabel(f'Im({fname})')
+
+
+class CplxCalcOutput(output.Output):
+    ''' Output of a complex uncertainty calculation
+
+        Parameters
+        ----------
+        fullout: out_uncert.UncertOutput
+            Output object of full calculation (split into real/imag components)
+        magphase: bool
+            Results were calculated in magnitude/phase format
+        degrees: bool
+            Phases were calculated in degrees
+    '''
+    def __init__(self, fullout, magphase=False, degrees=True):
+        self.fullout = fullout
+        self.gum = GUMOutputCplx(fullout.gum, magphase, degrees)
+        self.mc = MCOutputCplx(fullout.mc, magphase, degrees)
+        self.magphase = magphase
+        self.degrees = degrees
+        self.names = [f.rsplit('_')[0] for f in self.fullout.names[::2]]
+        self.nouts = len(self.names)
+
+    def _correlation(self, out, fidx):
+        ''' Get correlation between real/imaginary components
+
+            Parameters
+            ----------
+            out: GUMOutputCplx or MCOutputCplx
+                The output to get correlation from
+            fidx: int or str
+                Function index or name
+        '''
+        idx1 = fidx*2
+        idx2 = idx1+1
+        return out.correlation(idx1, idx2)
 
     def report(self, **kwargs):
         ''' Report the results '''
-        hdr = ['Method', 'Mean', 'Standard Deviation', 'Correlation']
+        hdr = ['Function', 'Method', 'Nominal', 'Standard Uncertainty', 'Correlation']
         rpt = report.Report(**kwargs)
-
         deg = '°' if self.degrees else ' rad'
 
-        fidx = 0
-        for i in range(len(self.magphase)):
-            if self.magphase[i]:
-                # Display Mag∠Deg for this function
-                outmag = self.fullout.foutputs[fidx+2]
-                outph = self.fullout.foutputs[fidx+3]
-                gumcor = self.fullout.ucalc.get_contour(fidx+2, fidx+3, getcorr=True)
-                mccor = np.corrcoef(self.fullout.foutputs[fidx+2].get_output(method='mc').properties['samples'].magnitude,
-                                    self.fullout.foutputs[fidx+3].get_output(method='mc').properties['samples'].magnitude)
-                mccor = mccor[0, 1]
-                rows = []
-                for methodmag, methodph in zip(outmag._baseoutputs, outph._baseoutputs):
-                    rows.append([methodmag.method,
-                                 # TODO: incorporate mag/phase and real/imag formatting into report.Number formatter
-                                 '{} ∠{}{}'.format(report.Number(methodmag.mean, matchto=methodmag.uncert),
-                                                   report.Number(methodph.mean, matchto=methodph.uncert), deg),
-                                 '{} ∠{}{}'.format(report.Number(methodmag.uncert),
-                                                   report.Number(methodph.uncert), deg),
-                                 format(gumcor if methodmag.method == 'GUM Approximation' else mccor, '.4f')])
-                rpt.hdr('${}$'.format(sympy.latex(sympy.Symbol(outmag.name[:-2]))), level=3)
-                fidx += 4  # [real, imag, mag, phase]
+        def _addcol(out, fname):
+            fidx = self.names.index(fname)
+            cor = self._correlation(out, fidx)
+            if self.magphase:
+                mag = out.nom(f'{fname}_mag')
+                umag = out.uncert(f'{fname}_mag')
+                ph = out.nom(f'{fname}_rad').magnitude
+                uph = out.uncert(f'{fname}_rad').magnitude
+                if self.degrees:
+                    ph, uph = np.rad2deg(ph), np.rad2deg(uph)
+
+                cols = ['{} ∠{}{}'.format(report.Number(mag, matchto=umag), report.Number(ph, matchto=uph), deg),
+                        '± {} ∠{}{}'.format(report.Number(umag), report.Number(uph), deg),
+                        '{:.4f}'.format(cor)]
             else:
-                # Display real + j*imaginary for this function
-                outre = self.fullout.foutputs[fidx]
-                outim = self.fullout.foutputs[fidx+1]
-                gumcor = self.fullout.ucalc.get_contour(fidx, fidx+1, getcorr=True)
-                mccor = np.corrcoef(self.fullout.foutputs[fidx].get_output(method='mc').properties['samples'].magnitude,
-                                    self.fullout.foutputs[fidx+1].get_output(method='mc').properties['samples'].magnitude)[0, 1]
-                rows = []
-                for methodre, methodim in zip(outre._baseoutputs, outim._baseoutputs):
-                    rows.append([methodre.method,
-                                 report.Number(methodre.mean + 1j*methodim.mean, matchto=methodre.uncert),
-                                 report.Number(methodre.uncert + 1j*methodim.uncert),
-                                 format(gumcor if methodre.method == 'GUM Approximation' else mccor, '.4f')
-                                ])
-                rpt.hdr('${}$'.format(sympy.latex(sympy.Symbol(outre.name[:-2]))), level=3)
-                fidx += 2  # [real, imag]
-            rpt.table(rows, hdr)
+                real = out.nom(f'{fname}_real')
+                ureal = out.uncert(f'{fname}_real')
+                imag = out.nom(f'{fname}_imag')
+                uimag = out.uncert(f'{fname}_imag')
+                cols = ['{}'.format(report.Number(real + 1j*imag, matchto=ureal)),
+                        '± {}'.format(report.Number(ureal + 1j*uimag)),
+                        '{:.4f}'.format(cor)]
+            return cols
+
+        rows = []
+        for fname in self.names:
+            if self.fullout.gum:
+                row = [fname, 'GUM']
+                row.extend(_addcol(self.fullout.gum, fname))
+                rows.append(row)
+            if self.fullout.mc:
+                row = [fname, 'Monte Carlo']
+                row.extend(_addcol(self.fullout.mc, fname))
+                rows.append(row)
+        rpt.table(rows, hdr)
         return rpt
 
     def plot(self, fig=None, fidx=0, **kwargs):
@@ -253,8 +671,8 @@ class CplxCalcOutput(output.Output):
             ----------
             fig: matplotlib figure
                 Figure to plot on. If not provided, a new figure will be created
-            fidx: int
-                Index of function to plot
+            fidx: int or str
+                Index or name of function to plot
 
             Keyword Arguments
             -----------------
@@ -303,81 +721,13 @@ class CplxCalcOutput(output.Output):
             fig = plt.gcf()
         fig.clf()
 
-        if self.magphase[fidx]:
-            # mag/phase polar
-            ax = fig.add_subplot(111, polar=self.magphase[fidx] and polar)
-            outy = self.fullout.foutputs[fidx+2]  # Mag/Phase components for this function index
-            outx = self.fullout.foutputs[fidx+3]  # Phase is plotted as x-value in polar plots
-            y = outy.get_output(method='gum').mean.magnitude   # Imaginary or Magnitude
-            x = outx.get_output(method='gum').mean.magnitude   # Real or Phase
-            yunc, k = outy.get_output(method='gum').expanded(.95)
-            xunc, k = outx.get_output(method='gum').expanded(.95)
-            xunc = xunc.magnitude
-            yunc = yunc.magnitude
-            samplesy = outy.get_output(method='mc').properties['samples'].magnitude
-            samplesx = outx.get_output(method='mc').properties['samples'].magnitude
-            if self.degrees and polar:
-                x = np.deg2rad(x)
-                xunc = np.deg2rad(xunc)
-                samplesx = np.deg2rad(samplesx)
-            if not polar:
-                y, x = x, y
-                yunc, xunc = xunc, yunc
-                samplesy, samplesx = samplesx, samplesy
-
-        else:  # Real/Imaginary
-            ax = fig.add_subplot(111)
-            outx = self.fullout.foutputs[fidx]  # Real/Imaginary components for this function index
-            outy = self.fullout.foutputs[fidx+1]
-            y = outy.get_output(method='gum').mean.magnitude   # Imaginary or Magnitude
-            x = outx.get_output(method='gum').mean.magnitude   # Real or Phase
-            yunc, _ = outy.get_output(method='gum').expanded(.95)
-            xunc, _ = outx.get_output(method='gum').expanded(.95)
-            xunc = xunc.magnitude
-            yunc = yunc.magnitude
-            samplesy = outy.get_output(method='mc').properties['samples'].magnitude
-            samplesx = outx.get_output(method='mc').properties['samples'].magnitude
+        ax = fig.add_subplot(111, polar=polar)
 
         if showgum:
-            if gumcontour:
-                re, im, p = self.fullout.ucalc.get_contour(fidx, fidx+1)   # Contour based on re/im
-                re = re.magnitude
-                im = im.magnitude
-                if self.magphase[fidx]:
-                    mg = np.sqrt(re**2+im**2)
-                    ph = np.arctan2(im, re)  # Already radians
-                    if polar:
-                        ax.contour(ph, mg, p, 5, cmap=cmapgum)
-                    else:
-                        if self.degrees:
-                            ph = np.rad2deg(ph)
-                        ax.contour(mg, ph, p, 5, cmap=cmapgum)
-                else:
-                    ax.contour(re, im, p, 5, cmap=cmapgum)
-
-            else:
-                ax.plot(x, y, marker='x', color=color)
-                xx = np.linspace(x-xunc, x+xunc)
-                ax.fill_between(xx, y1=np.full(len(xx), y-yunc), y2=np.full(len(xx), y+yunc), color=color, alpha=.2)
+            self.gum.plot(fidx=fidx, ax=ax, cmap=cmapgum, color=color, polar=polar, contour=gumcontour)
 
         if showmc:
-            if mccontour:
-                y95 = np.percentile(samplesy, [2.5, 97.5])  # Cut off histogram at 95%.
-                x95 = np.percentile(samplesx, [2.5, 97.5])
-                counts, xbins, ybins = np.histogram2d(samplesx, samplesy, bins=bins, range=(x95, y95))
-                ax.contour(counts, 5, extent=[xbins.min(), xbins.max(), ybins.min(), ybins.max()], cmap=cmapmc)
-            else:
-                ax.plot(samplesx[:points], samplesy[:points], marker='.', ls='', markersize=1, color=colormc, zorder=0)
+            self.mc.plot(fidx=fidx, ax=ax, cmap=cmapmc, color=colormc, polar=polar, contour=mccontour, points=points, bins=bins)
 
-        name = outy.name[:-2]
-        name = sympy.latex(sympy.Symbol(name))
-        if self.magphase[fidx] and not polar:
-            ax.set_xlabel('$|{}|$'.format(name))
-            ax.set_ylabel('Arg(${}$) ({})'.format(name, 'deg' if self.degrees else 'rad'))
-        elif self.magphase[fidx]:
-            ax.set_title('${}$'.format(name))
-        else:
-            ax.set_xlabel('Re(${}$)'.format(name))
-            ax.set_ylabel('Im(${}$)'.format(name))
         fig.tight_layout()
         return ax

@@ -1,8 +1,9 @@
 name: uncertosx
 dependencies:
-    - nomkl>=1.0      # Use OpenBLAS instead of MKL numpy/scipy which works better with pyinstaller
+    - nomkl>=1.0           # Use OpenBLAS instead of MKL numpy/scipy which works better with pyinstaller
+    - libopenblas==0.3.6   # Newer 0.3.10 throws segfaults
     - python==3.7.3
-    - sympy==1.3      # Sympy 1.4 does not work with PyInstaller 3.5  (https://github.com/pyinstaller/pyinstaller/issues/3931)
+    - sympy==1.3           # Sympy 1.4 does not work with PyInstaller 3.5  (https://github.com/pyinstaller/pyinstaller/issues/3931)
     - scipy==1.3.0
     - numpy==1.16.4
     - matplotlib==3.1.0
@@ -10,9 +11,9 @@ dependencies:
     - pyyaml==5.1
     - markdown==3.1
     - pip==19.1.1
-#   - pandoc                # Optional for building documentation and saving Docx, ODT, or PDF outputs
+#   - pandoc==2.10.1      # Optional for building documentation and saving Docx, ODT, or PDF outputs. Hold at 2.10.1 for pandoc-fignos dependency
     - pip:
         - pyqt5==5.12.2
-        - PyInstaller==3.5  # Conda-pyinstaller dont seem to work
+        - PyInstaller==3.6  # Conda-pyinstaller dont seem to work
         - pint==0.11
-#       - pandoc-fignos     # Used for building user manual via pandoc
+#       - pandoc-fignos==2.3.1  # Used for building user manual via pandoc

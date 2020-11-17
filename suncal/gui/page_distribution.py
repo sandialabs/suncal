@@ -109,6 +109,7 @@ class DistDialog(QtWidgets.QDialog):
         self.name = name
         self.dist = dist
         args = self.dist.get_config()
+        args.update({'median': self.dist.median()})
         self.table = gui_widgets.DistributionEditTable(args)
         self.fig = Figure()
         self.canvas = FigureCanvas(self.fig)
@@ -226,6 +227,7 @@ class DistWidget(QtWidgets.QWidget):
         self.samples.setValidator(QtGui.QIntValidator(1, 10000000))
         self.samples.setMaximumWidth(300)
         self.samples.editingFinished.connect(lambda: self.distexplore.set_numsamples(int(self.samples.text())))
+        self.seed = QtWidgets.QLineEdit('None')
 
         self.cmbView = QtWidgets.QComboBox()
         self.cmbView.addItems(self.distexplore.samplevalues.keys())
@@ -246,6 +248,9 @@ class DistWidget(QtWidgets.QWidget):
         slayout = QtWidgets.QHBoxLayout()
         slayout.addWidget(QtWidgets.QLabel('Samples:'))
         slayout.addWidget(self.samples)
+        slayout.addStretch()
+        slayout.addWidget(QtWidgets.QLabel('Random Seed:'))
+        slayout.addWidget(self.seed)
         llayout.addLayout(slayout)
         rlayout = QtWidgets.QVBoxLayout()
         clayout = QtWidgets.QHBoxLayout()
@@ -339,6 +344,13 @@ class DistWidget(QtWidgets.QWidget):
 
     def sample(self, name):
         ''' Sample the distribution '''
+        try:
+            seed = int(self.seed.text())
+        except (ValueError, TypeError):
+            seed = None
+        if seed is not None:
+            np.random.seed(seed)
+
         try:
             self.distexplore.sample(name)
         except ValueError:

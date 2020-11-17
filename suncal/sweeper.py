@@ -8,7 +8,6 @@ from collections import namedtuple
 import numpy as np
 import sympy
 import yaml
-import matplotlib as mpl
 import matplotlib.pyplot as plt
 
 from . import dataset
@@ -18,6 +17,7 @@ from . import output
 from . import uparser
 from . import report
 from . import plotting
+from .unitmgr import ureg
 
 
 class UncertSweep(object):
@@ -121,17 +121,22 @@ class UncertSweep(object):
                 comp = sweepparams.get('comp', 'nom')
                 param = sweepparams.get('param', None)
                 values = sweepparams.get('values', [])
+                units = sweepparams.get('units', None)
 
-                inptvar = ucalccopy.get_input(inptname)
                 if inptname == 'corr':
                     ucalccopy.correlate_vars(sweepparams['var1'], sweepparams['var2'], values[sweepidx])
                 elif comp == 'nom':
+                    inptvar = ucalccopy.get_inputvar(inptname)
                     inptvar.set_nom(values[sweepidx])
+                    if units:
+                        inptvar.set_units(units)
                 elif param == 'df':
+                    inptvar = ucalccopy.get_inputvar(inptname)
                     inptvar.get_comp(comp).degf = values[sweepidx]
                 else:
-                    ucalccopy.set_uncert(var=inptname, name=comp, **{param: values[sweepidx]})
-            reportlist.append(ucalccopy.calculate(gum=gum, mc=mc))
+                    ucalccopy.set_uncert(var=inptname, name=comp, units=units, **{param: values[sweepidx]})
+
+            reportlist.append(ucalccopy.calculate(gum=gum, mc=mc, samples=samples))
         self.out = SweepOutput(reportlist, self.sweeplist)
         return self.out
 
@@ -161,7 +166,7 @@ class UncertSweep(object):
 
         try:
             config = yaml.safe_load(yml)
-        except yaml.scanner.ScannerError:
+        except yaml.YAMLError:
             return None  # Can't read YAML
 
         u = cls.from_config(config[0])  # config yaml is always a list
@@ -177,15 +182,16 @@ class UncertSweep(object):
             var = sweep['var']
             comp = sweep.get('comp', None)
             param = sweep.get('param', None)
+            units = sweep.get('units', None)
             values = sweep['values']
             if var == 'corr':
-                newsweep.add_sweep_corr(comp, param, values)
+                newsweep.add_sweep_corr(sweep.get('var1', None), sweep.get('var2', None), values)
             elif comp == 'nom':
-                newsweep.add_sweep_nom(var, values)
+                newsweep.add_sweep_nom(var, values, units=units)
             elif param == 'df':
                 newsweep.add_sweep_df(var, values, comp)
             else:
-                newsweep.add_sweep_unc(var, values, comp, param)
+                newsweep.add_sweep_unc(var, values, comp, param, units=units)
         return newsweep
 
     def get_config(self):
@@ -194,11 +200,8 @@ class UncertSweep(object):
         d['mode'] = 'sweep'
         sweeps = []
         for sweep in self.sweeplist:
-            var = sweep.get('var', None)
-            comp = sweep.get('comp', 'nom')
-            param = sweep.get('param', None)
-            values = list(sweep.get('values', []))
-            sweeps.append({'var': var, 'comp': comp, 'param': param, 'values': values})
+            sweep['values'] = list(sweep.get('values', []))
+            sweeps.append(sweep)
         d['sweeps'] = sweeps
         return d
 
@@ -244,18 +247,19 @@ class UncertSweepReverse(UncertSweep):
                 values = sweepparams.get('values', [])
                 # Make a full copy (using config dictionary) so we don't destroy the original uncertcalc object and overwrite inputs
                 ucalccopy = reverse.UncertReverse.from_config(self.unccalc.get_config())
-                inptvar = ucalccopy.get_input(inptname)
                 if inptname == 'corr':
                     ucalccopy.correlate_vars(sweepparams['var1'], sweepparams['var2'], values[sweepidx])
                 elif comp == 'nom':
+                    inptvar = ucalccopy.get_inputvar(inptname)
                     inptvar.set_nom(values[sweepidx])
                 elif param == 'df':
-                    inptvar.degf = values[sweepidx]
+                    inptvar = ucalccopy.get_inputvar(inptname)
+                    inptvar.degf = lambda: values[sweepidx]  # Clobbers the InputVar.degf() method!
                 else:
                     ucalccopy.set_uncert(var=inptname, name=comp, **{param: values[sweepidx]})
             reportlist.append(ucalccopy.calculate(gum=gum, mc=mc))
 
-        funcname = self.unccalc.functions[self.unccalc.reverseparams['func']].name
+        funcname = self.unccalc.model.outnames[self.unccalc.reverseparams['func']]
         self.out = SweepOutputReverse(reportlist, self.sweeplist, varname=self.unccalc.reverseparams['solvefor'], funcname=funcname)
         return self.out
 
@@ -275,15 +279,16 @@ class UncertSweepReverse(UncertSweep):
             var = sweep['var']
             comp = sweep.get('comp', None)
             param = sweep.get('param', None)
+            units = sweep.get('units', None)
             values = sweep['values']
             if var == 'corr':
-                newsweep.add_sweep_corr(comp, param, values)
+                newsweep.add_sweep_corr(sweep.get('var1', None), sweep.get('var2', None), values)
             elif comp == 'nom':
-                newsweep.add_sweep_nom(var, values)
+                newsweep.add_sweep_nom(var, values, units=units)
             elif param == 'df':
                 newsweep.add_sweep_df(var, values, comp)
             else:
-                newsweep.add_sweep_unc(var, values, comp, param)
+                newsweep.add_sweep_unc(var, values, comp, param, units=units)
         return newsweep
 
 
@@ -293,13 +298,13 @@ class SweepOutput(output.Output):
         Parameters
         ----------
         outputlist: list
-            Individual CalcOutput objects in this sweep
+            Individual UncertOutput objects in this sweep
         sweeplist: list
             List of sweep parameters
     '''
     def __init__(self, outputlist, sweeplist):
         self.outputlist = outputlist
-        self.funcnames = self.outputlist[0].get_funcnames()
+        self.outnames = self.outputlist[0].names
 
         # Generate column headers for input values that are changing
         self.inpthdr = []
@@ -321,29 +326,28 @@ class SweepOutput(output.Output):
         for hdr in self.inpthdr:
             r = report.Report()
             try:
-                r.add(*hdr)
+                r.add(*hdr, end='')
             except TypeError:
-                r.add(hdr)
+                r.add(hdr, end='')
             self.inpthdr_strs.append(r.get_md(mathfmt='ascii'))
 
         self.inptvals = [v['values']*uparser.parse_unit(v.get('units', '')) for v in sweeplist]
         self.N = len(self.inptvals[0])
 
-        self.outnames = [f.name for f in outputlist[0].foutputs]
         try:
-            self.outpvalsgum = [[r.get_output(fidx=i, method='gum').mean for r in outputlist] for i in range(len(outputlist[0].foutputs))]
-            self.outpuncsgum = [[r.get_output(fidx=i, method='gum').uncert for r in outputlist] for i in range(len(outputlist[0].foutputs))]
-            self.outpvalsgum = [np.array([r.magnitude for r in self.outpvalsgum[i]])*self.outpvalsgum[i][0].units for i in range(len(self.outpvalsgum))]
-            self.outpuncsgum = [np.array([r.magnitude for r in self.outpuncsgum[i]])*self.outpuncsgum[i][0].units for i in range(len(self.outpvalsgum))]
+            self.outpvalsgum = [[r.gum.nom(i) for r in outputlist] for i in range(outputlist[0].nouts)]
+            self.outpuncsgum = [[r.gum.uncert(i) for r in outputlist] for i in range(outputlist[0].nouts)]
+            self.outpvalsgum = [ureg.Quantity(np.array([r.magnitude for r in self.outpvalsgum[i]]), self.outpvalsgum[i][0].units) for i in range(len(self.outpvalsgum))]
+            self.outpuncsgum = [ureg.Quantity(np.array([r.magnitude for r in self.outpuncsgum[i]]), self.outpuncsgum[i][0].units) for i in range(len(self.outpvalsgum))]
         except AttributeError:
             self.outpvalsgum = None
             self.outpuncsgum = None
 
         try:
-            self.outpvalsmc = [[r.get_output(fidx=i, method='mc').mean for r in outputlist] for i in range(len(outputlist[0].foutputs))]
-            self.outpuncsmc = [[r.get_output(fidx=i, method='mc').uncert for r in outputlist] for i in range(len(outputlist[0].foutputs))]
-            self.outpvalsmc = [np.array([r.magnitude for r in self.outpvalsmc[i]])*self.outpvalsmc[i][0].units for i in range(len(self.outpvalsmc))]
-            self.outpuncsmc = [np.array([r.magnitude for r in self.outpuncsmc[i]])*self.outpuncsmc[i][0].units for i in range(len(self.outpuncsmc))]
+            self.outpvalsmc = [[r.mc.nom(i) for r in outputlist] for i in range(outputlist[0].nouts)]
+            self.outpuncsmc = [[r.mc.uncert(i) for r in outputlist] for i in range(outputlist[0].nouts)]
+            self.outpvalsmc = [ureg.Quantity(np.array([r.magnitude for r in self.outpvalsmc[i]]), self.outpvalsmc[i][0].units) for i in range(len(self.outpvalsmc))]
+            self.outpuncsmc = [ureg.Quantity(np.array([r.magnitude for r in self.outpuncsmc[i]]), self.outpuncsmc[i][0].units) for i in range(len(self.outpuncsmc))]
         except AttributeError:
             self.outpvalsmc = None
             self.outpuncsmc = None
@@ -353,7 +357,7 @@ class SweepOutput(output.Output):
             of array names available.
         '''
         names = []
-        for n in self.funcnames:
+        for n in self.outnames:
             if self.outpvalsgum is not None:
                 names.append('{} (GUM)'.format(n))
             if self.outpvalsmc is not None:
@@ -364,7 +368,7 @@ class SweepOutput(output.Output):
 
         elif name in names:
             name, method = name.split(' ')
-            funcidx = self.funcnames.index(name)
+            funcidx = self.outnames.index(name)
             dset = self.to_array(gum=(method == '(GUM)'), funcidx=funcidx)
         else:
             raise ValueError('{} not found in output'.format(name))
@@ -446,14 +450,14 @@ class SweepOutput(output.Output):
         '''
         if method == 'gum':
             Expanded = namedtuple('Expanded', ['uncertainty', 'k'])
-            expanded = [r.get_output(fidx=fidx, method=method).expanded(cov=cov, normal=normal) for r in self.outputlist]
+            expanded = [getattr(r, method).expanded(fidx=fidx, cov=cov, normal=normal) for r in self.outputlist]
             # Last index is always 0 because there's only one parameter in UncertCalc Output.
             uncert = np.array([x[0].magnitude for x in expanded]) * expanded[0][0].units
             k = np.array([x[1] for x in expanded])
             return Expanded(uncert, k)
         elif method == 'mc':
             Expanded = namedtuple('Expanded', ['minimum', 'maximum', 'k'])
-            expanded = [r.get_output(fidx=fidx, method=method).expanded(cov=cov, shortest=shortest) for r in self.outputlist]
+            expanded = [getattr(r, method).expanded(fidx=fidx, cov=cov, shortest=shortest) for r in self.outputlist]
             umin = [x[0].magnitude for x in expanded] * expanded[0][0].units
             umax = [x[1].magnitude for x in expanded] * expanded[0][1].units
             k = [x[2] for x in expanded]
@@ -581,16 +585,14 @@ class SweepOutput(output.Output):
     def report_summary(self, **kwargs):
         ''' Report summary, including table AND plot '''
         rpt = report.Report(**kwargs)
-        with mpl.style.context(plotting.mplcontext):
+        with plt.style.context(plotting.plotstyle):
             rpt.hdr('Sweep Results', level=2)
             rpt.append(self.report(**kwargs))
-            with mpl.style.context(plotting.mplcontext):
-                plt.ioff()
-
-                for i in range(len(self.funcnames)):
-                    fig = plt.figure()
-                    self.plot(plot=fig, inptidx=0, funcidx=i)
-                    rpt.plot(fig)
+            for i in range(len(self.outnames)):
+                fig = plt.figure()
+                self.plot(plot=fig, inptidx=0, funcidx=i)
+                rpt.plot(fig)
+                plt.close(fig)
         return rpt
 
     def report_all(self, **kwargs):
@@ -669,9 +671,9 @@ class SweepOutputReverse(output.Output):
         for hdr in self.inpthdr:
             r = report.Report()
             try:
-                r.add(*hdr)
+                r.add(*hdr, end='')
             except TypeError:
-                r.add(hdr)
+                r.add(hdr, end='')
             self.inpthdr_strs.append(r)
 
         self.inptvals = [v['values']*uparser.parse_unit(v.get('units', '')) for v in sweeplist]
@@ -745,11 +747,11 @@ class SweepOutputReverse(output.Output):
         r.add('Target: ', report.Math.from_sympy(fname), ' = ', report.Number(f_req, matchto=uf_req),
               ' ± ', report.Number(uf_req), '\n\n')
         r.append(self.report(**kwargs))
-        with mpl.style.context(plotting.mplcontext):
-            plt.ioff()
+        with plt.style.context(plotting.plotstyle):
             fig, ax = plt.subplots()
             self.plot(plot=ax)
             r.plot(fig)
+            plt.close(fig)
         return r
 
     def plot(self, plot=None, xidx=0, GUM=True, MC=True):

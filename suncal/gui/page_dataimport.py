@@ -10,7 +10,7 @@ from PyQt5 import QtWidgets, QtCore
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 
-from .. import output
+from .. import plotting
 from .. import distributions
 from .. import dataset
 from . import page_csvload
@@ -312,7 +312,7 @@ class DistributionSelectWidget(QtWidgets.QDialog):
                     fitdist = distributions.get_distribution(distname)
                     params = fitdist.fit(samples)
                 if self.chkProbPlot.isChecked() and distname != 'histogram':
-                    output.probplot(samples, ax=ax, sparams=params, dist=fitdist.dist.name)
+                    plotting.probplot(samples, ax=ax, sparams=params, dist=fitdist.dist.name)
                 else:
                     xx = np.linspace(samples.min(), samples.max(), num=200)
                     yy = fitdist.pdf(xx)
@@ -537,7 +537,7 @@ class DistributionSelectWidget(QtWidgets.QDialog):
                 params = f(x)
                 mean = params.get('mean', 0)
                 std = params.get('std', 1)
-                df = data.get('df', 100)
+                df = params.get('df', 100)
                 sem = std / np.sqrt(df + 1)
                 dist = ''  # Can't change this dist
             elif 'samples' in data:
@@ -585,15 +585,16 @@ class ArraySelectWidget(QtWidgets.QDialog):
         self.singlecol = singlecol
         gui_widgets.centerWindow(self, 1000, 800)
         self.setWindowTitle('Select Array')
-        if colnames is None:
-            colnames = ['x', 'y', 'u(x)', 'u(y)']
+        self.colnames = colnames
+        if self.colnames is None:
+            self.colnames = ['x', 'y', 'u(y)', 'u(x)']
 
         self.dataset = None
         self.treeSource = ProjectTreeArrays(project=project)
         self.table = QtWidgets.QTableWidget()
         self.table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectColumns)
         self.cmbColumn = QtWidgets.QComboBox()
-        self.cmbColumn.addItems(['Not Used'] + colnames)
+        self.cmbColumn.addItems(['Not Used'] + self.colnames)
 
         self.fig = Figure()
         self.canvas = FigureCanvas(self.fig)
@@ -664,8 +665,8 @@ class ArraySelectWidget(QtWidgets.QDialog):
         ax = self.fig.add_subplot(1, 1, 1)
 
         arr = self.get_array()
-        x, y = arr.x, arr.y
-        ux, uy = arr.ux, arr.uy
+        x, y = arr.get('x'), arr.get('y')
+        ux, uy = arr.get('u(x)'), arr.get('u(y)')
 
         if y is not None:
             if x is None:
@@ -708,20 +709,20 @@ class ArraySelectWidget(QtWidgets.QDialog):
         return isdate
 
     def get_array(self):
-        ''' Return nparray if singlecol, namedtuple of x, y, ux, uy if multicol '''
+        ''' Return dictionary with keys for each column name '''
         if self.dataset is None:
-            x, y, ux, uy = None, None, None, None
+            ret = {}
         elif self.singlecol:
             item = self.table.horizontalHeaderItem(self.table.currentColumn())
             y = self.dataset.get_column(item.text() if item else None)
-            x, ux, uy = None, None, None
+            ret = {'y': y}
         else:
-            x = self._get_assigned_data('x')
-            y = self._get_assigned_data('y')
-            uy = self._get_assigned_data('u(y)')
-            ux = self._get_assigned_data('u(x)')
-        res = namedtuple('XY', ['x', 'y', 'ux', 'uy'])
-        return res(x, y, ux, uy)
+            ret = {}
+            for c in self.colnames:
+                x = self._get_assigned_data(c)
+                if x is not None:
+                    ret[c] = x
+        return ret
 
     def _get_assigned_data(self, colname):
         ''' Get data for column with name == colname '''
@@ -750,10 +751,6 @@ class ArraySelectWidget(QtWidgets.QDialog):
                 item.setFlags(QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled)
                 self.table.setItem(row, col, item)
 
-        if self.singlecol:
-            self.table.setHorizontalHeaderLabels(dset.colnames)
-        else:
-            self.table.setHorizontalHeaderLabels(['x', 'y', 'u(y)' if dset.ncolumns() > 2 else '', 'u(x)' if dset.ncolumns() > 3 else ''])
-
+        self.table.setHorizontalHeaderLabels(self.colnames[:dset.ncolumns()])
         self.dataset = dset
         self.updateplot()
