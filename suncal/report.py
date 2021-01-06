@@ -10,15 +10,17 @@ import sympy
 import markdown
 import matplotlib as mpl
 import matplotlib.pyplot as plt
+from packaging import version
 
 from . import unitmgr
 from . import uparser
 from . import css
 from . import latexchars
 
-
-sympy.printing.latex.__globals__['requires_partial'] = lambda x: True   # Render all derivatives as partial
-sympy.printing.pretty.__globals__['requires_partial'] = lambda x: True
+# This is incompatible (and shouldn't be necessary) with the newest version of sympy
+if (version.parse(sympy.__version__) < version.parse("1.7")):
+    sympy.printing.latex.__globals__['requires_partial'] = lambda x: True   # Render all derivatives as partial
+    sympy.printing.pretty.__globals__['requires_partial'] = lambda x: True
 
 latex_path = shutil.which('pdflatex')
 pandoc_path = shutil.which('pandoc')
