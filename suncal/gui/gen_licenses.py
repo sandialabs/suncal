@@ -52,7 +52,7 @@ def build_license_html():
 
     # Use pip-licenses to pull info for all installed packages in json format
     try:
-        out = subprocess.check_output('pip-licenses --with-license-file --filter-strings --filter-code-page=utf-8 --format=json')
+        out = subprocess.check_output(['pip-licenses', '--with-license-file', '--filter-strings', '--filter-code-page=utf-8', '--format=json'])
     except FileNotFoundError:
         raise RuntimeError('License generation requires pip-licenses package.')
 
@@ -947,7 +947,7 @@ PSF_LICENSE = '''1. This LICENSE AGREEMENT is between the Python Software Founda
    analyze, test, perform and/or display publicly, prepare derivative works,
    distribute, and otherwise use Python 3.9.1 alone or in any derivative
    version, provided, however, that PSF's License Agreement and PSF's notice of
-   copyright, i.e., "Copyright © 2001-2021 Python Software Foundation; All Rights
+   copyright, i.e., "Copyright (c) 2001-2021 Python Software Foundation; All Rights
    Reserved" are retained in Python 3.9.1 alone or in any derivative version
    prepared by Licensee.
 
