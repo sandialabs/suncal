@@ -297,10 +297,10 @@ def test_addinputs():
 def test_checkinput():
     ''' Test InputVar.check_args '''
     i = uc.InputUncert('b', nom=10, dist='gamma', std=1)
-    assert i.check_args() == True # 'a' parameter automatically set to 1
+    assert i.check_args() == True # 'alpha' parameter automatically set to 1
 
-    i = uc.InputUncert('b', nom=10, dist='gamma', std=1, a=-1)
-    assert i.check_args() == False # Invalid 'a' parameter value
+    i = uc.InputUncert('b', nom=10, dist='gamma', std=1, alpha=-1)
+    assert i.check_args() == False # Invalid 'alpha' parameter value
 
     # ValueError if not all inputs are defined
     u = uc.UncertaintyCalc('a+b')
@@ -310,7 +310,7 @@ def test_checkinput():
 def test_reqargs():
     ''' Test InputVar.req_args() '''
     args = uc.InputUncert('b', dist='gamma').required_args
-    assert 'a' in args
+    assert 'alpha' in args
 
     args = uc.InputUncert('b', dist='t').required_args
     assert 'df' in args

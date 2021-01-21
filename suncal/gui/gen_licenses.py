@@ -2,127 +2,98 @@
 
     Pull all third-party licenses from conda environment and compile into html in licenses.py
     for display in the About dialog. This is run from buildapp.sh and buildexe.bat, but not during
-    normal code execution.
+    normal code execution. Requires pip-licenses package.
 '''
 
 import os
 import re
 import sys
-import glob
 import subprocess
 import pkg_resources
-from urllib.request import urlopen
-from PyQt5.QtCore import QT_VERSION_STR
+import json
+
+# For pulling version numbers
+from PyQt5.QtCore import QT_VERSION_STR, PYQT_VERSION_STR
+import matplotlib as mpl
+
 
 contributers = 'Collin Delker, Otis Solomon, Ricky Sandoval, Renee Jerome, Nick Haythorn, Katherine Sanchez, Megan McBride, Sam Maldonado, Nevin Martin, Faith Tinnin, Roger Burton, and Meaghan Carpenter'
 
 
-# Check that conda is installed
-try:
-    subprocess.check_call('conda', stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-except FileNotFoundError:
-    print('\033[91mConda not installed. Cannot generate 3rd party license file!\033[0m')
-    sys.exit(1)
-else:
-    basepath = subprocess.check_output(['conda', 'info', '--base']).strip().decode('utf-8')
+def formathtml(s):
+    ''' Replace newline with html breaks '''
+    return s.replace('\n', '<br>')
 
 
-def get_license_text(modulename):
-    ''' Pull the license text from license.txt in the conda package location for the installed version '''
-    pkgpath = None
-    licfile = None
-    try:
-        pkgpath = subprocess.check_output(['conda', 'list', modulename, '-c', '-f']).decode('utf-8').split('::')[1].strip()
-    except IndexError:
-        try:
-            condaname = modulename + '-base'
-            pkgpath = subprocess.check_output(['conda', 'list', condaname, '-c', '-f']).decode('utf-8').split('::')[1].strip()
-        except IndexError:
-            # May be pip-installed. Without -c parameter, get name  ver  <pip>
-            ver = subprocess.check_output(['conda', 'list', modulename, '-f']).decode('utf-8').splitlines()[-1].split()[1]
+def get_python_license():
+    ''' Get license for Python itself '''
+    pythonexe = sys.executable
+    pythonlicfile = os.path.join(os.path.split(pythonexe)[0], 'LICENSE_PYTHON.TXT')
+    with open(pythonlicfile, 'r') as f:
+        pythonlictext = f.read()
 
-    if pkgpath:
-        ver = pkgpath.split('-')[-2]  # name-ver-build
-        pkgpath = os.path.join(basepath, 'pkgs', pkgpath)
-        testfile = os.path.join(pkgpath, 'info', 'license.txt')
-        if os.path.exists(testfile):
-            with open(testfile, 'r') as f:
-                licfile = f.read()
-
-    if licfile is None:
-        pkg = pkg_resources.require(modulename)[0]
-        testlic = glob.glob(os.path.join(pkg.location, pkg.project_name, 'license*'))
-        for testfile in testlic:
-            if os.path.exists(testfile):
-                with open(testfile, 'r') as f:
-                    licfile = f.read()
-                    break
-
-    if licfile is None:
-        pkg = pkg_resources.require(modulename)[0]
-        testlic = glob.glob(os.path.join(pkgpath, 'info', '**', 'license*'), recursive=True)
-        for testfile in testlic:
-            if os.path.isfile(testfile):
-                with open(testfile, 'r') as f:
-                    licfile = f.read()
-                    break
-
-    return ver, licfile
+    # Strip out "history of Python" stuff
+    pythonlictext = re.findall('(PYTHON SOFTWARE FOUNDATION LICENSE VERSION 2.+)BEOPEN.COM', pythonlictext, re.DOTALL)[0]
+    pythonlictext = 'Copyright (c) 2001-2017 Python Software Foundation; All Rights Reserved\n\n' + pythonlictext
+    return 'Python', formathtml(pythonlictext), sys.version.split()[0]
 
 
-def get_license_name(modulename):
-    ''' Get name of license from pip info (e.g. 'BSD', 'MIT', etc.) '''
-    pkg = pkg_resources.require(modulename)[0]
-    try:
-        lines = pkg.get_metadata_lines('PKG-INFO')
-    except FileNotFoundError:
-        lines = pkg.get_metadata_lines('METADATA')
-    for line in lines:
-        (k, v) = line.split(': ', 1)
-        if k == "License":
-            return v
-    return None
+def get_scipy_licensetext():
+    ''' Get license for Scipy from file. Doesn't work in pip-licenses for some reason. '''
+    pkg = pkg_resources.require('scipy')[0]
+    licfile = os.path.join(pkg.location, pkg.project_name, 'LICENSE.txt')
+    with open(licfile, 'r') as f:
+        lictext = f.read()
+    return lictext
 
 
 def build_license_html():
-    ''' Compile list of license documents in HTML format for all dependencies. '''
-    parts = []
-    for m in ['Python', 'Numpy', 'Scipy', 'Matplotlib', 'Sympy', 'Qt', 'PyQt5', 'pyYaml', 'markdown', 'Pint']:
-        if m != 'Qt':
-            ver, lic = get_license_text(m)
+    ''' Pull all licenses and format as HTML '''
+    template = '<h2>{} {} ({})</h2><br>'
 
-        if m == 'Qt':    # Not python package, it doesn't have standard license.text. Use standard LGPL.
-            ver = QT_VERSION_STR
-            lic = LGPL
-            licname = 'LGPL'
-        elif m == 'PyQt5':
-            # In pyinstaller 3.4, this is pip-installed, must customize...
-            licname = 'GPL'
-            lic = GPL
-        elif m == 'Python':
-            licname = 'PSF'
-            # Strip out older licenses. This works for at least 3.5 - 3.7.
-            lic = re.findall('(PYTHON SOFTWARE FOUNDATION LICENSE VERSION 2.+)BEOPEN.COM', lic, re.DOTALL)[0]
-            lic = 'Copyright (c) 2001-2017 Python Software Foundation; All Rights Reserved\n\n' + lic
-        elif m == 'Pint':
-            f = urlopen('https://raw.githubusercontent.com/hgrecco/pint/master/LICENSE')
-            lic = f.read().decode('utf-8')
-            licname = 'BSD'
-        else:
-            licname = get_license_name(m)
+    # Use pip-licenses to pull info for all installed packages in json format
+    try:
+        out = subprocess.check_output('pip-licenses --with-license-file --filter-strings --filter-code-page=utf-8 --format=json')
+    except FileNotFoundError:
+        raise RuntimeError('License generation requires pip-licenses package.')
 
-        if m == 'Matplotlib':
-            lic = 'Copyright (c) 2012-2013 Matplotlib Development Team; All Rights Reserved\n\n' + lic
+    # Remove ones we don't explicitly import
+    jout = json.loads(out)
+    pkgs = ['numpy', 'scipy', 'matplotlib', 'sympy', 'pyyaml', 'markdown', 'pint']
+    jout = [j for j in jout if j['Name'].lower() in pkgs]
 
-        header = '<h2>{} {} ({})</h2><br>'.format(m, ver, licname)
-        text = header + lic.replace('\n', '<br>')
-        parts.append(text)
+    # Start with Python license in same location as Python.exe
+    pyname, pylic, pyver = get_python_license()
+    lines = [template.format(pyname, pyver, 'PSF') + formathtml(pylic)]
+
+    # Add other packages using results from pip-licenses
+    for lic in jout:
+        lictext = lic['LicenseText']    
+        if lic['LicenseText'] == 'UNKNOWN':
+            if lic['Name'].lower() == 'scipy':
+                # scipy has a LICENSE.txt, but pip-licenses doesn't pick it up?
+                lictext = get_scipy_licensetext()
+            else:
+                print('WARNING - UNKNOWN LICENSE FOR', lic['Name'])
+
+        header = template.format(lic['Name'], lic['Version'], lic['License'])
+        text = header + formathtml(lictext)
+        lines.append(text)    
+
+    # Qt is not a Python package, but uses generic LGPL
+    header = template.format('Qt', QT_VERSION_STR, 'LGPL')
+    lines.append(header + formathtml(LGPL))
+
+    # Pyqt uses GPL
+    header = template.format('PyQt', PYQT_VERSION_STR, 'GPL v3')
+    lines.append(header + formathtml(GPL))
 
     preamble = '''<h1>Acknowledgements</h1><br>
-Thanks to {} for their contributions, ideas, testing, and support.<br>
-<br>The authors are grateful for the contributions of the open source software community. This program relies on the following bundled third-party software packages.<br>'''.format(contributers)
+    Thanks to {} for their contributions, ideas, testing, and support.<br>
+    <br>The authors are grateful for the contributions of the open source software community. This program relies on the following bundled third-party software packages.<br>\n'''.format(contributers)
 
-    return preamble + '<hr>\n'.join(parts)
+    licensehtml = preamble + '<br><hr>\n'.join(lines)
+    return licensehtml
 
 
 # Direct Source: https://www.gnu.org/licenses/lgpl-3.0.txt
@@ -972,6 +943,6 @@ Public License instead of this License.  But first, please read
 if __name__ == '__main__':
     html = build_license_html()
     path = os.path.join(os.path.split(__file__)[0], 'licenses.py')
-    with open(path, 'w') as f:
+    with open(path, 'w', encoding='utf-8') as f:
         f.write('# AUTOGENERATED BY GEN_LICENSES.PY. DO NOT MANUALLY MODIFY.\n\n')
-        f.write("licenses = '''{}'''".format(html))
+        f.write("licenses = r'''{}'''".format(html))

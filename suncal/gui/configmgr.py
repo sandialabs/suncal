@@ -32,7 +32,8 @@ class Settings(object):
 
         In most cases, if an invalid value is provided, a default will be written to the settings file.
     '''
-    dfltdists = ['normal', 'triangular',  'curvtrap', 'uniform', 't', 'f', 'expon', 'beta', 'poisson', 'trapz', 'arcsine', 'resolution']
+    dfltdists = ['normal', 'triangular',  'uniform', 't', 'f', 'gamma', 'expon', 'curvtrap', 'beta',
+                 'poisson', 'trapz', 'arcsine', 'resolution']
 
     def __init__(self):
         self.settings = QtCore.QSettings(QtCore.QSettings.IniFormat, QtCore.QSettings.UserScope,

@@ -17,9 +17,6 @@ from . import css
 from . import latexchars
 
 
-sympy.printing.latex.__globals__['requires_partial'] = lambda x: True   # Render all derivatives as partial
-sympy.printing.pretty.__globals__['requires_partial'] = lambda x: True
-
 latex_path = shutil.which('pdflatex')
 pandoc_path = shutil.which('pandoc')
 
@@ -414,6 +411,7 @@ class Math(object):
             if sympyexpr:
                 self.sympyexpr = sympyexpr
                 self.latexexpr = sympy.latex(self.sympyexpr).encode('ascii', 'latex').decode()
+                self.latexexpr = self.latexexpr.replace(r'\frac{d}{d ', r'\frac{\partial}{\partial ')  # All derivatives are partial
                 self.prettytextexpr = sympy.pretty(self.sympyexpr)  # May use multiple lines for fractions, etc.
                 self.simpletextexpr = str(self.sympyexpr)  # Typically the same as expr string
             else:
@@ -449,6 +447,7 @@ class Math(object):
         math = cls()
         math.sympyexpr = expr
         math.latexexpr = sympy.latex(expr).encode('ascii', 'latex').decode()
+        math.latexexpr = math.latexexpr.replace(r'\frac{d}{d ', r'\frac{\partial}{\partial ')  # All derivatives are partial
         math.prettytextexpr = sympy.pretty(expr)
         math.simpletextexpr = str(expr)
         if unit is not None:

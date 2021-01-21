@@ -5,7 +5,7 @@ Main module for computing uncertainties.
 from collections import namedtuple
 import sympy
 import numpy as np
-import scipy.stats as stat
+from scipy import stats
 import inspect
 import warnings
 import logging
@@ -844,10 +844,10 @@ class Inputs():
             with warnings.catch_warnings(record=True) as w:
                 # Roundabout way of catching a numpy warning that should really be an exception
                 warnings.simplefilter('always')
-                normsamples = stat.multivariate_normal.rvs(cov=corr, size=self.nsamples)
+                normsamples = stats.multivariate_normal.rvs(cov=corr, size=self.nsamples)
                 if len(w) > 0:
                     covok = False  # Not positive semi-definite
-                normsamples = stat.norm.cdf(normsamples)
+                normsamples = stats.norm.cdf(normsamples)
 
         elif self.copula == 't':
             df = args.get('df', np.inf)
@@ -855,7 +855,7 @@ class Inputs():
             with warnings.catch_warnings(record=True) as w:
                 warnings.simplefilter('always')
                 normsamples = multivariate_t_rvs(mean=mean, corr=corr, size=self.nsamples, df=df)
-                normsamples = stat.t.cdf(normsamples, df=df)
+                normsamples = stats.t.cdf(normsamples, df=df)
                 if len(w) > 0:
                     covok = False  # Not positive semi-definite
 
@@ -993,7 +993,12 @@ class Model():
 
         # Fix weird cases where function returns array of objects instead of floats
         for i, (k, v) in enumerate(self.sampledvalues.items()):
+            try:
+                len(v)
+            except TypeError:
+                v = unitmgr.Quantity(np.full(self.inputs.nsamples, v.magnitude), v.units)
             self.sampledvalues[k] = v.astype(np.float)
+
             if not hasattr(v, 'magnitude'):
                 # Some functions may strip units
                 self.sampledvalues[k] = unitmgr.Quantity(v, 'dimensionless')
@@ -1264,8 +1269,11 @@ class ModelSympy(Model):
         for i, out in enumerate(self.outnames):
             uncfsymbol = sympy.Symbol('u_{}'.format(out))
             denom = [(u*c)**4/v for u, c, v in zip(uncertsymbols, Cx[i], degfsymbols)]
-            degf.append(uncfsymbol**4 / sympy.Add(*denom))
-
+            denom = sympy.Add(*denom)
+            if denom == 0:
+                degf.append(np.inf)
+            else:
+                degf.append(uncfsymbol**4 / denom)
         return GUMout(uncerts, self.sympyexprs, degf, Uy, Ux, Cx)
 
     def GUMcovariance(self, symboliconly=False):
@@ -1312,7 +1320,7 @@ class ModelSympy(Model):
             # Just output uncertainties (sqrt of diagonal of Uy)
             uncerts = eval_list(sym.uncert, values)
             # Convert to desired units
-            uncerts = [u.to(self.outunits[i]) if self.outunits[i] is not None else u.to(nom[i].units) if hasattr(u, 'to') else u for i, u in enumerate(uncerts)]
+            uncerts = [u.to(self.outunits[i]) if self.outunits[i] is not None else u.to(nom[i].units) if hasattr(u, 'to') else u*unitmgr.dimensionless for i, u in enumerate(uncerts)]
 
             # Deg freedom
             nu = self.inputs.degfs()

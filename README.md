@@ -2,7 +2,7 @@
 
 Sandia UNcertainty CALculator (SUNCAL)
 
-Copyright 2019-2020 National Technology & Engineering Solutions of Sandia, LLC (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S. Government retains certain rights in this software.
+Copyright 2019-2021 National Technology & Engineering Solutions of Sandia, LLC (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S. Government retains certain rights in this software.
 This software is distributed under the GNU General Public License.
 
 ---
@@ -13,7 +13,7 @@ multi-variable system. Contact uncertainty@sandia.gov.
 
 ## Installation
 
-Installation of the Python package and command line interface requires Python 3.5+ with the following packages:
+Installation of the Python package and command line interface requires Python 3.7+ with the following packages:
 
 - numpy
 - scipy

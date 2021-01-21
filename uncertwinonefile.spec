@@ -10,7 +10,6 @@ a = Analysis(['suncal\\startui.py'],
              hiddenimports=[],
              hookspath=[],
              runtime_hooks=[],
-             excludes=['FixTk', 'tcl', 'tk', '_tkinter', 'tkinter', 'Tkinter', 'matplotlib.backends.backend_tkagg', '_ssl'],
              win_no_prefer_redirects=False,
              win_private_assemblies=False,
              cipher=block_cipher)

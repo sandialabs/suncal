@@ -1,5 +1,15 @@
 # Change History
 
+
+## Version 1.5.1
+
+- Select between "mean" and "median" in for distribution entry
+- Changed gamma distribution to input alpha and beta parameters, consistent with JCGM.
+- Added "observed itp" parameter to PFA_norm and PFR_norm functions
+- Fixed scrolling issue on Windows
+- Fixed issue when a measurement function is a constant
+- Updates for Python 3.8+ and dependency compatibility
+
 ## Version 1.5
 
 - Improved uncertainty computation and derivation report in multi-output measurement models

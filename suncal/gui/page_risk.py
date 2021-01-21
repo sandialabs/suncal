@@ -1,7 +1,7 @@
 ''' User interface for Risk Analysis '''
 from collections import namedtuple
 import numpy as np
-from PyQt5 import QtWidgets, QtGui, QtCore
+from PyQt5 import QtWidgets, QtCore
 from matplotlib.figure import Figure
 from matplotlib.ticker import FormatStrFormatter, ScalarFormatter
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
@@ -465,12 +465,16 @@ class RiskWidget(QtWidgets.QWidget):
 
         self.chkProc.setChecked(self.urisk.get_procdist() is not None)
         self.txtNotes.setPlainText(self.urisk.description)
+        
+        self.tab = QtWidgets.QTabWidget()
 
         layout = QtWidgets.QHBoxLayout()
+        llayout = QtWidgets.QVBoxLayout()
         vlayout = QtWidgets.QVBoxLayout()
         flayout = QtWidgets.QFormLayout()
         flayout.addRow('Mode:', self.mode)
         flayout.addRow('Calculation:', self.calctype)
+        
         vlayout.addLayout(flayout)
         vlayout.addWidget(self.simple)
         vlayout.addWidget(self.limits)
@@ -481,15 +485,20 @@ class RiskWidget(QtWidgets.QWidget):
         vlayout.addWidget(self.chkGB)
         vlayout.addWidget(self.guardband)
         vlayout.addWidget(self.sweepsetup)
-        vlayout.addWidget(QtWidgets.QLabel('Notes:'))
-        vlayout.addWidget(self.txtNotes)
+        vlayout.addStretch()
         rlayout = QtWidgets.QVBoxLayout()
         rlayout.addWidget(self.canvas, stretch=20)
         rlayout.addWidget(self.toolbar)
         rlayout.addWidget(self.txtOutput, stretch=8)
-        layout.addLayout(vlayout, stretch=1)
+        llayout.addWidget(self.tab)
+        layout.addLayout(llayout, stretch=1)
         layout.addLayout(rlayout, stretch=2.5)
         self.setLayout(layout)
+
+        setup = QtWidgets.QWidget()
+        setup.setLayout(vlayout)
+        self.tab.addTab(setup, 'Parameters')
+        self.tab.addTab(self.txtNotes, 'Notes')
 
         self.mode.currentIndexChanged.connect(self.changemode)
         self.simple.editingFinished.connect(self.entry_changed)

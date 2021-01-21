@@ -79,6 +79,7 @@ class WidgetPanel(QtWidgets.QTreeWidget):
     def __init__(self, parent=None):
         super().__init__(parent=parent)
         self.setHeaderHidden(True)
+        self.setVerticalScrollMode(QtWidgets.QTreeView.ScrollPerPixel)
         self.setColumnCount(1)
         self.itemExpanded.connect(self.wasexpanded)
         self.itemCollapsed.connect(self.wasexpanded)
@@ -985,6 +986,11 @@ class DistributionEditTable(QtWidgets.QTableWidget):
             median = median if np.isfinite(median) else 0
         initargs['median'] = median
 
+        # Strip any units that may trickle in
+        for k, v in initargs.items():
+            if hasattr(v, 'magnitude'):
+                initargs[k] = v.magnitude
+
         signalstate = self.signalsBlocked()
         self.blockSignals(True)
         self.clear()
@@ -1011,6 +1017,11 @@ class DistributionEditTable(QtWidgets.QTableWidget):
         else:
             for row, arg in enumerate(argnames):
                 self.setItem(row+1, 0, ReadOnlyTableItem(arg))
+                if arg == 'median':
+                    meanmedian = QtWidgets.QComboBox()
+                    meanmedian.addItems(('median', 'mean'))
+                    meanmedian.currentIndexChanged.connect(self.meanmedian_change)
+                    self.setCellWidget(row+1, 0, meanmedian)
                 self.setItem(row+1, 1, QtWidgets.QTableWidgetItem(str(initargs.get(arg, '1' if row > 0 else '0'))))
 
             if self.showlocslider:
@@ -1036,6 +1047,16 @@ class DistributionEditTable(QtWidgets.QTableWidget):
         self.cmbdist.currentIndexChanged.connect(self.distchanged)
         self.blockSignals(signalstate)
 
+    def meanmedian_change(self):
+        ''' Mean vs Median entry selection was changed '''
+        self.blockSignals(True)
+        if self.item(1, 0).text() == 'median':
+            self.item(1, 0).setText('mean')
+        else:
+            self.item(1, 0).setText('median')
+        self.blockSignals(False)
+        self.valuechanged()
+
     def distchanged(self):
         ''' Distribution combobox change '''
         self.set_disttype({'dist': self.cmbdist.currentText()})
@@ -1047,6 +1068,7 @@ class DistributionEditTable(QtWidgets.QTableWidget):
         self.blockSignals(True)
         argvals = []
         distname = self.cmbdist.currentText()
+        meanmedian = self.item(1, 0).text() if self.item(1, 0) else 'median'
 
         for r in range(self.rowCount()-1):
             try:
@@ -1061,24 +1083,27 @@ class DistributionEditTable(QtWidgets.QTableWidget):
         argnames = [self.item(r+1, 0).text() for r in range(self.rowCount()-1)]
         args = dict(zip(argnames, argvals))
         if '' in args:
-            args['median'] = args.pop('')  # 'median' label is hidden when slider is used
+            args[meanmedian] = args.pop('')  # 'median' label is hidden when slider is used
 
         changed = False
         if distname == 'histogram':
             distargs = self.item(0, 0).data(ROLE_HISTDATA)
             self.statsdist = distributions.get_distribution(distname, **distargs)
             self.distbias = args.pop('bias', 0)
-            if 'median' in args or '' in args:
-                median = args.pop('median', args.pop('', 0))
+            if meanmedian in args or '' in args:
+                median = args.pop(meanmedian, args.pop('', 0))
                 self.statsdist.set_median(median - self.distbias)
                 changed = True
 
         elif None not in argvals:
-            median = args.pop('median', args.pop('', 0))
+            m = args.pop(meanmedian, args.pop('', 0))
             self.distbias = args.pop('bias', 0)
             try:
                 self.statsdist = distributions.get_distribution(distname, **args)
-                self.statsdist.set_median(median - self.distbias)
+                if meanmedian == 'median':
+                    self.statsdist.set_median(m - self.distbias)
+                else:
+                    self.statsdist.set_mean(m - self.distbias)
             except ZeroDivisionError:
                 self.statsdist = None
             else:

@@ -16,9 +16,9 @@ import scipy.optimize
 import yaml
 
 from . import out_curvefit
-from . import uarray
+from . import array
 from . import uparser
-from .uarray import Array  # Explicitly import Array so it can be accessed via curvefit.Array
+from .array import Array  # Explicitly import Array so it can be accessed via curvefit.Array
 
 
 Fit = namedtuple('Fit', ['coeff', 'covariance'])
@@ -485,7 +485,7 @@ class CurveFit(object):
         self.run_uyestimate()
         uy = self.arr.uy if self.arr.uy_estimate is None else self.arr.uy_estimate
 
-        coeff, cov, grad = uarray._GUM(lambda x, y: self.fitfunc(x, y, ux=None, uy=None)[0], self.arr.x, self.arr.y, self.arr.ux, uy)
+        coeff, cov, grad = array._GUM(lambda x, y: self.fitfunc(x, y, ux=None, uy=None)[0], self.arr.x, self.arr.y, self.arr.ux, uy)
         sigmas = np.sqrt(np.diag(cov))
         resids = (self.arr.y - self.func(self.arr.x, *coeff))
         degf = len(self.arr.x) - len(coeff)

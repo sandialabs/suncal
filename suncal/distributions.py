@@ -133,6 +133,17 @@ class Distribution(object):
         elif 'loc' in self.kwds:
             self.kwds['loc'] = self.distargs['loc']
 
+    def set_mean(self, mean):
+        ''' Set the mean value of the distribution. Calculates the correct "loc" keyword. '''
+        zeroargs = self.distargs.copy()
+        zeroargs['loc'] = 0
+        zeromean = self.dist(**zeroargs).mean()
+        self.distargs['loc'] = mean - zeromean
+        if 'mean' in self.kwds:
+            self.kwds['mean'] = mean
+        elif 'loc' in self.kwds:
+            self.kwds['loc'] = self.distargs['loc']
+
     def get_distargs(self):
         ''' Return arguments used scipy.stats distribution '''
         return self.distargs
@@ -473,6 +484,25 @@ class DPiecewise(DHistogram):
         self.distargs = {'histogram': (pdf, x)}
 
 
+class DGamma(Distribution):
+    ''' Gamma distribution defined by alpha and beta. '''
+    dist = stats.gamma
+    argnames = ['alpha', 'beta']
+
+    def update_kwds(self, **kwds):
+        self.kwds.update(kwds)
+        a = self.kwds.get('alpha', 1.0)
+        b = self.kwds.get('beta', 1.0)
+        self.distargs = {'a': a, 'scale': 1/b}
+
+    def helpstr(self):
+        return '''Gamma distribution with shape parameters alpha and beta.
+
+When based on measurement data with mean y and standard deviaion s,
+alpha = y^2/s^2 and beta = y/s^2.
+        '''
+
+
 # Curvilinear Trapezoid Distribution
 # Scipy doesn't have this one, so need to subclass rv_continuous and make one ourselves.
 # This one uses loc, scale, and d as parameters,
@@ -513,13 +543,13 @@ class _ctrap_gen(stats.rv_continuous):
         '''
         return 0.5, (1-2*d)**2/12 + d**2/9, None, None  # mean, variance, [skew, kertosis]
 
-    def _rvs(self, d):
+    def _rvs(self, d, size=None, random_state=None):
         ''' Generate random variates.
 
             See GUM-Supplement 1, 6.4.3.4.
         '''
-        a_s = self._random_state.uniform(low=0, high=d*2, size=self._size)
-        r2 = self._random_state.uniform(size=self._size)
+        a_s = random_state.uniform(low=0, high=d*2, size=size)
+        r2 = random_state.uniform(size=size)
         b_s = 1 - a_s
         return a_s + (b_s - a_s)*r2
 ctrap = _ctrap_gen(a=0, b=1, name='ctrap')
@@ -557,6 +587,7 @@ _aliases = {
     'normal': DNormal,
     't': Dt,
     'triangular': DTriangular,
+    'gamma': DGamma,
     'curvtrap': DCurvTrap,
     'arcsine': DArcsine,
     'resolution': DResolution,

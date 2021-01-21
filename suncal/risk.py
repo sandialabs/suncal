@@ -268,7 +268,7 @@ def guardbandfactor_to_offset(gbf, LL, UL):
     return (UL-LL)/2 * (1-gbf)
 
 
-def PFA_norm(itp, TUR, GB=1, biastest=0, biasproc=0, **kwargs):
+def PFA_norm(itp, TUR, GB=1, biastest=0, biasproc=0, observeditp=False, **kwargs):
     ''' PFA for normal distributions in terms of TUR and
         in-tolerance probability
 
@@ -289,11 +289,18 @@ def PFA_norm(itp, TUR, GB=1, biastest=0, biasproc=0, **kwargs):
             Bias/shift in the test measurement distribution, in percent of SL
         biasproc: float
             Bias/shift in the process distribution, in percent of SL
+        observed: bool
+            Consider itp as the "observed" itp. True itp will be adjusted
+            to account for measurement uncertainty in observing itp. See
+            Mimbs "Using Reliability to Meet Z540.3's 2% Rule", NCSLI 2011.
     '''
     # Convert itp to stdev of process
     # This is T in equation 2 in Dobbert's Guardbanding Strategy, with T = 1.
     sigma0 = 1/stats.norm.ppf((1+itp)/2)
     sigmatest = 1/TUR/2
+
+    if observeditp:
+        sigma0 = np.sqrt(sigma0**2 - sigmatest**2)
 
     try:
         GB = float(GB)
@@ -315,7 +322,7 @@ def PFA_norm(itp, TUR, GB=1, biastest=0, biasproc=0, **kwargs):
     return c
 
 
-def PFR_norm(itp, TUR, GB=1, biastest=0, biasproc=0, **kwargs):
+def PFR_norm(itp, TUR, GB=1, biastest=0, biasproc=0, observeditp=False, **kwargs):
     ''' PFR for normal distributions in terms of TUR and
         in-tolerance probability
 
@@ -336,9 +343,16 @@ def PFR_norm(itp, TUR, GB=1, biastest=0, biasproc=0, **kwargs):
             Bias/shift in the test measurement distribution
         biasproc: float
             Bias/shift in the process distribution
+        observed: bool
+            Consider itp as the "observed" itp. True itp will be adjusted
+            to account for measurement uncertainty in observing itp. See
+            Mimbs "Using Reliability to Meet Z540.3's 2% Rule", NCSLI 2011.
     '''
     sigma0 = 1/stats.norm.ppf((1+itp)/2)
     sigmatest = 1/TUR/2
+
+    if observeditp:
+        sigma0 = np.sqrt(sigma0**2 - sigmatest**2)
 
     try:
         GB = float(GB)

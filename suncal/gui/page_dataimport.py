@@ -2,7 +2,6 @@
     a CSV or from another calculation in the project.
 '''
 
-from collections import namedtuple
 from contextlib import suppress
 import numpy as np
 

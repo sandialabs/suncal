@@ -7,7 +7,7 @@ import sympy
 from dateutil.parser import parse
 
 import suncal
-from suncal import uarray
+from suncal import array
 from suncal import curvefit
 
 
@@ -235,8 +235,8 @@ def test_ttest(capsys):
 #    ''' Test threshold crossing '''
 #    x = np.linspace(0,20)
 #    y = 5*np.exp(-x/5)
-#    arr = uarray.Array(x, y, uy=.25)
-#    f = uarray.ArrayThresh(arr, thresh=2, edge='first')
+#    arr = array.Array(x, y, uy=.25)
+#    f = array.ArrayThresh(arr, thresh=2, edge='first')
 #    f.calculate(gum=True, mc=True, lsq=True)
 #
 #    expected = -5*np.log(2/5)  # Solve analytically

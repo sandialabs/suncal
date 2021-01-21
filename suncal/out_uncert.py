@@ -330,7 +330,10 @@ class GUMOutput(output.Output):
         for idx1 in range(self.nouts):
             row = [report.Math(self.names[idx1])]
             for idx2 in range(self.nouts):
-                corr = self.correlation(idx1, idx2)
+                try:
+                    corr = self.correlation(idx1, idx2)
+                except IndexError:  # Constant measurement models can end up here
+                    corr = np.nan
                 row.append(format(corr, '.3f'))
             rows.append(row)
         r.hdr('Correlation Coefficients (GUM)', level=3)
@@ -362,6 +365,10 @@ class GUMOutput(output.Output):
 
         if self.symbolic is None:
             rpt.txt('No symbolic solution computed for function.')
+            return rpt
+
+        if len(self.Ux) == 0:
+            rpt.txt('No input variables defined in model.')
             return rpt
 
         def combine(expr, val):
@@ -547,7 +554,10 @@ class GUMOutput(output.Output):
         showleg = kwargs.get('legend', True)
         levels = None
 
-        x, y, h = _contour(self._nom, self.Uy, fidx1, fidx2)
+        try:
+            x, y, h = _contour(self._nom, self.Uy, fidx1, fidx2)
+        except IndexError:  # no variables in model
+            h = None
         if h is not None:
             levels = np.linspace(h.min(), h.max(), 11)[1:]
             ax.contour(x, y, h, levels, cmap=plt.get_cmap(cmap))

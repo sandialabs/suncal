@@ -26,7 +26,7 @@ OutputDir=dist
 Compression=lzma
 SolidCompression=yes
 UninstallDisplayIcon={app}\{#MyAppExeName}
-VersionInfoCopyright=Copyright 2019 NTESS, LLC
+VersionInfoCopyright=Copyright 2021 NTESS, LLC
 VersionInfoVersion={#MyAppVersion}
 
 [Languages]
