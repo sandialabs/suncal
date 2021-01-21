@@ -7,7 +7,6 @@ import sympy
 from dateutil.parser import parse
 
 import suncal
-from suncal import array
 from suncal import curvefit
 
 
