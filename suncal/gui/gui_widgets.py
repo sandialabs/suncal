@@ -969,6 +969,9 @@ class DistributionEditTable(QtWidgets.QTableWidget):
         if initargs is None:
             initargs = {}
         distname = initargs.pop('name', initargs.pop('dist', 'normal'))
+        initargs.setdefault('median', initargs.get('mean', 0))
+        bias = initargs['median'] - initargs.get('expected', initargs['median'])
+        initargs.setdefault('bias', bias)
 
         # Want control to enter median value, not loc. Shift appropriately.
         stats_dist = distributions.get_distribution(distname, **initargs)
@@ -976,15 +979,19 @@ class DistributionEditTable(QtWidgets.QTableWidget):
 
         if 'loc' in argnames:
             argnames.remove('loc')
-        argnames = ['median'] + argnames
-
-        try:
-            median = stats_dist.median()
-        except TypeError:
-            median = 0
+        if stats_dist.showshift:
+            argnames = ['shift'] + argnames
+            initargs.setdefault('shift', stats_dist.distargs.get('loc', 0))
         else:
-            median = median if np.isfinite(median) else 0
-        initargs['median'] = median
+            argnames = ['median'] + argnames
+
+            try:
+                median = stats_dist.median()
+            except TypeError:
+                median = 0
+            else:
+                median = median if np.isfinite(median) else 0
+            initargs['median'] = median
 
         # Strip any units that may trickle in
         for k, v in initargs.items():
@@ -1017,13 +1024,7 @@ class DistributionEditTable(QtWidgets.QTableWidget):
         else:
             for row, arg in enumerate(argnames):
                 self.setItem(row+1, 0, ReadOnlyTableItem(arg))
-                if arg == 'median':
-                    meanmedian = QtWidgets.QComboBox()
-                    meanmedian.addItems(('median', 'mean'))
-                    meanmedian.currentIndexChanged.connect(self.meanmedian_change)
-                    self.setCellWidget(row+1, 0, meanmedian)
                 self.setItem(row+1, 1, QtWidgets.QTableWidgetItem(str(initargs.get(arg, '1' if row > 0 else '0'))))
-
             if self.showlocslider:
                 self.setItem(row+2, 0, ReadOnlyTableItem('bias'))
                 self.setItem(row+2, 1, QtWidgets.QTableWidgetItem(str(initargs.get('bias', 0))))
@@ -1047,16 +1048,6 @@ class DistributionEditTable(QtWidgets.QTableWidget):
         self.cmbdist.currentIndexChanged.connect(self.distchanged)
         self.blockSignals(signalstate)
 
-    def meanmedian_change(self):
-        ''' Mean vs Median entry selection was changed '''
-        self.blockSignals(True)
-        if self.item(1, 0).text() == 'median':
-            self.item(1, 0).setText('mean')
-        else:
-            self.item(1, 0).setText('median')
-        self.blockSignals(False)
-        self.valuechanged()
-
     def distchanged(self):
         ''' Distribution combobox change '''
         self.set_disttype({'dist': self.cmbdist.currentText()})
@@ -1068,7 +1059,6 @@ class DistributionEditTable(QtWidgets.QTableWidget):
         self.blockSignals(True)
         argvals = []
         distname = self.cmbdist.currentText()
-        meanmedian = self.item(1, 0).text() if self.item(1, 0) else 'median'
 
         for r in range(self.rowCount()-1):
             try:
@@ -1083,27 +1073,27 @@ class DistributionEditTable(QtWidgets.QTableWidget):
         argnames = [self.item(r+1, 0).text() for r in range(self.rowCount()-1)]
         args = dict(zip(argnames, argvals))
         if '' in args:
-            args[meanmedian] = args.pop('')  # 'median' label is hidden when slider is used
+            args['median'] = args.pop('')  # 'median' label is hidden when slider is used
 
         changed = False
         if distname == 'histogram':
             distargs = self.item(0, 0).data(ROLE_HISTDATA)
             self.statsdist = distributions.get_distribution(distname, **distargs)
             self.distbias = args.pop('bias', 0)
-            if meanmedian in args or '' in args:
-                median = args.pop(meanmedian, args.pop('', 0))
+            if 'median' in args or '' in args:
+                median = args.pop('median', args.pop('', 0))
                 self.statsdist.set_median(median - self.distbias)
                 changed = True
 
         elif None not in argvals:
-            m = args.pop(meanmedian, args.pop('', 0))
             self.distbias = args.pop('bias', 0)
             try:
                 self.statsdist = distributions.get_distribution(distname, **args)
-                if meanmedian == 'median':
-                    self.statsdist.set_median(m - self.distbias)
+                if self.statsdist.showshift:
+                    self.statsdist.set_shift(args.pop('shift', 0))
                 else:
-                    self.statsdist.set_mean(m - self.distbias)
+                    m = args.pop('median', args.pop('', 0))
+                    self.statsdist.set_median(m - self.distbias)
             except ZeroDivisionError:
                 self.statsdist = None
             else:
@@ -1112,6 +1102,34 @@ class DistributionEditTable(QtWidgets.QTableWidget):
         self.blockSignals(signalstate)
         if changed:
             self.changed.emit()
+
+    def contextMenuEvent(self, event):
+        menu = QtWidgets.QMenu(self)
+        actHelp = QtWidgets.QAction('Distribution Help...', self)
+        menu.addAction(actHelp)
+        actHelp.triggered.connect(self.helppopup)
+        menu.popup(QtGui.QCursor.pos())
+    
+    def helppopup(self):
+        dlg = PopupHelp(self.statsdist.helpstr())
+        dlg.exec_()        
+
+
+class PopupHelp(QtWidgets.QDialog):
+    ''' Show a floating dialog window with a text message '''
+    def __init__(self, text):
+        super().__init__()
+        centerWindow(self, 600, 400)
+        self.setModal(False)
+        self.text = QtWidgets.QTextEdit()
+        self.text.setReadOnly(True)
+        font = QtGui.QFont('Courier')
+        font.setStyleHint(QtGui.QFont.TypeWriter)
+        self.text.setCurrentFont(font)
+        self.text.setText(text)
+        layout = QtWidgets.QVBoxLayout()
+        layout.addWidget(self.text)
+        self.setLayout(layout)
 
 
 class ComboNoWheel(QtWidgets.QComboBox):

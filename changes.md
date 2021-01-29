@@ -1,5 +1,11 @@
 # Change History
 
+## Version 1.5.2
+
+- Fixed Mac builds
+- Updated some Markdown tables for correct formatting
+- Added custom parameterizations of Exponential, Beta, and Lognorm distributions
+
 
 ## Version 1.5.1
 
@@ -9,6 +15,7 @@
 - Fixed scrolling issue on Windows
 - Fixed issue when a measurement function is a constant
 - Updates for Python 3.8+ and dependency compatibility
+
 
 ## Version 1.5
 

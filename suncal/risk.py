@@ -1328,7 +1328,7 @@ class RiskOutput(output.Output):
             pfr = self.risk.PFR()
             cols.append([
                 ('Total PFA: ', report.Number(pfa*100, fmt='auto'), '%'),
-                ('Total PFR: ', report.Number(pfr*100, fmt='auto'), '%'), '', ''])
+                ('Total PFR: ', report.Number(pfr*100, fmt='auto'), '%'), '-', '-'])
             if self.risk.cost_FA is not None and self.risk.cost_FR is not None:
                 cost = self.risk.cost_FA * pfa + self.risk.cost_FR * pfr
 
@@ -1359,6 +1359,7 @@ class RiskOutput(output.Output):
             r = report.Report(**kwargs)
             r.plot(fig)
             plt.close(fig)
+            r.txt('\n\n')
             r.append(self.report(**kwargs))
         return r
 

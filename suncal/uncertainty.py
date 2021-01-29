@@ -993,15 +993,16 @@ class Model():
 
         # Fix weird cases where function returns array of objects instead of floats
         for i, (k, v) in enumerate(self.sampledvalues.items()):
+            if not hasattr(v, 'magnitude'):
+                # Some functions may strip units
+                v = unitmgr.Quantity(v, 'dimensionless')
+
             try:
                 len(v)
             except TypeError:
                 v = unitmgr.Quantity(np.full(self.inputs.nsamples, v.magnitude), v.units)
             self.sampledvalues[k] = v.astype(np.float)
 
-            if not hasattr(v, 'magnitude'):
-                # Some functions may strip units
-                self.sampledvalues[k] = unitmgr.Quantity(v, 'dimensionless')
             if self.outunits[i]:
                 self.sampledvalues[k] = self.sampledvalues[k].to(self.outunits[i])
 

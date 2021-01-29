@@ -963,16 +963,12 @@ class RiskWidget(QtWidgets.QWidget):
 
             params = dists.get('Process Distribution', None)
             if params is not None:
-                params.setdefault('median', params.get('mean', 0))
                 self.dproc_table.set_disttype(initargs=params)
                 self.dproc_table.valuechanged()
                 self.chkProc.setChecked(True)
 
             params = dists.get('Test Distribution', None)
             if params is not None:
-                params.setdefault('median', params.get('mean', 0))
-                bias = params['median'] - params.get('expected', params['median'])
-                params.setdefault('bias', bias)
                 self.dtest_table.set_disttype(initargs=params)
                 self.dtest_table.valuechanged()
                 self.chkTest.setChecked(True)

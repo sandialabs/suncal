@@ -32,7 +32,7 @@ class Settings(object):
 
         In most cases, if an invalid value is provided, a default will be written to the settings file.
     '''
-    dfltdists = ['normal', 'triangular',  'uniform', 't', 'f', 'gamma', 'expon', 'curvtrap', 'beta',
+    dfltdists = ['normal', 'triangular',  'uniform', 't', 'gamma', 'lognorm', 'expon', 'curvtrap', 'beta',
                  'poisson', 'trapz', 'arcsine', 'resolution']
 
     def __init__(self):

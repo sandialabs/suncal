@@ -255,5 +255,6 @@ class DistOutput(output.Output):
                 fig.suptitle(name)
             r.plot(fig)
             plt.close(fig)
+            r.add('\n\n')
             r.append(self.report_single(name, **kwargs))
         return r

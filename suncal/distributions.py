@@ -87,6 +87,8 @@ class Distribution(object):
         kwds: keyword arguments
             Keywords passed to the scipy distribution
     '''
+    showshift = False
+
     def __init__(self, name, **kwds):
         self.name = name
         self.kwds = kwds
@@ -143,6 +145,11 @@ class Distribution(object):
             self.kwds['mean'] = mean
         elif 'loc' in self.kwds:
             self.kwds['loc'] = self.distargs['loc']
+
+    def set_shift(self, shift):
+        ''' Set shift of the distribiton by setting loc parameter '''
+        self.kwds['shift'] = shift
+        self.distargs['loc'] = shift
 
     def get_distargs(self):
         ''' Return arguments used scipy.stats distribution '''
@@ -379,10 +386,36 @@ class DResolution(Distribution):
         return ''' Uncertainty due to digital equipment resolution. The 'a' parameter is\nincrement of least-significant digit in a digital display.\n\nSame as a uniform distribution with half-width a/2.'''
 
 
+class DExpon(Distribution):
+    ''' Exponential distribution defined by lambda parameter '''
+    dist = stats.expon
+    showshift = True
+    argnames = ['lambda']
+
+    def update_kwds(self, **kwds):
+        ''' Update keywords for the distribution '''
+        lam = kwds.get('lambda', 1)
+        self.kwds.update(kwds)
+        self.distargs = {'scale': 1/lam}
+
+    def fit(self, x):
+        ''' Find best fitting parameters for the distribution to the sampled x data '''
+        loc, scale = self.dist.fit(x)
+        self.distargs = {'loc': loc, 'scale': scale}
+        self.kwds = {'lambda': 1/scale, 'shift': loc}
+        return self.kwds
+
+    def helpstr(self):
+        return '''Exponential distribution with rate parameter lambda. (lambda > 0)
+
+PDF(x) = lambda * exp(lambda*x)'''
+
+
 class DPoisson(Distribution):
     ''' Poisson discrete distribution defined by parameter "v". '''
     dist = stats.poisson
     argnames = ['v']
+    showshift = True
 
     def update_kwds(self, **kwds):
         ''' Update the keywords for the distribution. '''
@@ -391,7 +424,7 @@ class DPoisson(Distribution):
         self.distargs = {'loc': -v, 'mu': v}  # Since Median value will be applied later, shift loc to -v to compensate.
 
     def helpstr(self):
-        return 'Poisson discrete distribution with variance v. In general, measured value should equal variance.'
+        return 'Poisson discrete distribution with variance v. In general, measured value equals the variance.'
 
 
 class DBinom(Distribution):
@@ -488,19 +521,76 @@ class DGamma(Distribution):
     ''' Gamma distribution defined by alpha and beta. '''
     dist = stats.gamma
     argnames = ['alpha', 'beta']
+    showshift = True
 
     def update_kwds(self, **kwds):
         self.kwds.update(kwds)
         a = self.kwds.get('alpha', 1.0)
         b = self.kwds.get('beta', 1.0)
         self.distargs = {'a': a, 'scale': 1/b}
+    
+    def fit(self, x):
+        ''' Find best fitting parameters for the distribution to the sampled x data. '''
+        s, loc, scale = self.dist.fit(x)
+        self.distargs = {'a': s, 'loc': loc, 'scale': scale}
+        self.kwds = {'alpha': s, 'beta': 1/scale, 'shift': loc}
+        return self.kwds
 
     def helpstr(self):
         return '''Gamma distribution with shape parameters alpha and beta.
 
-When based on measurement data with mean y and standard deviaion s,
-alpha = y^2/s^2 and beta = y/s^2.
-        '''
+When based on measurement data with mean y and standard deviaion s, alpha = y^2/s^2 and beta = y/s^2.
+
+PDF(x) = (beta^alpha * x^(alpha-1) * exp(beta*x)) / (Gamma(alpha)) for x, beta, alpha > 0'''
+
+
+class DLognorm(Distribution):
+    ''' Lognormal distribution defined by mean and standard deviation
+        of natural log of random variable X.
+    '''
+    dist = stats.lognorm
+    argnames = ['mu', 'std']
+    showshift = True
+
+    def update_kwds(self, **kwds):
+        self.kwds.update(kwds)
+        std = self.kwds.get('std', 1.0)  # std is stdev of ln(X)
+        mu = self.kwds.get('mu', 1.0)    # mu is expectation of ln(X)
+        self.distargs = {'s': std, 'scale': np.exp(mu)}
+    
+    def fit(self, x):
+        ''' Find best fitting parameters for the distribution to the sampled x data. '''
+        s, loc, scale = self.dist.fit(x)
+        self.distargs = {'s': s, 'scale': scale, 'loc': loc}
+        self.kwds = {'std': s, 'mu': np.log(scale), 'shift': loc}
+        return self.kwds
+
+    def helpstr(self):
+        return 'Lognormal distribution where mu and std are the expected value and\nstandard deviation of the natural log of the random variable.'
+
+
+class DBeta(Distribution):
+    ''' Beta Distribution '''
+    dist = stats.beta
+    argnames = ['a', 'b', 'scale']
+    showshift = True
+
+    def update_kwds(self, **kwds):
+        self.kwds.update(kwds)
+        a = self.kwds.get('a', 1.0)
+        b = self.kwds.get('b', 1.0)
+        scale = self.kwds.get('scale', 1)
+        self.distargs = {'a': a, 'b': b, 'scale': scale}
+
+    def fit(self, x):
+        ''' Find best fitting parameters for the distribution to the sampled x data. '''
+        a, b, loc, scale = self.dist.fit(x)
+        self.distargs = {'a': a, 'b': b, 'loc': loc, 'scale': scale}
+        self.kwds = {'a': a, 'b': b, 'shift': loc}
+        return self.kwds
+
+    def helpstr(self):
+        return 'Beta distribution with positive shape parameters a and b.'
 
 
 # Curvilinear Trapezoid Distribution
@@ -588,6 +678,9 @@ _aliases = {
     't': Dt,
     'triangular': DTriangular,
     'gamma': DGamma,
+    'beta': DBeta,
+    'lognorm': DLognorm,
+    'expon': DExpon,
     'curvtrap': DCurvTrap,
     'arcsine': DArcsine,
     'resolution': DResolution,

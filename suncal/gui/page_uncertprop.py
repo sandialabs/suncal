@@ -814,7 +814,7 @@ class MeasTableWidget(QtWidgets.QTableWidget):
                 imp.triggered.connect(self.import_dist)
                 hlp = menu.addAction('Distribution help...')
                 def helppopup():
-                    dlg = PopupHelp(uncert.distribution.helpstr())
+                    dlg = gui_widgets.PopupHelp(uncert.distribution.helpstr())
                     dlg.exec_()
                 hlp.triggered.connect(helppopup)
             menu.exec(event.globalPos())
@@ -1064,23 +1064,6 @@ class UncertPreview(QtWidgets.QWidget):
                 height = self.size().height()
                 self.figure.subplots_adjust(left=0, right=1, bottom=20/height, top=.99)
             self.canvas.draw_idle()
-
-
-class PopupHelp(QtWidgets.QDialog):
-    ''' Show a floating dialog window with a text message '''
-    def __init__(self, text):
-        super().__init__()
-        gui_widgets.centerWindow(self, 600, 400)
-        self.setModal(False)
-        self.text = QtWidgets.QTextEdit()
-        self.text.setReadOnly(True)
-        font = QtGui.QFont('Courier')
-        font.setStyleHint(QtGui.QFont.TypeWriter)
-        self.text.setCurrentFont(font)
-        self.text.setText(text)
-        layout = QtWidgets.QVBoxLayout()
-        layout.addWidget(self.text)
-        self.setLayout(layout)
 
 
 class CorrelationTableWidget(QtWidgets.QTableWidget):

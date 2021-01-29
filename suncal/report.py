@@ -945,12 +945,11 @@ class Report(object):
                 line.append(self._insert_obj(col))
             s += ' | '.join('{{:{}}}'.format(w).format(val) for w, val in zip(widths, line)) + '\n'
 
-        if len(hdr) == 1:
-            # Single column, need | at beginning and end
-            lines = ''
-            for line in s.splitlines():
-                lines += (('|' + line + '|\n') if len(line) > 0 else '\n')
-            s = lines
+        # Add | at beginning and end
+        lines = ''
+        for line in s.splitlines():
+            lines += (('|' + line + '|\n') if len(line) > 0 else '\n')
+        s = lines
 
         self._s += s + '\n\n'
 
