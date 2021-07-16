@@ -1,5 +1,7 @@
 ''' Page for loading raw data from a CSV file '''
 
+from io import StringIO
+import csv
 import numpy as np
 from dateutil.parser import parse
 
@@ -8,18 +10,6 @@ from PyQt5 import QtWidgets, QtCore
 from .. import dataset
 from . import gui_widgets
 
-
-def load_csvfile(fname):
-    ''' Load CSV file into raw string '''
-    with open(fname, 'r') as f:
-        try:
-            rawcsv = f.read()
-        except UnicodeDecodeError:
-            QtWidgets.QMessageBox.warning(None, 'Load CSV', 'Cannot decode file {}'.format(fname))
-            rawcsv = None
-        else:
-            rawcsv = rawcsv.strip(u'\ufeff')  # uFEFF is junk left in Excel-saved CSV files at start of file
-    return rawcsv
 
 
 def _gettype(val):
@@ -58,32 +48,42 @@ class SelectCSVData(QtWidgets.QDialog):
         layout.addWidget(self.dlgbutton)
         self.setLayout(layout)
 
-        if fname == '_clipboard_':
-            rawcsv = QtWidgets.QApplication.instance().clipboard().text()
-        else:
-            rawcsv = load_csvfile(fname)
-        self.loadfile(rawcsv)
+        self.loadfile(fname)
         self.table.itemSelectionChanged.connect(self.selection_change)
 
-    def loadfile(self, rawcsv):
+    def loadfile(self, fname):
         ''' Populate the table with CSV values '''
-        self.rawcsv = rawcsv
-        if ',' in self.rawcsv:
-            self.delim = ','
-        elif '\t' in self.rawcsv:
-            self.delim = '\t'
-        else:
-            self.delim = None  # None will group whitespace, ' ' will end up with multiple splits
+        if fname == '_clipboard_':
+            rawcsv = QtWidgets.QApplication.instance().clipboard().text()
+            csvfile = StringIO(rawcsv)
+            try:
+                dialect = csv.Sniffer().sniff(csvfile.read(1024))
+            except (csv.Error, UnicodeDecodeError):
+                QtWidgets.QMessageBox.warning(None, 'CSV Error', 'Could not determine CSV format.')
+                return
 
-        lines = self.rawcsv.splitlines()
+            csvfile.seek(0)
+            reader = csv.reader(csvfile, dialect)
+            lines = list(reader)
+
+        else:
+            with open(fname) as csvfile:
+                try:
+                    dialect = csv.Sniffer().sniff(csvfile.read(1024))
+                except (csv.Error, UnicodeDecodeError):
+                    QtWidgets.QMessageBox.warning(None, 'CSV Error', 'Could not determine CSV format.')
+                    return
+                csvfile.seek(0)
+                reader = csv.reader(csvfile, dialect)
+                lines = list(reader)
+
         self.table.setRowCount(len(lines))
-        self.table.setColumnCount(1)
-        for row, line in enumerate(lines):
-            columns = line.split(self.delim)
-            self.table.setColumnCount(max(self.table.columnCount(), len(columns)))
+        self.table.setColumnCount(len(lines[0]))
+        for row, columns in enumerate(lines):
             for col, val in enumerate(columns):
                 self.table.setItem(row, col, QtWidgets.QTableWidgetItem(val.strip()))
-                self.table.item(row, col).setFlags(QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled)  # No editable
+                if self.table.item(row, col) is not None:
+                    self.table.item(row, col).setFlags(QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled)  # No editable
         self.table.resizeColumnsToContents()
         self.table.setRangeSelected(QtWidgets.QTableWidgetSelectionRange(0, 0, self.table.rowCount()-1, self.table.columnCount()-1), True)
         self.selection_change()
@@ -128,7 +128,7 @@ class SelectCSVData(QtWidgets.QDialog):
                 columns = [c[1:] for c in columns]
                 break
 
-        # Convert each column to a float or a date
+        # Convert each column to a float or a date if possible
         datcolumns = []
         for col in columns:
             try:
@@ -136,10 +136,8 @@ class SelectCSVData(QtWidgets.QDialog):
             except ValueError:
                 try:
                     datcol = [parse(v) for v in col]
-                    datcol = [d.toordinal() for d in datcol]
                 except ValueError:
-                    QtWidgets.QMessageBox.warning(self, 'Import CSV', 'Non-numeric data in selection')
-                    return
+                    datcol = col
             datcolumns.append(np.array(datcol))
 
         # self.columns will be array of floats or of datetimes
@@ -158,6 +156,6 @@ class SelectCSVData(QtWidgets.QDialog):
             out[mask] = np.concatenate(v)
             return out
 
-        data = padnans(self.columns)  # Convert to an array, making all columns same length
+        data = self.columns
         hdr = self.header if len(self.header) > 0 else [f'Column {i}' for i in range(len(self.columns))]
         return dataset.DataSet(data, hdr)

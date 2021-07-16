@@ -448,6 +448,7 @@ class Math(object):
         math.sympyexpr = expr
         math.latexexpr = sympy.latex(expr).encode('ascii', 'latex').decode()
         math.latexexpr = math.latexexpr.replace(r'\frac{d}{d ', r'\frac{\partial}{\partial ')  # All derivatives are partial
+        math.latexexpr = math.latexexpr.replace(r'\limits', '')  # MPL doesn't understand proper integration limits
         math.prettytextexpr = sympy.pretty(expr)
         math.simpletextexpr = str(expr)
         if unit is not None:

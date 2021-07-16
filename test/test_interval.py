@@ -58,9 +58,7 @@ def testA3():
 @pytest.mark.filterwarnings('ignore')  # Will generate runtime/optimize warning in minimization loop
 def test_variables():
     ''' Test variables method using data from NASA-HDBK-8739.19-5 '''
-    # Data in Table 7-2. Note the raw as-found/as-left data in Table 7-1 do not generate the
-    # data in 7-2; the columns appear to have been sorted independently, so the deltas
-    # do not align with the correct resubmission times!
+    # Data in Table 7-2.
     dt = np.array([70., 86., 104., 135., 167., 173.])
     deltas = np.array([.1, .11, .251, .299, .403, .615])
     intv = VariablesInterval(dt, deltas, u0=.28, m=2, y0=10.03, utarget=.5, rlimits=(9, 11), rconf=.9)

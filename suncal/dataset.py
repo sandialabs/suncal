@@ -315,7 +315,9 @@ class DataSet(object):
     def to_array(self):
         ''' Summarize the DataSet as an array with columns for x, y, and uy. '''
         gstats = self.group_stats()
-        return DataSet(np.vstack((self._pcolnames, gstats.mean, gstats.stdev)), colnames=['x', 'y', 'u(y)'])
+        dset = DataSet(np.vstack((self._pcolnames, gstats.mean, gstats.stdev)), colnames=['x', 'y', 'u(y)'])
+        dset.coltype = self.coltype
+        return dset
 
     @classmethod
     def from_config(cls, config):
@@ -414,7 +416,6 @@ class DataSetSummary(DataSet):
     def __init__(self, colnames=None, means=None, stds=None, nmeas=None, name='data'):
         super().__init__(name=name)
         self.colnames = colnames                   # Parse them in setter
-        self._groupnames = self._pcolnames.copy()  # and make a copy of parsed names
         try:
             self.data = np.vstack((means, stds, nmeas)).T
         except ValueError:
@@ -441,6 +442,10 @@ class DataSetSummary(DataSet):
     def maxrows(self):
         ''' Get maximum number of rows in data table (always 3) '''
         return self.MAX_ROWS
+
+    def ncolumns(self):
+        ''' Get number of columns/groups in data set '''
+        return len(self._means())
 
     def stats(self, colname=None):
         ''' Get statistics for one column/group '''
@@ -500,17 +505,16 @@ class DataSetSummary(DataSet):
     def get_config(self):
         ''' Get configuration dictionary '''
         d = super().get_config()
-        d['groupnames'] = self._groupnames
-        d['nmeas'] = self._nmeas()
-        d['means'] = self._means()
-        d['stds'] = self._stds()
+        d['nmeas'] = self._nmeas().astype('float').tolist()
+        d['means'] = self._means().astype('float').tolist()
+        d['stds'] = self._stds().astype('float').tolist()
         d['summary'] = True
         return d
 
     @classmethod
     def from_config(cls, config):
         ''' Load DataSetSummary from configuration dictionary '''
-        newdat = cls(colnames=config['groupnames'], means=np.array(config['means']),
+        newdat = cls(colnames=config.get('colnames', config.get('groupnames', [])), means=np.array(config['means']),
                      stds=np.array(config['stds']), nmeas=np.array(config['nmeas']), name=config.get('name', 'data'))
         newdat.description = config.get('desc', '')
         return newdat
@@ -582,10 +586,19 @@ class DataSetOutput(output.Output):
     def report_column(self, colname=None, **kwargs):
         ''' Report statistics for one column '''
         st = self.dataset.stats(colname)
+        dat = self.dataset.get_column(colname)
+        q025, q25, q75, q975 = np.quantile(dat, (.025, .25, .75, .975))
         rows = [['Mean', report.Number(st.mean, fmin=0)],
-                ['Standard Deviation', report.Number(st.stdev, fmin=0)],
-                ['Std. Error of the Mean', report.Number(st.sem, fmin=0)],
-                ['Deg. Freedom', format(st.df, '.2f')]]
+                ['Standard Deviation', report.Number(st.stdev, fmin=3)],
+                ['Std. Error of the Mean', report.Number(st.sem, fmin=3)],
+                ['Deg. Freedom', format(st.df, '.2f')],
+                ['Minimum',  report.Number(dat.min(), fmin=3)],
+                ['First Quartile', report.Number(q25, fmin=3)],
+                ['Median', report.Number(np.median(dat), fmin=3)],
+                ['Third Quartile', report.Number(q75, fmin=3)],
+                ['Maximum', report.Number(dat.max(), fmin=3)],
+                ['95% Coverage Interval', '{}, {}'.format(report.Number(q025, fmin=3), report.Number(q975, fmin=3))]
+                ]
         rpt = report.Report(**kwargs)
         rpt.table(rows, hdr=['Parameter', 'Value'])
         return rpt
@@ -655,7 +668,7 @@ class DataSetOutput(output.Output):
         fig, ax = plotting.initplot(plot)
         summary = self.dataset.summarize()
         gstats = summary.group_stats()
-        x = summary._groupnames
+        x = summary.colnames_parsed()
         y = gstats.mean
         if len(x) != len(y): return  # Nothing to plot
         uy = gstats.stdev

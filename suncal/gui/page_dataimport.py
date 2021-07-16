@@ -505,7 +505,7 @@ class DistributionSelectWidget(QtWidgets.QDialog):
                     name1, name2 = distlist[i][0], distlist[j][0]
                     data1, data2 = distlist[i][2].get('samples'), distlist[j][2].get('samples')
                     with suppress(TypeError, ValueError):  # Could have one of the datas not be sampled values
-                        corrdict[(name1, name2)] = np.corrcoef(data1, data2)[0, 1]
+                        corrdict[(name1, name2)] = np.nan_to_num(np.corrcoef(data1, data2)[0, 1])
             dists['_correlation_'] = corrdict
 
         if self.singlecol:
@@ -641,7 +641,19 @@ class ArraySelectWidget(QtWidgets.QDialog):
             if varname in varlist:
                 self.table.setHorizontalHeaderItem(varlist.index(varname), QtWidgets.QTableWidgetItem(''))
             self.table.setHorizontalHeaderItem(self.table.currentColumn(), QtWidgets.QTableWidgetItem(varname))
+            
+        self.highlight_columns()
         self.updateplot()
+
+    def highlight_columns(self):
+        ''' Highlight columns that will be imported '''
+        for cidx, colname in enumerate(self._get_colassignment()):
+            if colname != '' and colname != 'Not Used':
+                colcolor = gui_common.COLOR_SELECTED
+            else:
+                colcolor = gui_common.COLOR_OK
+            for row in range(self.table.rowCount()):
+                self.table.item(row, cidx).setBackground(colcolor)
 
     def columnselected(self, row, col, prow, pcol):
         ''' Column was highlighted in table. Update combobox with variable selection. '''
@@ -721,6 +733,15 @@ class ArraySelectWidget(QtWidgets.QDialog):
                 x = self._get_assigned_data(c)
                 if x is not None:
                     ret[c] = x
+
+        # Drop any row with blank data
+        blankrows = []
+        for col in ret:
+            blankidx = np.where(ret[col]=='')[0]
+            blankrows.extend(list(blankidx))
+        if len(blankrows) > 0:
+            for col in ret:
+                ret[col] = np.delete(ret[col], blankrows)
         return ret
 
     def _get_assigned_data(self, colname):
@@ -752,4 +773,5 @@ class ArraySelectWidget(QtWidgets.QDialog):
 
         self.table.setHorizontalHeaderLabels(self.colnames[:dset.ncolumns()])
         self.dataset = dset
+        self.highlight_columns()
         self.updateplot()

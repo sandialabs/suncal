@@ -28,6 +28,7 @@ class HistCtrlWidget(QtWidgets.QWidget):
         dists = settings.getDistributions()
         dists = ['None'] + [d for d in dists if distributions.fittable(d)]
         self.fit.addItems(dists)
+        self.probplot = QtWidgets.QCheckBox('Probability Plot')
 
         layout = QtWidgets.QHBoxLayout()
         layout.addWidget(QtWidgets.QLabel('Column:'))
@@ -35,9 +36,11 @@ class HistCtrlWidget(QtWidgets.QWidget):
         layout.addStretch()
         layout.addWidget(QtWidgets.QLabel('Distribution Fit:'))
         layout.addWidget(self.fit)
+        layout.addWidget(self.probplot)
         self.setLayout(layout)
         self.colSelect.currentIndexChanged.connect(self.changed)
         self.fit.currentIndexChanged.connect(self.changed)
+        self.probplot.stateChanged.connect(self.changed)
 
     def update_colnames(self, names):
         self.colSelect.blockSignals(True)
@@ -214,23 +217,40 @@ class DataSetWidget(QtWidgets.QWidget):
         self.txtDescription.setPlainText(self.dataset.description)
         ncols = self.dataset.ncolumns()
         nrows = self.dataset.maxrows()
-        if ncols > 0:
-            self.table.setColumnCount(ncols)
-            self.table.setRowCount(nrows)
-            self.table.setHorizontalHeaderLabels([str(s) for s in self.dataset.colnames])
-            for col in range(ncols):
-                for row in range(len(self.dataset.data[col])):
-                    val = self.dataset.data[col][row]
-                    if np.isfinite(val):
-                        self.table.setItem(row, col, QtWidgets.QTableWidgetItem(str(val)))
-            self.table.resizeColumnsToContents()
 
         if isinstance(self.dataset, dataset.DataSetSummary) != self.actSummary.isChecked():
             self.actSummary.setChecked(not self.actSummary.isChecked())
-            self.togglesummary()
+            means = self.dataset._means()
+            stds = self.dataset._stds()
+            counts = self.dataset._nmeas()
+            ncols = len(means)
+            self.table.setRowCount(3)
+            self.table.setColumnCount(ncols)
+            self.table.setVerticalHeaderLabels(['Mean', 'Std. Dev.', 'Count'])
+            self.cmbMode.blockSignals(True)
+            self.cmbMode.clear()
+            self.cmbMode.addItems(['Summary', 'Analysis of Variance'])
+            self.cmbMode.blockSignals(False)
+            for col in range(ncols):
+                self.table.setItem(0, col, QtWidgets.QTableWidgetItem(str(means[col])))
+                self.table.setItem(1, col, QtWidgets.QTableWidgetItem(str(stds[col])))
+                self.table.setItem(2, col, QtWidgets.QTableWidgetItem(str(counts[col])))
 
+        else:
+            if ncols > 0:
+                self.table.setColumnCount(ncols)
+                self.table.setRowCount(nrows)
+                self.table.setHorizontalHeaderLabels([str(s) for s in self.dataset.colnames])
+                for col in range(ncols):
+                    for row in range(len(self.dataset.data[col])):
+                        val = self.dataset.data[col][row]
+                        if np.isfinite(val):
+                            self.table.setItem(row, col, QtWidgets.QTableWidgetItem(str(val)))
+                self.table.resizeColumnsToContents()
+    
         self.table.blockSignals(False)
         self.updatecolnames()
+        self.refresh_output()
 
     def get_menu(self):
         ''' Get the menu for this calculation mode '''
@@ -291,7 +311,6 @@ class DataSetWidget(QtWidgets.QWidget):
         self.corrctrls.update_colnames(names)
         self.acorctrls.update_colnames(names)
 
-
     def refresh_output(self):
         ''' Refresh the output plot and report '''
         self.figure.clf()
@@ -312,9 +331,10 @@ class DataSetWidget(QtWidgets.QWidget):
             col = self.histctrls.colSelect.currentText()
             fit = self.histctrls.fit.currentText()
             fit = None if fit == 'None' else fit
+            probplot = self.histctrls.probplot.isChecked()
             rpt.hdr(col, level=2)
             rpt.append(self.dataset.out.report_column(col))
-            self.dataset.out.plot_histogram(colname=col, plot=self.figure, fit=fit)
+            self.dataset.out.plot_histogram(colname=col, plot=self.figure, fit=fit, qqplot=probplot)
 
         elif mode == 'Correlation':
             rpt.hdr('Correlation Matrix', level=2)

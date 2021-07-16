@@ -2,8 +2,8 @@
 
     Based on Castrup "Calibration Intervals from Variables Data" which determines
     how much a device drifts over a certain amount of time. Two methods are calculated:
-    1) Uncertainty Target Method: stop the interval when a specific uncertainty is reached
-    2) Reliability Target Method: stop the interval when some predetermined reliability is reached
+    1) Uncertainty Target Method: stop the interval when measurement uncertainty exceeds limit
+    2) Reliability Target Method: stop the interval when predicted value+uncertainty exceeds fixed tolerance
 '''
 
 import warnings
@@ -116,11 +116,12 @@ class VariablesInterval(object):
             Maximum order of polynomial to fit (if m is None)
     '''
     def __init__(self, dt=None, deltas=None, u0=0, y0=0, m=1, maxm=1,
-                 utarget=0.5, rlimits=(-1, 1), rconf=.95, name='interval'):
+                 utarget=0.5, rlimits=(-1, 1), rconf=.95, kvalue=1, name='interval'):
         self.name = name
         self.description = ''
         self.u0 = u0
         self.y0 = y0
+        self.kvalue = kvalue
         self.maxm = maxm
         self.m = m
         self.utarget = utarget
@@ -128,32 +129,33 @@ class VariablesInterval(object):
         self.rconf = rconf
         self.out = IntervalOutput(None, None, None)
         self.t = np.array([])
-        self.y = np.array([])
+        self.deltas = np.array([])
         self.calcrel = True
         self.calcunc = True
         if dt is not None and deltas is not None:
             self.update(dt, deltas)
 
-    def update(self, t, y):
+    def update(self, t, deltas):
         ''' Set t, y data for calculation where x is time since last calibration and y
             is deviation from last calibration
         '''
         self.t = np.asarray(t).astype(float)
-        self.y = np.asarray(y).astype(float)
-        if len(self.t) == 0 or len(self.y) == 0 or len(self.t) != len(self.y):
+        self.deltas = np.asarray(deltas).astype(float)
+        if len(self.t) == 0 or len(self.deltas) == 0 or len(self.t) != len(self.deltas):
             self.out = IntervalOutput(None, None, None)
             return self.out
 
         if self.m is None:
             self._select_order()
 
-        b, cov, syx = fitpoly(self.t, self.y, m=self.m)
-        self.out = IntervalOutput(self.out.uncertainty, self.out.reliability, FitOutput(self.t, self.y, b, cov, syx, self.y0, self.u0))
+        b, cov, syx = fitpoly(self.t, self.deltas, m=self.m)
+        self.out = IntervalOutput(self.out.uncertainty, self.out.reliability, FitOutput(self.t, self.deltas, b, cov, syx, self.y0, self.u0))
         return self.out.fit
 
-    def update_params(self, u0=0, y0=0, m=1, utarget=.5, rlimitL=-1, rlimitU=1, rconf=0.95, calcrel=True, calcunc=True):
+    def update_params(self, u0=0, y0=0, m=1, utarget=.5, rlimitL=-1, rlimitU=1, rconf=0.95, kvalue=1, calcrel=True, calcunc=True):
         ''' Update calculation parameters '''
         self.u0 = u0
+        self.kvalue = kvalue
         self.y0 = y0
         self.m = m
         self.utarget = utarget
@@ -170,7 +172,7 @@ class VariablesInterval(object):
         smin = np.inf
         m = 1
         for k in range(1, self.maxm+1):
-            _, _, syx = fitpoly(self.t, self.y, m=k)
+            _, _, syx = fitpoly(self.t, self.deltas, m=k)
             if syx < smin:
                 smin = syx
                 m = k
@@ -181,7 +183,9 @@ class VariablesInterval(object):
         ''' Calculate uncertainty target method
         '''
         def target(t):
-            return self.u0**2 + u_pred(t, self.out.fit.b, self.out.fit.cov, self.out.fit.syx)**2 - self.utarget**2
+            uk1 = self.u0 / self.kvalue
+            target = self.utarget / self.kvalue
+            return self.kvalue * (uk1**2 + u_pred(t, self.out.fit.b, self.out.fit.cov, self.out.fit.syx)**2 - target**2)
 
         intv, info, ier, mesg = fsolve(lambda x: target(x), x0=self.t.max(), full_output=True)
         if ier != 1:
@@ -190,9 +194,16 @@ class VariablesInterval(object):
         else:
             interval = intv[0]
 
+        params = {'target': self.utarget,
+                  'u0': self.u0,
+                  'kvalue': self.kvalue,
+                  'dt': self.t,
+                  'deltas': self.deltas,
+                  'm': self.m,
+                  'y0': self.y0
+                  }
         result = IntervalUncertOutput(interval=interval, b=self.out.fit.b, cov=self.out.fit.cov,
-                                    syx=self.out.fit.syx, target=self.utarget, u0=self.u0,
-                                    t=self.t, y=self.y, m=self.m)
+                                    syx=self.out.fit.syx, params=params)
         self.out = IntervalOutput(result, self.out.reliability, self.out.fit)
         return result
 
@@ -237,16 +248,25 @@ class VariablesInterval(object):
             except ValueError:  # All intervals are negative
                 interval = 0
 
+        params = {'u0': self.u0,
+                  'LL': LL,
+                  'UL': UL,
+                  'dt': self.t,
+                  'dy': self.deltas,
+                  'y0': self.y0,
+                  'm': self.m,
+                  'conf': self.rconf,
+                  'k': k}
         result = IntervalReliabilityOutput(interval=interval, b=self.out.fit.b, cov=self.out.fit.cov,
-                                           syx=self.out.fit.syx, u0=self.u0, LL=LL, UL=UL,
-                                           x=self.t, y=self.y, y0=self.y0, m=self.m, k=k)
+                                           syx=self.out.fit.syx,
+                                           params=params)
         self.out = IntervalOutput(self.out.uncertainty, result, self.out.fit)
         return result
 
     def calculate(self):
         ''' Calculate both reliability target and uncertainty target methods
         '''
-        if len(self.t) == 0 or len(self.y) == 0 or len(self.t) != len(self.y):
+        if len(self.t) == 0 or len(self.deltas) == 0 or len(self.t) != len(self.deltas):
             self.out = IntervalOutput(None, None, None)
             return self.out
 
@@ -264,13 +284,14 @@ class VariablesInterval(object):
         d['desc'] = self.description
         d['u0'] = self.u0
         d['y0'] = self.y0
+        d['kvalue'] = self.kvalue
         d['maxm'] = self.maxm
         d['m'] = self.m
         d['utarget'] = self.utarget
         d['rlimits'] = list(self.rlimits)
         d['rconf'] = self.rconf
         d['dt'] = list(self.t)
-        d['deltas'] = list(self.y)
+        d['deltas'] = list(self.deltas)
         return d
 
     @classmethod
@@ -285,6 +306,7 @@ class VariablesInterval(object):
                   utarget=config.get('utarget', 0.5),
                   rlimits=config.get('rlimits', (-1, 1)),
                   rconf=config.get('rconf', 0.95),
+                  kvalue=config.get('kvalue', 1),
                   name=config.get('name', 'interval'))
         new.description = config.get('desc', '')
         return new
@@ -337,10 +359,11 @@ class VariablesInterval(object):
 class VariablesIntervalAssets(object):
     def __init__(self, u0=0, y0=0, m=1, maxm=1,
                  utarget=0.5, rlimits=(-1, 1), rconf=.95,
-                 use_alldeltas=False, name='interval'):
+                 use_alldeltas=False, kvalue=1, name='interval'):
         self.name = name
         self.description = ''
         self.u0 = u0
+        self.kvalue = kvalue
         self.y0 = y0
         self.maxm = maxm
         self.m = m
@@ -373,10 +396,11 @@ class VariablesIntervalAssets(object):
                                   'asleft': asleft,
                                   'asfound': asfound}
 
-    def update_params(self, u0=0, y0=0, m=1, utarget=.5, rlimitL=-1, rlimitU=1, rconf=0.95, calcrel=True, calcunc=True):
+    def update_params(self, u0=0, y0=0, m=1, utarget=.5, rlimitL=-1, rlimitU=1, rconf=0.95, calcrel=True, calcunc=True, kvalue=1):
         ''' Update calculation parameters '''
         self.u0 = u0
         self.y0 = y0
+        self.kvalue = kvalue
         self.m = m
         self.utarget = utarget
         self.rlimits = (rlimitL, rlimitU)
@@ -444,7 +468,7 @@ class VariablesIntervalAssets(object):
         ''' Convert assets into VariablesInterval '''
         dt, deltas = self.get_deltas()
         v = VariablesInterval(dt, deltas, u0=self.u0, y0=self.y0, m=self.m, maxm=self.maxm,
-                              utarget=self.utarget, rlimits=self.rlimits, rconf=self.rconf)
+                              utarget=self.utarget, rlimits=self.rlimits, rconf=self.rconf, kvalue=self.kvalue)
         v.calcrel = self.calcrel
         v.calcunc = self.calcunc
         return v
@@ -462,6 +486,7 @@ class VariablesIntervalAssets(object):
         d['name'] = self.name
         d['desc'] = self.description
         d['u0'] = self.u0
+        d['kvalue'] = self.kvalue
         d['y0'] = self.y0
         d['maxm'] = self.maxm
         d['m'] = self.m
@@ -486,6 +511,7 @@ class VariablesIntervalAssets(object):
                   utarget=config.get('utarget', 0.5),
                   rlimits=config.get('rlimits', (-1, 1)),
                   rconf=config.get('rconf', 0.95),
+                  kvalue=config.get('kvalue', 1),
                   name=config.get('name', 'interval'))
         new.assets = config.get('assets', {})
         new.description = config.get('desc', '')
@@ -553,22 +579,56 @@ class IntervalOutput(output.Output):
 
     def report(self, **kwargs):
         ''' Generate formatted report '''
-        hdr = ['Method', 'Interval']
+        hdr = ['Method', 'Interval', 'Predicted value at end of interval']
         rows = []
         if self.uncertainty is not None:
-            rows.append(['Uncertainty Target', format(self.uncertainty.interval, '.2f') if self.uncertainty.interval else 'N/A'])
+            eop_val, eop_unc = self.uncertainty.eop()
+            rows.append(['Uncertainty Target',
+                         format(self.uncertainty.interval, '.2f') if self.uncertainty.interval else 'N/A',
+                         ((report.Number(eop_val, matchto=eop_unc), ' ± ', report.Number(eop_unc), ' (k = {:.2f})'.format(self.uncertainty.kvalue)))
+                         ])
         if self.reliability is not None:
-            rows.append(['Reliability Target', format(self.reliability.interval, '.2f') if self.reliability.interval else 'N/A'])
+            eop_val, eop_unc = self.reliability.eop()
+            rows.append(['Reliability Target',
+                         format(self.reliability.interval, '.2f') if self.reliability.interval else 'N/A',
+                         ((report.Number(eop_val, matchto=eop_unc), ' ± ', report.Number(eop_unc), ' (k = {:.2f})'.format(self.reliability.k)))
+                         ])
         rpt = report.Report(**kwargs)
         rpt.table(rows, hdr)
         if self.uncertainty is not None and self.uncertainty.t is not None:
             fig = self.uncertainty.plot()
             rpt.plot(fig)
             plt.close(fig)  # Prevent showing duplicate plot in Jupyter
-        if self.reliability is not None and self.reliability.x is not None:
+        if self.reliability is not None and self.reliability.t is not None:
             fig = self.reliability.plot()
             rpt.plot(fig)
             plt.close(fig)  # Prevent showing duplicate plot in Jupyter
+        
+        rpt.div()
+        rpt.append(self.report_params(**kwargs))
+        rpt.append(self.fit.report(**kwargs))
+        return rpt
+
+    def report_params(self, **kwargs):
+        ''' Report parameters used in the calculation, including
+            table of dt, dy values
+        '''
+        x = deltas = None
+        if self.reliability is not None:
+            x = self.reliability.t
+            deltas = self.reliability.deltas
+        elif self.uncertainty is not None:
+            x = self.uncertainty.t
+            deltas = self.uncertainty.deltas
+ 
+        rpt = report.Report(**kwargs)
+        if x is not None:
+            rpt.hdr('Deviation Values', level=3)
+            rows = []
+            idx = np.argsort(x)
+            for x, d in zip(x[idx], deltas[idx]):
+                rows.append([report.Number(x, fmin=0), report.Number(d, fmin=0)])
+            rpt.table(rows, ['Time since calibration', 'Deviation from prior'])
         return rpt
 
 
@@ -591,9 +651,9 @@ class FitOutput(output.Output):
         u0: float
             Time-of-test uncertainty
     '''
-    def __init__(self, t, y, b, cov, syx, y0, u0):
+    def __init__(self, t, deltas, b, cov, syx, y0, u0):
         self.t = np.asarray(t)
-        self.y = np.asarray(y)
+        self.deltas = np.asarray(deltas)
         self.y0 = y0
         self.b = b
         self.cov = cov
@@ -604,9 +664,12 @@ class FitOutput(output.Output):
         ''' Generate formatted report '''
         rpt = report.Report(**kwargs)
         rpt.hdr('Fit line', level=3)
-        rows = [[chr(ord('a')+i), '{:.4e}'.format(v)] for i, v in enumerate(self.b)]
-        hdr = ['Parameter', 'Value']
+        unc = np.sqrt(np.diag(self.cov))
+        rows = [[chr(ord('a')+i), report.Number(v, matchto=u), report.Number(u)] for i, (v, u) in enumerate(zip(self.b, unc))]
+        hdr = ['Parameter', 'Value', 'Std. Uncertainty']
         rpt.table(rows, hdr=hdr)
+        rpt.txt('Standard Error:   ')
+        rpt.num(self.syx)
         return rpt
 
     def predict_deviation(self, x, **kwargs):
@@ -651,27 +714,36 @@ class FitOutput(output.Output):
             fig = plt.figure()
             ax = fig.add_subplot(1, 1, 1)
             ax.plot(xx, fit, color='C1', label='Fit')
-            ax.plot(xx, fit+upred, color='C4', ls='--', label='k={:.2f}'.format(k))
+            ax.plot(xx, fit+upred, color='C4', ls='--', label='{:.0f}% Uncertainty (k={:.2f})'.format(conf*100, k))
             ax.plot(xx, fit-upred, color='C4', ls='--')
-            ax.plot(self.t, self.y, marker='o', ls='', label='Measurements')
+            ax.plot(self.t, self.deltas+self.y0, marker='o', ls='')
             ax.set_xlabel('Time Since Calibration')
-            ax.set_ylabel('Predicted Value')
-            ax.legend(bbox_to_anchor=(1, 1))
+            ax.set_ylabel('Deviation from Prior')
+            ax.legend(fontsize=12, bbox_to_anchor=(1, 1))
         return fig
 
 
 class IntervalUncertOutput(output.Output):
     ''' Report for Uncertainty Target method '''
-    def __init__(self, interval, b, cov, syx, target, u0, t, y, m):
+    def __init__(self, interval, b, cov, syx, params):
         self.interval = interval
         self.b = b
         self.cov = cov
         self.syx = syx
-        self.target = target
-        self.u0 = u0
-        self.t = t
-        self.y = y
-        self.m = m
+        self.target = params.get('target', .5)
+        self.u0 = params.get('u0', 0)
+        self.kvalue = params.get('kvalue', 2)
+        self.t = params.get('dt', [])
+        self.deltas = params.get('deltas', [])
+        self.m = params.get('m', 1)
+        self.y0 = params.get('y0', 0)
+
+    def eop(self):
+        ''' Get end-of-period value and uncertainty '''
+        u0 = self.u0 / self.kvalue
+        upred = self.kvalue * np.sqrt(u_pred(self.interval, self.b, self.cov, self.syx)**2 + u0**2)
+        ypred = self.y0 + y_pred(self.interval, self.b)
+        return ypred, upred
 
     def report(self, **kwargs):
         ''' Print the interval and fit parameters '''
@@ -691,41 +763,51 @@ class IntervalUncertOutput(output.Output):
         ''' Plot the interval, fit line, limits, etc. '''
         xx = np.linspace(0, max(self.interval, self.t.max()))
         fit = y_pred(xx, self.b)
-        upred = np.sqrt(u_pred(xx, self.b, self.cov, self.syx)**2 + self.u0**2)
+        u0 = self.u0 / self.kvalue
+        upred = self.kvalue * np.sqrt(u_pred(xx, self.b, self.cov, self.syx)**2 + u0**2)
 
         with mpl.style.context(plotting.plotstyle):
             if fig is None:
                 fig = plt.figure()
             fig.clf()
             ax = fig.add_subplot(1, 1, 1)
-            ax.plot(xx, fit, color='C1', label='Fit')
-            ax.plot(xx, fit+upred, color='C4', ls='--', label='k=1')
-            ax.plot(xx, fit-upred, color='C4', ls='--')
-            ax.plot(xx, fit+self.target, color='C2', label='Target')
-            ax.plot(xx, fit-self.target, color='C2')
+            ax.plot(xx, fit+self.y0, color='C1', label='Fit')
+            ax.plot(xx, fit+upred+self.y0, color='C4', ls='--', label='Uncertainty (k={:.2f})'.format(self.kvalue))
+            ax.plot(xx, fit-upred+self.y0, color='C4', ls='--')
+            ax.plot(xx, fit+self.target+self.y0, color='C2', label='Uncertainty Limit')
+            ax.plot(xx, fit-self.target+self.y0, color='C2')
+            ax.plot(self.t, self.deltas+self.y0, marker='o', ls='')
             ax.axvline(self.interval, color='C3', label='Interval')
             ax.set_xlabel('Time Since Calibration')
             ax.set_ylabel('Predicted Value')
             ax.set_title('Uncertainty Target')
-            ax.legend(bbox_to_anchor=(1, 1))
+            ax.legend(fontsize=12, bbox_to_anchor=(1, 1))
         return fig
 
 
 class IntervalReliabilityOutput(output.Output):
     ''' Report for Reliability Target method '''
-    def __init__(self, interval, b, cov, syx, u0, LL, UL, x, y, y0, m, k):
+    def __init__(self, interval, b, cov, syx, params):
         self.interval = interval
         self.b = b
         self.cov = cov
         self.syx = syx
-        self.u0 = u0
-        self.LL = LL
-        self.UL = UL
-        self.x = x
-        self.y = y
-        self.y0 = y0
-        self.m = m
-        self.k = k
+        self.u0 = params.get('u0', 0)
+        self.LL = params.get('LL', 0)
+        self.UL = params.get('UL', 0)
+        self.t = params.get('dt', [])
+        self.deltas = params.get('dy', [])
+        self.y0 = params.get('y0', 0)
+        self.m = params.get('m', 1)
+        self.k = params.get('k', 2)
+        self.conf = params.get('conf', 0.95)
+
+    def eop(self):
+        ''' Get end-of-period value and uncertainty '''
+        u0 = self.u0 / self.k
+        upred = self.k * np.sqrt(u_pred(self.interval, self.b, self.cov, self.syx)**2 + u0**2)
+        ypred = self.y0 + y_pred(self.interval, self.b)
+        return ypred, upred
 
     def report(self, **kwargs):
         ''' Print the interval and fit parameters '''
@@ -734,7 +816,7 @@ class IntervalReliabilityOutput(output.Output):
             rpt.hdr('Interval: {:.2f}\n\n'.format(self.interval), level=3)
         else:
             rpt.hdr('Interval: N/A', level=3)
-        if self.x is not None:
+        if self.t is not None:
             fig = plt.figure()
             self.plot(fig)
             rpt.plot(fig)
@@ -742,38 +824,29 @@ class IntervalReliabilityOutput(output.Output):
         return rpt
 
     def plot(self, fig=None, **kwargs):
-        t = self.interval
-        x = self.x
-        y = self.y
-        y0 = self.y0
-        k = self.k
-        UL = self.UL
-        LL = self.LL
-
-        tmax = max(t, x.max())
+        ''' Plot the variables fit and suggested interval '''
+        tmax = max(self.interval, self.t.max())
         xx = np.linspace(0, tmax)
-        fit = y_pred(xx, self.b, y0=y0)
+        fit = y_pred(xx, self.b, y0=self.y0)
         upred = np.sqrt(u_pred(xx, self.b, self.cov, self.syx)**2 + self.u0**2)
 
         with mpl.style.context(plotting.plotstyle):
             if fig is None:
                 fig = plt.figure()
+            fig.clf()
             ax = fig.add_subplot(1, 1, 1)
-            ax.plot(x, y+y0, marker='o', ls='')
+            ax.plot(self.t, self.deltas+self.y0, marker='o', ls='')
             ax.plot(xx, fit, color='C1', ls='-', label='Fit')
-            if not np.isclose(k, 1, rtol=.02):
-                ax.plot(xx, fit+k*upred, color='C4', ls=':', label='k={:.2f}'.format(k))
-                ax.plot(xx, fit-k*upred, color='C4', ls=':')
-            ax.plot(xx, fit+upred, color='C4', ls='--', label='k=1')
-            ax.plot(xx, fit-upred, color='C4', ls='--')
+            ax.plot(xx, fit+self.k*upred, color='C4', ls='--', label='{:.0f}% Uncertainty (k={:.2f})'.format(self.conf*100, self.k))
+            ax.plot(xx, fit-self.k*upred, color='C4', ls='--')
             ax.set_title('Reliability Target')
 
-            if LL is not None:
-                ax.axhline(LL, color='C0', label='Limit')
-            if UL is not None:
-                ax.axhline(UL, color='C0')
-            ax.axvline(t, color='C3', label='Interval')
+            if self.LL is not None:
+                ax.axhline(self.LL, color='C0', label='Tolerance Limit')
+            if self.UL is not None:
+                ax.axhline(self.UL, color='C0')
+            ax.axvline(self.interval, color='C3', label='Interval')
             ax.set_xlabel('Time Since Calibration')
             ax.set_ylabel('Predicted Value')
-            ax.legend(bbox_to_anchor=(1, 1))
+            ax.legend(fontsize=12, bbox_to_anchor=(1, 1))
         return fig

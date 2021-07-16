@@ -462,9 +462,9 @@ class FloatTableWidget(QtWidgets.QTableWidget):
             try:
                 vals.append(float(text))
             except ValueError:
-                if text.lower() in ['pass', 'true', 'yes']:
+                if text.lower() in ['p', 'pass', 't', 'true', 'y', 'yes']:
                     vals.append(1)
-                elif text.lower() in ['fail', 'false', 'no']:
+                elif text.lower() in ['f', 'fail', 'false', 'n', 'no']:
                     vals.append(0)
                 else:
                     try:

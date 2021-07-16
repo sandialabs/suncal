@@ -1,5 +1,17 @@
 # Change History
 
+## Version 1.5.3
+
+- Restore saving full report in curve fit calculation
+- Allowed units checker window to show message for each measurement function
+- Fixed save/load of dataset calculation in summary statistics mode
+- Fixed entering of correlation sweep ranges
+- Added more summary statistics to datasets histogram page
+- Fixed entering of curvtrap distribution parameters
+- Improvements to CSV data importing
+- Move PyQt5 to an optional dependency, only required for GUI
+
+
 ## Version 1.5.2
 
 - Fixed Mac builds

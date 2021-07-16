@@ -343,8 +343,6 @@ class PageInputCurveFit(QtWidgets.QWidget):
 
     def update_arr(self):
         ''' Table edited, update array '''
-        self.fitcalc.xdates = self.table.has_dates()
-
         x = self.table.get_column(0)
         y = self.table.get_column(1)
 
@@ -353,6 +351,7 @@ class PageInputCurveFit(QtWidgets.QWidget):
         x = x[mask]
         y = y[mask]
 
+        self.fitcalc.arr.xdate = self.table.has_dates()
         self.fitcalc.arr.x = x
         self.fitcalc.arr.y = y
         self.fitcalc.arr.clear_uyestimate()
@@ -449,8 +448,6 @@ class PageInputCurveFit(QtWidgets.QWidget):
         fname, _ = QtWidgets.QFileDialog.getSaveFileName(caption='Select file to save')
         if fname:
             self.fitcalc.arr.save_file(fname)
-
-
 
 
 class IntervalWidget(QtWidgets.QWidget):
@@ -559,7 +556,14 @@ class PageOutputCurveFit(QtWidgets.QWidget):
         rlayout.addWidget(self.canvas, stretch=10)
         rlayout.addWidget(self.toolbar)
         rlayout.addWidget(self.txtOutput, stretch=5)
-        layout.addLayout(llayout)
+        
+        # Left pane ends up too wide for some reason.
+        # Stupid hack to put all the widgets in another widget to set maximum size
+        lwidget = QtWidgets.QWidget()
+        lwidget.setMaximumWidth(300)
+        lwidget.setLayout(llayout)
+
+        layout.addWidget(lwidget)
         layout.addLayout(rlayout)
         self.setLayout(layout)
 

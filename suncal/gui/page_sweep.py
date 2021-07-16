@@ -41,8 +41,8 @@ class StartStopCountWidget(QtWidgets.QDialog):
     def get_range(self):
         ''' Get array of values. Blank array if not all params defined. '''
         try:
-            return np.linspace(float(self.start.text()), float(self.stop.text()), float(self.num.text()))
-        except ValueError:
+            return np.linspace(float(self.start.text()), float(self.stop.text()), int(self.num.text()))
+        except (TypeError, ValueError):
             return np.array([])
 
 

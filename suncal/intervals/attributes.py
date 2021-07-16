@@ -33,7 +33,7 @@ warnings.filterwarnings('ignore', category=OptimizeWarning, module='scipy')
 def datearray(dates):
     ''' Convert array to ordinal date. Input can be datetime or string '''
     if len(dates) == 0:
-        return np.array()
+        return np.array([])
     elif hasattr(dates[0], 'toordinal'):
         dates =[d.toordinal() for d in dates]
     elif isinstance(dates[0], str):
@@ -79,14 +79,14 @@ def R_lognorm(t, theta1, theta2):
 
 # Functions for determining a reasonable initial guess for curve fit
 def guess_exp(t, y):
-    y = -np.log(y)  # Linearize and fit straight line
+    y = np.nan_to_num(-np.log(y))  # Linearize and fit straight line
     theta1 = curve_fit(lambda x, a: x*a, t, y)[0][0]
     return theta1
 
 def guess_weibull(t, y):
     y[y == 1] = .99999
-    t = np.log(t)
-    y = np.log(-np.log(y))  # Linearize
+    t = np.nan_to_num(np.log(t))
+    y = np.nan_to_num(np.log(-np.log(y)))  # Linearize
     coef = np.polyfit(t, y, deg=1)
     theta2 = coef[0]
     theta1 = np.exp(coef[1]/theta2)
@@ -115,17 +115,17 @@ def guess_rwalk(t, y):
     return theta1, theta2, theta3
 
 def guess_gamma(t, y):
-    yy = -np.log(y)   # Ignore the SUM terms...
+    yy = np.nan_to_num(-np.log(y))   # Ignore the SUM terms...
     theta1 = curve_fit(lambda x, a: x*a, t, yy)[0][0]
     return theta1
 
 def guess_mortality(t, y):
-    yy = np.log(y)  # Quadratic after linearizing
+    yy = np.nan_to_num(np.log(y))  # Quadratic after linearizing
     theta1, theta2 = curve_fit(lambda x, a, b: b*x**2 -a*x, t, yy)[0]
     return theta1, theta2
 
 def guess_warranty(t, y):
-    yy = np.log(1/y-1)  # Invert/linearize
+    yy = np.nan_to_num(np.log(1/y-1))  # Invert/linearize
     theta1, theta1theta2 = np.polyfit(t, yy, deg=1)
     theta2 = -theta1theta2/theta1
     return theta1, theta2
@@ -177,7 +177,9 @@ class BinomialInterval(object):
         Rtarget: float
             Target reliability (0-1)
         ti: array
-            Observed intervals
+            Observed intervals (right edge of bin)
+        ti0: array, optional
+            Observed interval, left edge of bin
         Ri: array
             Observed reliability for each interval
         ni: array
@@ -188,7 +190,8 @@ class BinomialInterval(object):
         ti, Ri, and ni parameters are used to set up calculation if calibration
         data has already been binned into discrete intervals with reliability.
         Otherwise, use from_passfail() method to set up calculation based on
-        individual measurement points.
+        individual measurement points. If ti0 is None, there will be no gaps
+        between bins.
     '''
     models = {'Exponential': R_exp,
               'Weibull': R_weibull,
@@ -212,12 +215,13 @@ class BinomialInterval(object):
               'Drift': guess_drift,
               'Log Normal': guess_lognorm}
 
-    def __init__(self, Rtarget=0.95, ti=None, Ri=None, ni=None, conf=0.95, name='interval'):
+    def __init__(self, Rtarget=0.95, ti=None, ti0=None, Ri=None, ni=None, conf=0.95, name='interval'):
         self.name = name
         self.description = ''
         self.Rtarget = Rtarget
         self.conf = conf
-        self.ti = np.asarray(ti).astype(float) if ti is not None else np.array([])  # Calibration interval
+        self.ti0 = np.asarray(ti0).astype(float) if ti0 is not None else np.array([])  # Calibration interval (right side of bin)
+        self.ti = np.asarray(ti).astype(float) if ti is not None else np.array([])  # Calibration interval (right side of bin)
         self.Ri = np.asarray(Ri).astype(float) if Ri is not None else np.array([])  # Observed reliability for that interval
         self.ni = np.asarray(ni).astype(float) if ni is not None else np.array([])  # Number of measurements made at that interval
 
@@ -235,9 +239,10 @@ class BinomialInterval(object):
                   # 'Mixed Exponential': [5, 2],
                   }
 
-    def update(self, ti, ri, ni):
+    def update(self, ti, ri, ni, ti0=None):
         ''' Update calibration data '''
         self.ti = ti
+        self.ti0 = ti0
         self.Ri = ri
         self.ni = ni
 
@@ -268,7 +273,7 @@ class BinomialInterval(object):
 
     def calculate(self):
         ''' Calculate intervals using each model '''
-        arr = curvefit.Array(self.ti, self.Ri)
+        arr = curvefit.Array(self.ti, self.Ri)   # Fitting to right edge of each bin
         k = len(arr)      # Number of intervals/bins
         n = sum(self.ni)  # Total number of measurements made
 
@@ -343,7 +348,8 @@ class BinomialInterval(object):
                              'accept': accept,
                              'arr': arr,
                              'target': self.Rtarget,
-                             'guess': p0
+                             'guess': p0,
+                             'binned': {'interval': self.ti, 'binleft': self.ti0, 'reliability': self.Ri, 'number': self.ni}
                              }
 
         # Group them by interval similarity to compute figure of merit
@@ -430,15 +436,17 @@ class BinomialInterval(object):
 
 class BinomialIntervalAssets(object):
     ''' Binomial Interval from individual asset's data '''
-    def __init__(self, Rt=0.9, bins=10, conf=0.95, name='interval'):
+    def __init__(self, Rt=0.9, bins=10, conf=0.95, binlefts=None, binwidth=None, name='interval'):
         self.name = name
         self.description = ''
         self.Rtarget = Rt
         self.bins = bins
+        self.binlefts = binlefts
+        self.binwidth = binwidth
         self.conf = conf
         self.assets = {}
 
-    def updateasset(self, assetname, enddates, passfail, startdates=None):
+    def updateasset(self, assetname, enddates, passfail, startdates=None, **kwargs):
         ''' Update the asset calibration data
 
             Parameters
@@ -451,55 +459,100 @@ class BinomialIntervalAssets(object):
                 List of pass/fail (1/0) values for each cal
             startdates: array (optional)
                 List of starting dates for each cal cycle
+
+            Keyword arguments not used. For call signature compatibility
+            with other class.
         '''
         self.assets[assetname] = {'startdates': startdates,
                                   'enddates': enddates,
                                   'passfail': passfail}
 
-    def update_params(self, Rt=.9, conf=.95, bins=10):
+    def update_params(self, Rt=.9, conf=.95, bins=10, binlefts=None, binwidth=None):
         ''' Update target, conf, and bins parameters '''
         self.conf = conf
         self.Rtarget = Rt
         self.bins = bins
+        self.binlefts = binlefts
+        self.binwidth = binwidth
 
     def remasset(self, assetname):
         ''' Remove asset '''
         self.assets.pop(assetname, None)
 
-    def get_reliability(self, bins=12):
-        ''' Convert assets into arrays of dt, Ri, n '''
+    def get_passfails(self, asset):
+        ''' Get list of interval, passfail values '''
+        # Ensure sorted date order
+        val = self.assets.get(asset)
+
+        pf = np.array(val['passfail'])
+        try:
+            pf.mean()
+        except TypeError:
+            pf = np.array([1. if v.lower() in ['p', 'pass', 'true', 'yes'] else 0. for v in pf])
+        ends = datearray(val['enddates'])
+        sortidx = np.argsort(ends)
+        pf = pf[sortidx]
+        ends = ends[sortidx]
+
+        if val['startdates'] is None:
+            ti = np.diff(ends)
+            pf = pf[1:]
+        else:
+            starts = datearray(np.array(val['startdates'])[sortidx])
+            ti = ends - starts
+        
+        return list(pf), list(ti)
+        
+    def get_reliability(self, binlefts=None, binwidth=None):
+        ''' Convert assets into arrays of dt, Ri, n
+
+            Parameters
+            ----------
+            binlefts: list
+                List of left-edges of each bin
+            binwidth: float
+                Width of all bins
+            
+            If parameters are not provided, self attributes
+            will be used.
+        '''
         R = []
         t = []
+        t0 = []
         ni = []
         passfails = []
         testintervals = []
 
-        for asset, val in self.assets.items():
-            pf = val['passfail']
-            if val['startdates'] is None:
-                ti = np.diff(datearray(val['enddates']))
-                pf = pf[1:]
-            else:
-                ti = datearray(val['enddates']) - datearray(val['startdates'])
+        for asset in self.assets.keys():
+            pf, ti = self.get_passfails(asset)
             passfails.extend(pf)
-            testintervals.extend(list(ti))
+            testintervals.extend(ti)
 
         testintervals = np.array(testintervals)
         passfails = np.array(passfails)
-        idx = np.digitize(testintervals, bins=np.linspace(0, max(testintervals), num=bins))
-        for b in range(bins):
-            if len(testintervals[idx == b]) > 0:
-                rel = passfails[idx == b].mean()
-                if rel > 0:
-                    R.append(rel)
-                    t.append(testintervals[idx == b][-1])
-                    ni.append(len(testintervals[idx == b]))
-        return t, R, ni
 
-    def to_binomialinterval(self, bins=12):
+        binlefts = binlefts if binlefts is not None else self.binlefts
+        binwidth = binwidth if binwidth is not None else self.binwidth
+        
+        # Includes left and right edges
+        if binlefts is None:
+            binedges = np.histogram_bin_edges(testintervals, bins=self.bins)
+            binlefts = binedges[:-1]
+            binwidth = binedges[1] - binedges[0]
+
+        for left in binlefts:
+            idx = (testintervals > np.floor(left)) & (testintervals <= np.ceil(left+binwidth))
+            if len(testintervals[idx]) > 0:
+                R.append(passfails[idx].mean())
+                t.append(left+binwidth)
+                t0.append(left)
+                ni.append(len(testintervals[idx]))
+        return t, t0, R, ni
+
+    def to_binomialinterval(self):
         ''' Convert assets into BinomialInterval '''
-        t, R, ni = self.get_reliability(bins=bins)
-        return BinomialInterval(self.Rtarget, t, R, ni, conf=self.conf)
+        t, ti0, R, ni = self.get_reliability()
+        return BinomialInterval(self.Rtarget, ti=t, Ri=R, ni=ni, ti0=ti0, conf=self.conf)
 
     def calculate(self):
         ''' Calculate both methods '''
@@ -515,6 +568,8 @@ class BinomialIntervalAssets(object):
         d['desc'] = self.description
         d['target'] = self.Rtarget
         d['bins'] = self.bins
+        d['binlefts'] = self.binlefts
+        d['binwidth'] = self.binwidth
         d['assets'] = {}
         for a, vals in self.assets.items():
             d['assets'][a] = {'startdates': list(vals['startdates']) if vals['startdates'] is not None else None,
@@ -527,6 +582,8 @@ class BinomialIntervalAssets(object):
         ''' Load interval object from config dictionary '''
         new = cls(Rt=config.get('target', .9),
                   bins=config.get('bins', 10),
+                  binlefts=config.get('binlefts', None),
+                  binwidth=config.get('binwidth', None),
                   conf=config.get('conf', 0.95),
                   name=config.get('name', 'interval'))
         new.description = config.get('desc', '')
@@ -601,6 +658,26 @@ class BinomialIntervalOutput(output.Output):
             fig = self.plot_allmodels(**kwargs)
         rpt.plot(fig)
         plt.close(fig)
+        rpt.append(self.report_bins(**kwargs))
+        return rpt
+
+    def report_bins(self, **kwargs):
+        ''' Report table of binned data '''
+        hdr = ['Range', 'Reliability', 'Number of measurements']
+        rows = []
+        
+        ti = self.results[self.best]['binned']['interval']
+        ri = self.results[self.best]['binned']['reliability']
+        ni = self.results[self.best]['binned']['number']
+        binleft = self.results[self.best]['binned']['binleft']
+        if binleft is None:
+            binleft = ti - ti[0]
+
+        for bleft, t, r, n in zip(binleft, ti, ri, ni):
+            rows.append(['{:.0f} - {:.0f}'.format(bleft, t), format(r, '.3f'), format(n, '.0f')])
+        rpt = report.Report(**kwargs)
+        rpt.hdr('Binned reliability data', level=2)
+        rpt.table(rows, hdr)
         return rpt
 
     def report_model(self, model, **kwargs):
@@ -609,7 +686,7 @@ class BinomialIntervalOutput(output.Output):
         rows = [[format(self.results[model]['interval'], '.1f'),
                  model,
                  '{:.1f}%'.format(self.results[model]['C']),
-                '{:.1f} - {:.1f}'.format(*self.results[model]['interval_range'])]]
+                 '{:.1f} - {:.1f}'.format(*self.results[model]['interval_range'])]]
         rpt = report.Report(**kwargs)
         rpt.hdr('Best Fit Model', level=2)
         rpt.table(rows, hdr)
@@ -641,6 +718,7 @@ class BinomialIntervalOutput(output.Output):
                 fig = self.plot_allmodels(**kwargs)
                 rpt.plot(fig)
                 plt.close(fig)
+            rpt.append(self.report_bins(**kwargs))
         return rpt
 
     def plot(self, **kwargs):
@@ -900,7 +978,7 @@ class TestIntervalAssets(object):
         self.minint = 14
         self.maxint = 1826
 
-    def updateasset(self, assetname, enddates, passfail, startdates=None):
+    def updateasset(self, assetname, enddates, passfail, startdates=None, **kwargs):
         ''' Update the asset calibration data
 
             Parameters
@@ -913,6 +991,9 @@ class TestIntervalAssets(object):
                 List of pass/fail (1/0) values for each cal
             startdates: array (optional)
                 List of starting dates for each cal cycle
+                
+            Keyword arguments not used. For call signature compatibility
+            with other class.
         '''
         self.assets[assetname] = {'startdates': startdates,
                                   'enddates': enddates,
@@ -948,19 +1029,24 @@ class TestIntervalAssets(object):
         total = 0
         for aname, val in self.assets.items():
             ends = datearray(val['enddates'])
-            y = np.asarray(val['passfail'])
+            sortidx = np.argsort(ends)
+            y = np.asarray(val['passfail'])[sortidx]
 
             if val['startdates'] is None:
                 ddate = np.diff(ends)
                 y = y[1:]
                 total += (len(val['passfail']) - 1)
             else:
-                starts = datearray(val['startdates'])
+                starts = datearray(val['startdates'])[sortidx]
                 ddate = np.asarray(ends) - np.asarray(starts)
                 total += len(ddate)
 
             tolabs = min(self.tol, self.I0*self.thresh)
-            use = np.where((y >= 0) & (abs(ddate - self.I0) <= tolabs))
+            try:
+                use = np.where((y >= 0) & (abs(ddate - self.I0) <= tolabs))
+            except TypeError:  # pass/fail are still strings
+                y = np.array([1. if v.lower() in ['p', 'pass', 'true', 'yes'] else 0 for v in y])
+                use = np.where((y >= 0) & (abs(ddate - self.I0) <= tolabs))
             y = y[use]
             passes += np.count_nonzero(y)
             totalused += len(y)
@@ -1068,6 +1154,7 @@ class TestIntervalOutput(output.Output):
                 ['Current Interval Rejection Confidence', '{:.2f}%'.format(self.results['rejection']*100)],   # Confidence with which the original I0 interval was rejected
                 ['True reliability range', '{:.2f}% - {:.2f}%'.format(self.results['RL']*100, self.results['RU']*100)],
                 ['Observed Reliability', '{:.2f}% ({} / {})'.format(self.results['Robserved']*100, self.results['intol'], self.results['n'])],
+                ['Number of calibrations used', '{:.0f}'.format(self.results['n'])]
                 ]
         if self.results['unused'] is not None:
             rows.append(['Rejected calibrations (wrong interval)', format(self.results['unused'])])

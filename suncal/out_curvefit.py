@@ -1153,6 +1153,26 @@ class CurveFitOutput(output.Output):
         r.table(rows, hdr)
         return r
 
+    def report_all(self, k=2, conf=None, **kwargs):
+        ''' Report all info on curve fit, including summary, residual plots, and correlations '''
+        r = report.Report(**kwargs)
+        r.hdr('Curve Fit Results', level=2)
+
+        outs = [(getattr(self, m), m) for m in ['lsq', 'gum', 'mc', 'mcmc']]
+        outs = [out for out in outs if out[0] is not None]
+        for out, method in outs:
+
+            if len(outs) > 1:
+                r.hdr('Method: {}'.format(method), level=3)
+            r.append(out.report_summary(k=k, conf=conf, **kwargs))
+            r.append(out.report_fit(**kwargs))
+            r.append(out.report_confpred(**kwargs))
+
+            r.div()
+            r.hdr('Residuals', level=3)
+            r.append(out.report_residuals(k=k, conf=conf, **kwargs))
+        return r
+
     def get_dists(self):
         ''' Get distributions in this output. If name is none, return a list of
             available distribution names.

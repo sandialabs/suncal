@@ -345,7 +345,7 @@ class DistWidget(QtWidgets.QWidget):
     def sample(self, name):
         ''' Sample the distribution '''
         try:
-            seed = int(self.seed.text())
+            seed = min(abs(int(self.seed.text())), 2**32-1)
         except (ValueError, TypeError):
             seed = None
         if seed is not None:

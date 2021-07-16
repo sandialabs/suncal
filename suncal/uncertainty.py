@@ -1817,33 +1817,32 @@ class UncertCalc():
         ''' Create report showing units of all parameters in UncertCalc '''
         hdr = ['Parameter', 'Units', 'Abbreviation', 'Dimensionality']
         rows = []
-        for fidx in range(self.model.noutputs):
+        values = self.inputs.means()
+        lambdifys = [sympy.lambdify(self.model.inputnames, expr, 'numpy') for expr in self.model.get_baseexprs()]
+        for fidx, func in enumerate(lambdifys):
             msg = None
             name = report.Math(self.model.outnames[fidx])
             try:
-                mean = self.model.eval()[self.model.outnames[fidx]]
+                result = func(**values)
+                if self.model.outunits[fidx] is not None:
+                    result = result.to(self.model.outunits[fidx])
+                    units = unitmgr.parse_units(self.model.outunits[fidx])
+                else:
+                    units = result.units
+
+            except ZeroDivisionError:
+                result = np.inf
+                if self.model.outunits[fidx] is not None:
+                    result = unitmgr.Quantity(result, self.model.outunits[fidx])
             except DimensionalityError as e:
                 msg = '<font color="red">' + str(e) + '</font>'
-                mean = None
+                result = None
             except OffsetUnitCalculusError:
                 msg = '<font color="red">Ambiguous offset (temerature) units. Try delta_degC.'
-                mean = None
-
-            if mean is not None and self.model.outunits[fidx] is not None:
-                try:
-                    units = unitmgr.parse_units(self.model.outunits[fidx])
-                except UndefinedUnitError:
-                    msg = '<font color="red">Undefined Unit: {}</font>'.format(self.model.outunits[fidx])
-                    units = mean.units
-                else:
-                    try:
-                        mean.ito(self.model.outunits[fidx])
-                    except DimensionalityError as e:
-                        msg = '<font color="red">' + str(e) + '</font>'
-
-            elif mean is not None:
-                units = mean.units  # Units not specified, use native units
-
+                result = None
+            except UndefinedUnitError:
+                msg = '<font color="red">Undefined Unit: {}</font>'.format(self.model.outunits[fidx])
+            
             if msg:
                 rows.append([name, msg, '-', '-'])
             else:

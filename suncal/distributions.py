@@ -232,6 +232,7 @@ class DNormal(Distribution):
             std = self.kwds.get('scale')
         else:
             std = 1
+        std = max(std, 1E-99)  # don't allow 0 standard deviation - to prevent nans
 
         self.distargs = {'loc': self.kwds.get('median', self.kwds.get('loc', 0)), 'scale': std}
 
@@ -278,6 +279,7 @@ class Dt(Distribution):
         else:
             std = 1
 
+        std = max(std, 1E-99)  # don't allow 0 standard deviation - to prevent nans
         scale = std / np.sqrt(df/(df-2))
         self.distargs = {'loc': self.kwds.get('median', self.kwds.get('loc', 0)), 'scale': scale, 'df': df}
 
@@ -662,9 +664,18 @@ class DCurvTrap(Distribution):
 
     def fit(self, x):
         ''' Find best fitting parameters for the distribution to the sampled x data. '''
-        d, loc, scale = self.dist.fit(x)
-        self.distargs = {'loc': loc, 'scale': scale, 'd': d}
-        self.kwds = {'a': d-loc, 'd': d*scale}
+        xmax = x.max()
+        xmin = x.min()
+
+        # self.dist.fit doesn't actually fit the "d" parameter
+        # here we make a complete guess. Won't be great, but will return a valid distribution.
+        loc = xmin
+        scale = xmax-xmin
+        d = (xmax-xmin)/6
+
+        median = loc+scale/2
+        self.distargs = {'loc': loc, 'scale': scale, 'd': d/scale}
+        self.kwds = {'median': median, 'a': d*2, 'd': d}
         return self.kwds
 
     def helpstr(self):
@@ -682,6 +693,7 @@ _aliases = {
     'lognorm': DLognorm,
     'expon': DExpon,
     'curvtrap': DCurvTrap,
+    'ctrap': DCurvTrap,
     'arcsine': DArcsine,
     'resolution': DResolution,
     'poisson': DPoisson,

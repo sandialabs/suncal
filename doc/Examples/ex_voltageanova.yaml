@@ -1,7 +1,4 @@
-- desc: This is the Analysis of Variance example described in appendix H.5 of the
-    GUM. Data is from Table H.9. Only the mean, standard deviation, and number of
-    measurements for each group are provided.
-  groupnames:
+- colnames:
   - 1.0
   - 2.0
   - 3.0
@@ -12,6 +9,40 @@
   - 8.0
   - 9.0
   - 10.0
+  data:
+  - - 10.000172
+    - 6.0e-05
+    - 5.0
+  - - 10.000116
+    - 7.7e-05
+    - 5.0
+  - - 10.000013
+    - 0.000111
+    - 5.0
+  - - 10.000144
+    - 0.000101
+    - 5.0
+  - - 10.000106
+    - 6.7e-05
+    - 5.0
+  - - 10.000031
+    - 9.3e-05
+    - 5.0
+  - - 10.00006
+    - 8.0e-05
+    - 5.0
+  - - 10.000125
+    - 7.3e-05
+    - 5.0
+  - - 10.000163
+    - 8.8e-05
+    - 5.0
+  - - 10.000041
+    - 8.6e-05
+    - 5.0
+  desc: This is the Analysis of Variance example described in appendix H.5 of the
+    GUM. Data is from Table H.9. Only the mean, standard deviation, and number of
+    measurements for each group are provided.
   means:
   - 10.000172
   - 10.000116
@@ -25,19 +56,17 @@
   - 10.000041
   mode: data
   name: data
-  summary: True
   nmeas:
-  - 5
-  - 5
-  - 5
-  - 5
-  - 5
-  - 5
-  - 5
-  - 5
-  - 5
-  - 5
-  xdate: false
+  - 5.0
+  - 5.0
+  - 5.0
+  - 5.0
+  - 5.0
+  - 5.0
+  - 5.0
+  - 5.0
+  - 5.0
+  - 5.0
   stds:
   - 6.0e-05
   - 7.7e-05
@@ -49,3 +78,4 @@
   - 7.3e-05
   - 8.8e-05
   - 8.6e-05
+  summary: true

@@ -628,7 +628,6 @@ class MeasTableWidget(QtWidgets.QTableWidget):
     def col_resize(self, index, oldsize, newsize):
         ''' Column was resized. Resize the preview plot to fit '''
         if index == self.COL_PREVIEW:
-            done = []
             previews = [self.cellWidget(row, self.COL_PREVIEW) for row in range(self.rowCount())]
             previews = set(filter(None, previews))
             for prev in previews:
@@ -717,7 +716,7 @@ class MeasTableWidget(QtWidgets.QTableWidget):
                         self.item(row-1, self.COL_VALUE).setText('{:.2f}'.format(ttable.t_factor(fvalue/100, uncert.degf)))
                         self.item(row, self.COL_VALUE).setText('{:.2f}%'.format(fvalue))
                 else:  # Other uncertainty parameters
-                    paramidx = toprow - row
+                    paramidx = row - toprow - 1
                     paramname = uncert.distribution.argnames[paramidx]
                     uncert.args[paramname] = value
 
