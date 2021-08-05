@@ -1,4 +1,11 @@
 # Change History
+## Version 1.5.4
+
+- Improve moving array data from DataSet into sweeps or curve fits
+- Fix issues when importing single-asset data into interval calculations
+- Show Deviation from Prior plot in interval variables method report
+- Improved automatic conversion of delta units
+
 
 ## Version 1.5.3
 

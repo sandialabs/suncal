@@ -168,10 +168,10 @@ class InputVar(object):
             -------
             Combined standard uncertainty: float
         '''
-        if str(self.units) in ['degC', 'degF', 'celsius', 'fahrenheit']:
-            dfltunits = getattr(unitmgr.ureg, 'delta_'+str(self.units))   # stdev of temperature units must be delta_
-        else:
-            dfltunits = self.units
+        # Take a delta to see if the uncertainty units should be converted to
+        # delta_XXX units (ie temperature)
+        test = 1*self.units
+        dfltunits = (test - test).units  # may be delta_degC, etc.
 
         if len(self.uncerts) == 0:
             return 0 * dfltunits
@@ -325,7 +325,7 @@ class InputVar(object):
 
 
 class InputUncert(object):
-    ''' Input variable class. Stores the variable name, distribution, and random
+    ''' Input uncertainty class. Stores the uncertainty name, distribution, and random
         samples.
 
         Parameters

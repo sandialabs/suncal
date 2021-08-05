@@ -375,7 +375,7 @@ class VariablesIntervalAssets(object):
         self.use_alldeltas = use_alldeltas
         self.assets = {}
 
-    def updateasset(self, assetname, enddates, asfound, startdates=None, asleft=None):
+    def updateasset(self, assetname, enddates, asfound, startdates=None, asleft=None, **kwargs):
         ''' Update the asset calibration data
 
             Parameters
@@ -390,6 +390,9 @@ class VariablesIntervalAssets(object):
                 List of as-left calibration values, if different from as-found
             startdates: array (optional)
                 List of starting dates for each cal cycle
+
+            Keyword arguments not used. For call signature compatibility
+            with other class.
         '''
         self.assets[assetname] = {'startdates': startdates,
                                   'enddates': enddates,
@@ -606,6 +609,9 @@ class IntervalOutput(output.Output):
         
         rpt.div()
         rpt.append(self.report_params(**kwargs))
+        fig = self.fit.plot()
+        rpt.plot(fig)
+        plt.close(fig)
         rpt.append(self.fit.report(**kwargs))
         return rpt
 
@@ -630,6 +636,7 @@ class IntervalOutput(output.Output):
                 rows.append([report.Number(x, fmin=0), report.Number(d, fmin=0)])
             rpt.table(rows, ['Time since calibration', 'Deviation from prior'])
         return rpt
+
 
 
 class FitOutput(output.Output):
@@ -716,7 +723,7 @@ class FitOutput(output.Output):
             ax.plot(xx, fit, color='C1', label='Fit')
             ax.plot(xx, fit+upred, color='C4', ls='--', label='{:.0f}% Uncertainty (k={:.2f})'.format(conf*100, k))
             ax.plot(xx, fit-upred, color='C4', ls='--')
-            ax.plot(self.t, self.deltas+self.y0, marker='o', ls='')
+            ax.plot(self.t, self.deltas, marker='o', ls='')
             ax.set_xlabel('Time Since Calibration')
             ax.set_ylabel('Deviation from Prior')
             ax.legend(fontsize=12, bbox_to_anchor=(1, 1))

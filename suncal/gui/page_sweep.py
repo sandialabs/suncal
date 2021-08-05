@@ -168,6 +168,7 @@ class SweepSetupTable(gui_widgets.FloatTableWidget):
                     self.item(i, col).setText(str(val))
                 self.blockSignals(False)
                 self.update_sweepparams()
+                self.resizeColumnsToContents()
 
     def filldata(self):
         ''' Fill selected column with start/stop/step values '''
@@ -314,7 +315,11 @@ class SweepParamWidget(QtWidgets.QDialog):
             except ValueError:   # No uncertainty components!
                 items = []
             else:
-                items = self.inptlist[varidx].uncerts[compidx].args.keys()
+                distname = self.inptlist[varidx].uncerts[compidx].distname
+                if distname in ['normal', 't']:
+                    items = ['unc', 'k']
+                else:
+                    items = self.inptlist[varidx].uncerts[compidx].required_args
             self.uncparam.clear()
             self.uncparam.addItems(items)
         self.blockSignals(False)

@@ -355,7 +355,7 @@ class DistributionSelectWidget(QtWidgets.QDialog):
         ''' Column assignment has changed '''
         varname = self.cmbColumn.currentText()
         varlist = self._get_colassignment()
-        if varname == 'Not used' or varname == '':
+        if varname in ['Not Used', '']:
             self.table.setHorizontalHeaderItem(self.table.currentColumn(), QtWidgets.QTableWidgetItem(''))
         else:
             if varname in varlist:
@@ -584,9 +584,10 @@ class ArraySelectWidget(QtWidgets.QDialog):
         self.singlecol = singlecol
         gui_widgets.centerWindow(self, 1000, 800)
         self.setWindowTitle('Select Array')
-        self.colnames = colnames
+        self.colnames = colnames  # Column names that can be assigned
         if self.colnames is None:
             self.colnames = ['x', 'y', 'u(y)', 'u(x)']
+        self.colassignments = None
 
         self.dataset = None
         self.treeSource = ProjectTreeArrays(project=project)
@@ -615,8 +616,8 @@ class ArraySelectWidget(QtWidgets.QDialog):
         rlayout.addWidget(self.table, stretch=5)
         rlayout.addWidget(self.dlgbutton)
         layout = QtWidgets.QHBoxLayout()
-        layout.addLayout(llayout)
-        layout.addLayout(rlayout)
+        layout.addLayout(llayout, stretch=2)
+        layout.addLayout(rlayout, stretch=4)
         self.setLayout(layout)
 
         self.cmbColumn.setVisible(not self.singlecol)
@@ -627,47 +628,44 @@ class ArraySelectWidget(QtWidgets.QDialog):
         self.table.currentCellChanged.connect(self.columnselected)
         self.treeSource.loaddata.connect(self.load_data)
 
-    def _get_colassignment(self):
-        ''' Get list of variable names for each column '''
-        return [self.table.horizontalHeaderItem(i).text() if self.table.horizontalHeaderItem(i) else '' for i in range(self.table.columnCount())]
-
     def tablecolumnchanged(self):
         ''' Column assignment has changed '''
         varname = self.cmbColumn.currentText()
-        varlist = self._get_colassignment()
-        if varname == 'Not used' or varname == '':
-            self.table.setHorizontalHeaderItem(self.table.currentColumn(), QtWidgets.QTableWidgetItem(''))
+        colid = self.table.currentColumn()
+        if varname in ['Not Used', '']:
+            self.colassignments[colid] = None
         else:
-            if varname in varlist:
-                self.table.setHorizontalHeaderItem(varlist.index(varname), QtWidgets.QTableWidgetItem(''))
-            self.table.setHorizontalHeaderItem(self.table.currentColumn(), QtWidgets.QTableWidgetItem(varname))
-            
+            if varname in self.colassignments:
+                self.colassignments[self.colassignments.index(varname)] = None
+            self.colassignments[colid] = varname
         self.highlight_columns()
         self.updateplot()
 
     def highlight_columns(self):
         ''' Highlight columns that will be imported '''
-        for cidx, colname in enumerate(self._get_colassignment()):
-            if colname != '' and colname != 'Not Used':
+        headerlabels = []
+        for cidx in range(self.table.columnCount()):
+            if self.colassignments[cidx] and self.dataset.colnames:
+                headerlabels.append('{} → {}'.format(self.dataset.colnames[cidx], self.colassignments[cidx]))
+            elif self.dataset.colnames:
+                headerlabels.append(self.dataset.colnames[cidx])
+            else:
+                headerlabels.append('')
+            
+            if self.colassignments[cidx]:
                 colcolor = gui_common.COLOR_SELECTED
             else:
                 colcolor = gui_common.COLOR_OK
             for row in range(self.table.rowCount()):
                 self.table.item(row, cidx).setBackground(colcolor)
+        self.table.setHorizontalHeaderLabels(headerlabels)
 
     def columnselected(self, row, col, prow, pcol):
         ''' Column was highlighted in table. Update combobox with variable selection. '''
         self.cmbColumn.blockSignals(True)
-        try:
-            colvar = self.table.horizontalHeaderItem(col).text()
-        except AttributeError:
-            colvar = None
-
-        self.cmbColumn.setCurrentIndex(self.cmbColumn.findText(colvar))
-        if self.cmbColumn.currentIndex() < 0:
-            self.cmbColumn.setCurrentIndex(0)  # Not used
+        name = self.colassignments[self.table.currentColumn()]
+        self.cmbColumn.setCurrentIndex(self.cmbColumn.findText(name))
         self.cmbColumn.blockSignals(False)
-
         self.updateplot()
 
     def updateplot(self):
@@ -713,9 +711,8 @@ class ArraySelectWidget(QtWidgets.QDialog):
     def is_datecol(self, colname):
         ''' Return True if column with name === colname is date '''
         isdate = False
-        colnames = self._get_colassignment()
-        if colname in colnames:
-            idx = colnames.index(colname)
+        if colname in self.colassignments:
+            idx = self.colassignmetns.index(colname)
             isdate = hasattr(self.dataset.data[idx][0], 'date')
         return isdate
 
@@ -724,33 +721,16 @@ class ArraySelectWidget(QtWidgets.QDialog):
         if self.dataset is None:
             ret = {}
         elif self.singlecol:
-            item = self.table.horizontalHeaderItem(self.table.currentColumn())
-            y = self.dataset.get_column(item.text() if item else None)
+            name = self.dataset.colnames[self.table.currentColumn()]
+            y = self.dataset.get_column(name)
             ret = {'y': y}
         else:
             ret = {}
-            for c in self.colnames:
-                x = self._get_assigned_data(c)
-                if x is not None:
-                    ret[c] = x
-
-        # Drop any row with blank data
-        blankrows = []
-        for col in ret:
-            blankidx = np.where(ret[col]=='')[0]
-            blankrows.extend(list(blankidx))
-        if len(blankrows) > 0:
-            for col in ret:
-                ret[col] = np.delete(ret[col], blankrows)
+            for cidx, c in enumerate(self.colassignments):
+                if c is not None:
+                    name = self.dataset.colnames[cidx]
+                    ret[c] = self.dataset.get_column(name)
         return ret
-
-    def _get_assigned_data(self, colname):
-        ''' Get data for column with name == colname '''
-        assignednames = self._get_colassignment()
-        if colname in assignednames:
-            return self.dataset.data[assignednames.index(colname)]
-        else:
-            return None
 
     def load_data(self, dset):
         ''' Fill table with data array
@@ -765,13 +745,21 @@ class ArraySelectWidget(QtWidgets.QDialog):
         ncols = dset.ncolumns()
         self.table.setRowCount(nrows)
         self.table.setColumnCount(ncols)
+
         for col in range(ncols):
             for row in range(nrows):
                 item = QtWidgets.QTableWidgetItem(str(dset.data[col][row]))
                 item.setFlags(QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled)
                 self.table.setItem(row, col, item)
 
-        self.table.setHorizontalHeaderLabels(self.colnames[:dset.ncolumns()])
+        self.colassignments = [None] * dset.ncolumns()
+        if not self.singlecol:
+            for cname in self.colnames:
+                if cname in dset.colnames:
+                    idx = dset.colnames.index(cname)
+                    self.colassignments[idx] = dset.colnames[idx]
+
+        self.table.resizeColumnsToContents()
         self.dataset = dset
         self.highlight_columns()
         self.updateplot()

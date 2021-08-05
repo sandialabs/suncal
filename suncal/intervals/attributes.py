@@ -1031,6 +1031,7 @@ class TestIntervalAssets(object):
             ends = datearray(val['enddates'])
             sortidx = np.argsort(ends)
             y = np.asarray(val['passfail'])[sortidx]
+            ends = ends[sortidx]
 
             if val['startdates'] is None:
                 ddate = np.diff(ends)

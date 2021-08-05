@@ -256,7 +256,7 @@ class VarsParams(QtWidgets.QGroupBox):
         flayout = QtWidgets.QFormLayout()
         flayout.addRow('Measurement Uncertainty', self.u0)
         flayout.addRow('Uncertainty k', self.kvalue)
-        flayout.addRow('Initial Measured Value', self.y0)
+        flayout.addRow('Next interval as-left value', self.y0)
         flayout.addRow('Fit Polynomial Order', self.m)
         layout = QtWidgets.QVBoxLayout()
         layout.addLayout(flayout)
@@ -273,7 +273,7 @@ class VarsParams(QtWidgets.QGroupBox):
         self.setLayout(layout)
 
         self.u0.setToolTip('Measurement uncertainty in new measurements')
-        self.y0.setToolTip('Measured/As-Left value at beginning of interval')
+        self.y0.setToolTip('Measured/As-Left value at beginning of upcoming interval')
         self.m.setToolTip('Order of polynomial fit to deviation vs time curve')
         self.utarget.setToolTip('Maximum allowed projected uncertainty before ending interval')
         self.rlimL.setToolTip('Lower deviation limit. Interval ends when fit polynomial minus uncertainty (at below confidence level) falls below this limit.')
@@ -447,9 +447,12 @@ class IntervalTable(gui_widgets.FloatTableWidget):
                 vals = np.atleast_1d(vals)
                 for i, val in enumerate(vals):
                     if date:
-                        val = attributes.datearray([val])[0]
-                        datestr = mdates.num2date(val).strftime('%d-%b-%Y')   # float ordinal
-                        self.setItem(i, colidx, QtWidgets.QTableWidgetItem(datestr))
+                        try:
+                            val = attributes.datearray([val])[0]
+                            datestr = mdates.num2date(val).strftime('%d-%b-%Y')   # float ordinal
+                            self.setItem(i, colidx, QtWidgets.QTableWidgetItem(datestr))
+                        except ValueError:
+                            self.setItem(i, colidx, QtWidgets.QTableWidgetItem())
                     else:
                         self.setItem(i, colidx, QtWidgets.QTableWidgetItem(str(val)))
 
@@ -686,50 +689,44 @@ class IntervalWidget(QtWidgets.QWidget):
         ok = dlg.exec_()
         if ok:
             dat = dlg.get_array()
+            if len(dat) == 0:
+                QtWidgets.QMessageBox.warning(self, 'Data Import', 'No columns selected.')
+                return
             
-            if 'Asset' in dat:
-                # Group by assets then repopulate entire table
-                keys = list(dat.keys())
-                rows = len(dat[keys[0]])
-                assetdat = {}
-                for row in range(rows):
+            # Group by assets then repopulate entire table
+            keys = list(dat.keys())
+            rows = len(dat[keys[0]])
+            assetdat = {}
+            for row in range(rows):
+                if 'Asset' in dat:
                     asset = str(dat['Asset'][row])
-                    if asset not in assetdat:
-                        assetdat[asset] = {}
-                    for colname in cols:
-                        if colname != 'Asset' and colname in dat:
-                            colid = {'Interval End': 'enddates',
-                                     'Interval Start': 'startdates',
-                                     'Pass/Fail': 'passfail',
-                                     'As-Found': 'asfound',
-                                     'As-Left': 'asleft'}.get(colname, None)
+                else:
+                    asset = str(self.asset.currentText())
+                if asset not in assetdat:
+                    assetdat[asset] = {}
+                for colname in cols:
+                    if colname != 'Asset' and colname in dat:
+                        colid = {'Interval End': 'enddates',
+                                 'Interval Start': 'startdates',
+                                 'Pass/Fail': 'passfail',
+                                 'As-Found': 'asfound',
+                                 'As-Left': 'asleft',
+                                 'As-Found Value': 'asfound',
+                                 'As-Left Value': 'asleft',
+                                 }.get(colname, None)
+                        if colid is not None:
                             if colid not in assetdat[asset]:
                                 assetdat[asset][colid] = []
                             val = dat[colname][row]
                             assetdat[asset][colid].append(val)
-                for asset, dat in assetdat.items():
-                    dat.setdefault('enddates', None)
-                    dat.setdefault('passfail', None)
-                    dat.setdefault('startdates', None)
-                    dat.setdefault('asfound', None)
-                    dat.setdefault('asleft', None)
-                    self.uinterval.updateasset(asset, **dat)
-
-                self.init_data()
-
-            else:
-                # Load data only for one asset
-                for col, colname in enumerate(cols):
-                    if colname in dat:
-                        for row, val in enumerate(dat[colname]):
-                            if colname in ['Interval Start', 'Interval End']:
-                                newrow = self.table.rowCount()
-                                self.table.setItem(newrow, col, QtWidgets.QTableWidgetItem(mdates.num2date(val).strftime('%d-%b-%Y')))
-                                self.table.setRowCount(newrow)
-                            else:
-                                newrow = self.table.rowCount()
-                                self.table.setItem(newrow, col, QtWidgets.QTableWidgetItem(str(val)))
-                                self.table.setRowCount(newrow)
+            for asset, dat in assetdat.items():
+                dat.setdefault('enddates', None)
+                dat.setdefault('passfail', None)
+                dat.setdefault('startdates', None)
+                dat.setdefault('asfound', None)
+                dat.setdefault('asleft', None)
+                self.uinterval.updateasset(asset, **dat)
+            self.init_data()
 
     def get_menu(self):
         ''' Get the menu for this widget '''
@@ -751,6 +748,7 @@ class BinData(QtWidgets.QDialog):
         self.uinterval = uinterval
         self.selectedbinidx = None
         self.press = None
+        self.lastclickedbin = None
         self.binlines = []
 
         self.setWindowTitle('Select data bins')
@@ -795,6 +793,8 @@ class BinData(QtWidgets.QDialog):
         self.canvas.mpl_connect('button_press_event', self.on_press)
         self.canvas.mpl_connect('button_release_event', self.on_release)
         self.canvas.mpl_connect('motion_notify_event', self.on_motion)
+        self.canvas.mpl_connect('key_press_event', self.on_keypress)
+        self.canvas.setFocusPolicy(QtCore.Qt.ClickFocus)
 
     def init_bins(self):
         ''' Initialize bins based on Interval Calc class '''
@@ -870,20 +870,43 @@ class BinData(QtWidgets.QDialog):
                 if b.contains(event)[0]:
                     self.selectedbinidx = idx
                     self.press = b.xy, (event.xdata, event.ydata)
+                    self.lastclickedbin = self.selectedbinidx
+                    self.canvas.setFocus()
                     break
             else:
-                self.press = None
                 self.selectedbinidx = None
 
     def on_release(self, event):
         ''' Mouse was released. Update rectangle and reliability table '''
-        self.press = None
         self.selectedbinidx = None
         
         # Left edge of each rectangle
         self.binlefts = [b.xy[:,0].min() for b in self.binlines]
         self.report_reliability()
     
+    def on_keypress(self, event):
+        if self.lastclickedbin is not None and event.key in ['left', 'right']:
+            increment = 1 if event.key == 'right' else -1
+
+            # Don't hit another bin
+            newx = self.binlefts[self.lastclickedbin] + increment
+            if newx < 0:
+                return
+            if self.lastclickedbin < len(self.binlefts)-2:
+                if newx + self.binwidth.value() > self.binlefts[self.lastclickedbin+1]:
+                    return
+            if self.lastclickedbin > 0:
+                if newx < self.binlefts[self.lastclickedbin-1] + self.binwidth.value():
+                    return
+
+            self.binlefts[self.lastclickedbin] = newx
+            rect = self.binlines[self.lastclickedbin]
+            poly = rect.xy
+            poly[:,0] += increment
+            rect.set_xy(poly)            
+            self.canvas.draw()
+            self.report_reliability()
+
     def report_reliability(self):
         ''' Update text area with reliability table '''
         ti, ti0, ri, ni = self.uinterval.get_reliability(self.binlefts, self.binwidth.value())
@@ -905,7 +928,6 @@ class BinData(QtWidgets.QDialog):
             polytest[:,0] += dx
             left = polytest[:,0].min()
             right = polytest[:,0].max()
-            
             leftlim = -np.inf if self.selectedbinidx==0 else self.binlines[self.selectedbinidx-1].xy[:,0].max()
             rightlim = np.inf if self.selectedbinidx==len(self.binlines)-1 else self.binlines[self.selectedbinidx+1].xy[:,0].min()
             if left < leftlim or right > rightlim:

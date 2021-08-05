@@ -204,11 +204,20 @@ class DataSet(object):
 
     def group_stats(self):
         ''' Get summary statistics for each column '''
-        groupvar = np.nanvar(self.data, axis=1, ddof=1)
-        groupstd = np.sqrt(groupvar)
-        groupmean = np.nanmean(self.data, axis=1)
-        groupN = np.count_nonzero(np.isfinite(self.data), axis=1)
-        groupsem = groupstd / np.sqrt(groupN)
+        try:
+            groupvar = np.nanvar(self.data, axis=1, ddof=1)
+            groupstd = np.sqrt(groupvar)
+            groupmean = np.nanmean(self.data, axis=1)
+            groupN = np.count_nonzero(np.isfinite(self.data), axis=1)
+            groupsem = groupstd / np.sqrt(groupN)
+        except TypeError:  # Could be datetime
+            ncol = self.ncolumns()
+            groupvar = np.full(ncol, np.nan)
+            groupstd = np.full(ncol, np.nan)
+            groupmean = np.full(ncol, np.nan)
+            groupN = np.full(ncol, np.nan)
+            groupsem = np.full(ncol, np.nan)
+
         Result = namedtuple('GroupStats', ['name', 'mean', 'var', 'stdev', 'sem', 'N', 'df'])
         return Result(self.colnames, groupmean, groupvar, groupstd, groupsem, groupN, groupN - 1)
 
@@ -313,9 +322,11 @@ class DataSet(object):
         return DataSetSummary(self.colnames, gstats.mean, gstats.stdev, nmeas=gstats.N)
 
     def to_array(self):
-        ''' Summarize the DataSet as an array with columns for x, y, and uy. '''
+        ''' Summarize the DataSet as an array with columns for x, y, stdev(y), u(y). '''
         gstats = self.group_stats()
-        dset = DataSet(np.vstack((self._pcolnames, gstats.mean, gstats.stdev)), colnames=['x', 'y', 'u(y)'])
+        percent = gstats.sem/gstats.mean
+        dset = DataSet(np.vstack((self._pcolnames, gstats.mean, gstats.sem, percent, percent*100, gstats.stdev)),
+                       colnames=['x', 'y', 'u(y)', 'u(y)/y', 'u(y)/y*100%', 'stdev(y)'])
         dset.coltype = self.coltype
         return dset
 

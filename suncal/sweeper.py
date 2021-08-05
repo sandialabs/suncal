@@ -134,7 +134,9 @@ class UncertSweep(object):
                     inptvar = ucalccopy.get_inputvar(inptname)
                     inptvar.get_comp(comp).degf = values[sweepidx]
                 else:
-                    ucalccopy.set_uncert(var=inptname, name=comp, units=units, **{param: values[sweepidx]})
+                    inptvar = ucalccopy.get_inputvar(inptname)
+                    distname = inptvar.get_comp(comp).distname
+                    ucalccopy.set_uncert(var=inptname, name=comp, dist=distname, units=units, **{param: values[sweepidx]})
 
             reportlist.append(ucalccopy.calculate(gum=gum, mc=mc, samples=samples))
         self.out = SweepOutput(reportlist, self.sweeplist)
@@ -622,7 +624,7 @@ class SweepOutput(output.Output):
                 DataSet containing mean and uncertainties of each sweep point
         '''
         xvals = [x.magnitude for x in self.inptvals]
-        names = self.inpthdr_strs
+        names = self.inpthdr_strs.copy()
 
         if gum:
             yvals = self.outpvalsgum[funcidx].magnitude
