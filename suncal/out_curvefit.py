@@ -1165,6 +1165,10 @@ class CurveFitOutput(output.Output):
             if len(outs) > 1:
                 r.hdr('Method: {}'.format(method), level=3)
             r.append(out.report_summary(k=k, conf=conf, **kwargs))
+            fig, ax = plotting.initplot()
+            out.plot_summary(ax=ax, k=k, conf=conf, **kwargs)
+            r.plot(fig)
+            plt.close(fig)
             r.append(out.report_fit(**kwargs))
             r.append(out.report_confpred(**kwargs))
 

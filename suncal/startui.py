@@ -21,7 +21,7 @@ Version: {} - {}<br><br>
 <font size=4>uncertainty@sandia.gov<br><br></font>
 <font size=3>
 <br>
-Copyright 2019-2020 National Technology & Engineering Solutions<br>of Sandia, LLC (NTESS).
+Copyright 2019-2021 National Technology & Engineering Solutions<br>of Sandia, LLC (NTESS).
 Under the terms of Contract<br>DE-NA0003525 with NTESS, the U.S. Government<br>retains certain rights in this software.'''.format(version.__version__, version.__date__)
 
 QtWidgets.QApplication.setAttribute(QtCore.Qt.AA_EnableHighDpiScaling)

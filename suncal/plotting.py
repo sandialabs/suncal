@@ -40,7 +40,7 @@ def setup_mplparams():
 setup_mplparams()
 
 
-def initplot(plot):
+def initplot(plot=None):
     ''' Initialize a Figure and Axis to plot on.
 
         If plot is None, new figure and axis will be created.

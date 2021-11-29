@@ -759,7 +759,14 @@ class ArraySelectWidget(QtWidgets.QDialog):
                     idx = dset.colnames.index(cname)
                     self.colassignments[idx] = dset.colnames[idx]
 
-        self.table.resizeColumnsToContents()
+            if all(c is None for c in self.colassignments):
+                if 'x' in self.colnames and 'y' in self.colnames and len(self.colassignments) == 2:
+                    self.colassignments = ['x', 'y']
+                elif ('x' in self.colnames and 'y' in self.colnames and 
+                      'u(y)' in self.colnames and len(self.colassignments) == 3):
+                    self.colassignments = ['x', 'y', 'u(y)']
+
         self.dataset = dset
         self.highlight_columns()
+        self.table.resizeColumnsToContents()
         self.updateplot()

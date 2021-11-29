@@ -245,8 +245,8 @@ class GUMOutput(output.Output):
                 uncert, k = self.expanded(fidx=fidx, cov=cov, normal=normal)
                 row = [report.Math.from_sympy(self._symbols[fidx])] if cov == covlist[0] else ['-']
                 row.append('{:.2f}%'.format(cov*100) if not isinstance(cov, str) else cov)
-                row.append(report.Number(self.nom(fidx)-uncert, matchto=uncert, **kwargs))
-                row.append(report.Number(self.nom(fidx)+uncert, matchto=uncert, **kwargs))
+                row.append(report.Number(self.nom(fidx)-uncert, **kwargs))
+                row.append(report.Number(self.nom(fidx)+uncert, **kwargs))
                 row.append(format(k, '.3f'))
                 row.append(format(self.degf(fidx), '.2f'))
                 row.append(report.Number(uncert, **kwargs))
@@ -292,7 +292,7 @@ class GUMOutput(output.Output):
 
             rows = []
             for i, inpt in enumerate(self.inputs):
-                rows.append([inpt.name,
+                rows.append([report.Math.from_latex(inpt.get_latex()),
                              report.Number(self.Cx[fidx][i], fmin=1),
                              format(props[i]*100, '.2f')+'%'])
                 if resid > 0:
@@ -864,8 +864,8 @@ class MCOutput(output.Output):
                     row.append('{:.2f}%'.format(cov*100))
                 else:
                     row.append(cov)
-                row.append(report.Number(minval, matchto=self.uncert))
-                row.append(report.Number(maxval, matchto=self.uncert))
+                row.append(report.Number(minval, **kwargs))
+                row.append(report.Number(maxval, **kwargs))
                 row.append(format(kval, '.3f'))
                 rows.append(row)
         r = report.Report(**kwargs)
@@ -880,7 +880,7 @@ class MCOutput(output.Output):
             if not self.model.show[fidx]: continue
             rows = []
             for i, inpt in enumerate(self.inputs):
-                rows.append([inpt.name,
+                rows.append([report.Math.from_latex(inpt.get_latex()),
                              report.Number(self.Cx[fidx][i], fmin=1),
                              format(self.proportions[fidx][i]*100, '.2f')+'%'])
 
@@ -1473,7 +1473,7 @@ class UncertOutput(output.Output):
             for fidx in outids:
                 rows = []
                 for i, inpt in enumerate(self.inputs):
-                    row = [report.Math(inpt.name),
+                    row = [report.Math.from_latex(inpt.get_latex()),
                            report.Number(gumsens[fidx][i], fmin=1),
                            format(gumprop[fidx][i]*100, '.2f')+'%',
                            report.Number(mcsens[fidx][i], fmin=1),

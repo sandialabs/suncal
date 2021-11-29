@@ -1,4 +1,16 @@
 # Change History
+
+## Version 1.5.5
+
+- Added joint Risk probability plot
+- Added YAML filter to file open/save dialog
+- Improved some report formatting
+- Fixed importing of data into summarized interval table
+- Prevent exception on corrupted settings file
+- Prevent exception when no name is given in distribution explorer
+- Restore warning when functions contain circular references
+
+
 ## Version 1.5.4
 
 - Improve moving array data from DataSet into sweeps or curve fits

@@ -155,7 +155,10 @@ class Settings(object):
 
     def getCoverageGUMk(self):
         vals = self.settings.value('coverage/gum/levels/k', [2])
-        vals = ['k = {}'.format(v) for v in vals]
+        try:
+            vals = ['k = {}'.format(v) for v in vals]
+        except TypeError:
+            vals = ['k = 2']
         return vals
 
     def getCoverageTypeGUM(self):

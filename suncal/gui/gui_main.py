@@ -417,13 +417,13 @@ class MainGUI(QtWidgets.QMainWindow):
 
     def save_project(self):
         ''' Save project to file. '''
-        fname, _ = QtWidgets.QFileDialog.getSaveFileName(caption='Select file to save')
+        fname, _ = QtWidgets.QFileDialog.getSaveFileName(caption='Select file to save', filter='Suncal YAML (*.yaml);;All files (*.*)')
         if fname:
             self.project.save_config(fname)
 
     def load_project(self):
         ''' Load a project from file, prompting user for filename '''
-        fname, self.openconfigfolder = QtWidgets.QFileDialog.getOpenFileName(caption='Select file to open', directory=self.openconfigfolder)
+        fname, self.openconfigfolder = QtWidgets.QFileDialog.getOpenFileName(caption='Select file to open', directory=self.openconfigfolder, filter='Suncal YAML (*.yaml);;All files (*.*)')
         if fname:
             self.newproject()
             oldproject = self.project  # just in case things go wrong...

@@ -240,11 +240,11 @@ class BinomialInterval(object):
                   }
 
     def update(self, ti, ri, ni, ti0=None):
-        ''' Update calibration data '''
-        self.ti = ti
-        self.ti0 = ti0
-        self.Ri = ri
-        self.ni = ni
+        ''' Update calibration data. Don't change if None. '''
+        self.ti = ti if ti is not None else self.ti
+        self.ti0 = ti0 if ti0 is not None else self.ti0
+        self.Ri = ri if ri is not None else self.Ri
+        self.ni = ni if ni is not None else self.ni
 
     def update_params(self, Rt, conf):
         ''' Update parameters, reliability and confidence '''
@@ -796,9 +796,9 @@ class TestInterval(object):
         self.maxint = maxint
 
     def update(self, intol, n):
-        ''' Update parameters '''
-        self.intol = intol
-        self.n = n
+        ''' Update parameters. Don't change if None. '''
+        self.intol = intol if intol is not None else self.intol
+        self.n = n if n is not None else self.n
 
     def update_params(self, I0=365, Rt=.9, maxchange=2, conf=.5, mindelta=5, minint=14, maxint=1826):
         ''' Update calculation parameters '''

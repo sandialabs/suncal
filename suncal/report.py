@@ -839,7 +839,7 @@ class Report(object):
         '''
         self._s += self._insert_obj(Math(mathstr), end=end)
 
-    def plot(self, fig, end=''):
+    def plot(self, fig, end='\n\n'):
         ''' Add matplotlib figure to the report
 
             Parameters

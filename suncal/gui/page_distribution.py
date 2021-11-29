@@ -344,6 +344,8 @@ class DistWidget(QtWidgets.QWidget):
 
     def sample(self, name):
         ''' Sample the distribution '''
+        if name in [None, '', 'ERROR']:
+            return
         try:
             seed = min(abs(int(self.seed.text())), 2**32-1)
         except (ValueError, TypeError):

@@ -1394,7 +1394,7 @@ class RiskOutput(output.Output):
                 ax.fill_between(x, yproc, where=((x <= LL) | (x >= UL)), alpha=.5, color='C0')
                 ax.set_ylabel('Probability Density')
                 ax.set_xlabel('Value')
-                ax.legend(loc='upper left')
+                ax.legend(loc='upper left', fontsize=10)
                 if self.labelsigma:
                     ax.xaxis.set_major_formatter(FormatStrFormatter(r'%dSL'))
                 plotnum += 1
@@ -1420,11 +1420,80 @@ class RiskOutput(output.Output):
 
                 ax.set_ylabel('Probability Density')
                 ax.set_xlabel('Value')
-                ax.legend(loc='upper left')
+                ax.legend(loc='upper left', fontsize=10)
                 if self.labelsigma:
                     ax.xaxis.set_major_formatter(FormatStrFormatter(r'%dSL'))
             fig.tight_layout()
         return fig
+
+    def plot_joint(self, plot=None):
+        ''' Plot risk distributions '''
+        with plt.style.context(plotting.plotstyle):
+            fig, ax = plotting.initplot(plot)
+            fig.clf()
+
+            procdist = self.risk.get_procdist()
+            testdist = self.risk.get_testdist()
+
+            pad = 0
+            pad = max(pad, procdist.std() * 3)
+            pad = max(pad, testdist.std() * 3)
+
+            LL, UL = self.risk.get_speclimits()
+            GBL, GBU = self.risk.get_guardband()
+            x = y = np.linspace(LL - pad, UL + pad, 300)
+            xx, yy = np.meshgrid(x, y)
+            pdf1 = procdist.pdf(xx)
+            expected = testdist.median()
+            kwds = distributions.get_distargs(testdist)
+            locorig = kwds.pop('loc', 0)
+            pdf2 = testdist.dist.pdf(yy, loc=xx-(expected-locorig), **kwds)
+
+            ax1 = plt.subplot2grid((5, 5), loc=(1, 0), colspan=4, rowspan=4, fig=fig)
+            ax1.contourf(xx, yy, (pdf1*pdf2)**.5, levels=20, cmap='Blues')
+            ax1.contour(xx, yy, (pdf1*pdf2)**.5, levels=20, colors='blue', linewidths=.1)
+            ax1.axvline(LL, color='black', ls='--', lw=1)
+            ax1.axhline(LL, color='black', ls='--', lw=1)
+            ax1.axvline(UL, color='black', ls='--', lw=1)
+            ax1.axhline(UL, color='black', ls='--', lw=1)
+            ax1.axhline(LL+GBL, color='gray', ls='--', lw=1)
+            ax1.axhline(UL-GBU, color='gray', ls='--', lw=1)
+
+            procpdf = procdist.pdf(x)
+            testpdf = testdist.pdf(y)
+
+            ax2 = plt.subplot2grid((5, 5), loc=(0, 0), colspan=4, sharex=ax1, fig=fig)
+            ax2.plot(x, procpdf)
+            ax2.fill_between(x, procpdf, where=x>UL, color='C0', alpha=.25)
+            ax2.fill_between(x, procpdf, where=x<LL, color='C0', alpha=.25)
+            ax2.axvline(LL, color='black', ls='--', lw=1)
+            ax2.axvline(UL, color='black', ls='--', lw=1)
+            
+            ax3 = plt.subplot2grid((5, 5), loc=(1, 4), rowspan=4, sharey=ax1, fig=fig)
+            ax3.plot(testpdf, y, color='C1')
+            ax3.fill_betweenx(y, testpdf, where=y>UL, color='C1', alpha=.25)
+            ax3.fill_betweenx(y, testpdf, where=y<LL, color='C1', alpha=.25)
+            ax3.axhline(testdist.mean(), ls='--', lw=1, color='C1')
+            ax3.axhline(LL, color='black', ls='--', lw=1)
+            ax3.axhline(UL, color='black', ls='--', lw=1)
+
+            fig.subplots_adjust(hspace=0.05, wspace=.05)
+            plt.setp(ax2.get_xticklabels(), visible=False)
+            plt.setp(ax2.get_yticklabels(), visible=False)
+            plt.setp(ax3.get_xticklabels(), visible=False)
+            plt.setp(ax3.get_yticklabels(), visible=False)
+
+            ax1.set_xlabel('Actual Product')
+            ax1.set_ylabel('Test Result')
+            ax1.set_ylim(y.min(), y.max())
+
+            ax1.fill_between(x, LL+GBL, UL-GBU, where=(x<LL), color='C1', alpha=.15, label='False Accept')
+            ax1.fill_between(x, LL+GBL, UL-GBU, where=(x>UL), color='C1', alpha=.15)
+            ax1.fill_betweenx(y, LL, UL, where=(x<LL+GBL), color='C2', alpha=.15, label='False Reject')
+            ax1.fill_betweenx(y, LL, UL, where=(x>UL-GBU), color='C2', alpha=.15)
+            ax1.legend(loc='upper left', fontsize=10)
+        return fig
+
 
     def report_montecarlo(self, fig=None, **kwargs):
         ''' Run Monte-Carlo risk and return report. If fig is provided, plot it. '''
@@ -1637,7 +1706,7 @@ class RiskOutput(output.Output):
 
                 ax.set_xlabel(xlabel)
                 if zvar != 'none' and not threed:
-                    ax.legend(title=zlabel)
+                    ax.legend(title=zlabel, fontsize=10)
 
                 rpt.hdr(ylabel, level=2)
                 if zvar == 'none':

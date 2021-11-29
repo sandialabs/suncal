@@ -2012,13 +2012,17 @@ class UncertPropWidget(QtWidgets.QWidget):
 
     def funcchanged(self, row, fdict):
         ''' Function was changed. '''
-        self.uncCalc.set_function(fdict['expr'], idx=row, name=fdict['name'], desc=fdict['desc'],
-                                  show=fdict.get('report', True), outunits=fdict['unit'])
-        self.uncCalc.add_required_inputs()
-        self.pginput.meastable.filltable(self.uncCalc.inputs)
-        self.pginput.corrtable.setVarNames(self.uncCalc.required_inputs)
-        self.actSweep.setEnabled(True)
-        self.actReverse.setEnabled(True)
+        try:
+            self.uncCalc.set_function(fdict['expr'], idx=row, name=fdict['name'], desc=fdict['desc'],
+                                      show=fdict.get('report', True), outunits=fdict['unit'])
+        except RecursionError:
+            QtWidgets.QMessageBox.warning(self, 'Uncertainty Calculator', 'Circular reference in function definitions')
+        else:
+            self.uncCalc.add_required_inputs()
+            self.pginput.meastable.filltable(self.uncCalc.inputs)
+            self.pginput.corrtable.setVarNames(self.uncCalc.required_inputs)
+            self.actSweep.setEnabled(True)
+            self.actReverse.setEnabled(True)
 
     def funcremoved(self, row):
         ''' A function was removed from the list '''
@@ -2172,7 +2176,7 @@ class UncertPropWidget(QtWidgets.QWidget):
 
     def save_samples_csv(self):
         ''' Save Monte-Carlo samples (inputs and outputs) to CSV file. This file can get big fast! '''
-        fname, _ = QtWidgets.QFileDialog.getSaveFileName(caption='Select file to save', directory=self.openconfigfolder)
+        fname, _ = QtWidgets.QFileDialog.getSaveFileName(caption='Select file to save', directory=self.openconfigfolder, filter='CSV (*.csv)')
         if fname:
             self.uncCalc.save_samples(fname, 'csv')
 
@@ -2182,6 +2186,6 @@ class UncertPropWidget(QtWidgets.QWidget):
             Load into python using numpy.load() to return a dictionary with
             'samples' and 'hdr' keys.
         '''
-        fname, _ = QtWidgets.QFileDialog.getSaveFileName(caption='Select file to save', directory=self.openconfigfolder)
+        fname, _ = QtWidgets.QFileDialog.getSaveFileName(caption='Select file to save', directory=self.openconfigfolder, filter='Numpy NPZ (*.npz)')
         if fname:
             self.uncCalc.save_samples(fname, 'npz')

@@ -915,23 +915,6 @@ class Model():
             return True
         return False
 
-    def validate_inputs(self):
-        ''' Check that all inputs are defined and have compatible units
-
-            Raises
-            ------
-            ValueError: if an input isn't defined
-            DimensionalityError: if input units don't convert to output units
-        '''
-        # Check that all variables are defined
-        names = self.inputs.names
-        for inpt in self.inputnames:
-            if inpt not in names and inpt not in self.outnames:
-                raise ValueError('Required input "{}" is not defined.'.format(inpt))
-
-        self.check_circular()
-        self.check_dimensionality()
-
     def get_baseexprs(self):
         ''' Does nothing on callables '''
         return
@@ -1199,7 +1182,7 @@ class ModelSympy(Model):
                     if str(vname) in self.outnames:
                         exp = exp.subs(vname, self.sympyexprs[self.outnames.index(str(vname))])
                 count += 1
-            if count > 100:
+            if count >= 100:
                 raise RecursionError('Circular reference in function set')
             baseexprs.append(exp)
             self.inputnames.extend([str(s) for s in exp.free_symbols if str(s) not in self.outnames])
@@ -1808,10 +1791,6 @@ class UncertCalc():
                 Correlation coefficient for the two variables
         '''
         self.inputs.correlate_vars(var1, var2, correlation)
-
-    def validate_inputs(self):
-        ''' Check that all inputs are defined, unit dimensions are ok, and no circular references '''
-        self.model.validate_inputs()
 
     def units_report(self, **kwargs):
         ''' Create report showing units of all parameters in UncertCalc '''

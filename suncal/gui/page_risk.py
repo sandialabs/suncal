@@ -511,21 +511,25 @@ class RiskWidget(QtWidgets.QWidget):
         self.guardband.editingFinished.connect(self.entry_changed)
         self.txtNotes.textChanged.connect(self.update_description)
         self.calctype.currentIndexChanged.connect(self.changecalc)
-        self.sweepsetup.btnrefresh.clicked.connect(self.replot_and_update)
+        self.sweepsetup.btnrefresh.clicked.connect(self.replot)
 
         self.menu = QtWidgets.QMenu('Risk')
+        self.actShowJointPDF = QtWidgets.QAction('Plot Joint PDFs', self, )
+        self.actShowJointPDF.setCheckable(True)
+        self.actShowJointPDF.setChecked(True)
         self.actImportDist = QtWidgets.QAction('Import distribution...', self)
         self.actCalcGB = QtWidgets.QAction('Calculate guardband...', self)
         self.actSaveReport = QtWidgets.QAction('Save Report...', self)
-        self.menu.addAction(self.actImportDist)
+        self.menu.addAction(self.actShowJointPDF)
         self.menu.addSeparator()
+        self.menu.addAction(self.actImportDist)
         self.menu.addAction(self.actCalcGB)
         self.menu.addSeparator()
         self.menu.addAction(self.actSaveReport)
         self.actImportDist.triggered.connect(self.importdist)
         self.actCalcGB.triggered.connect(self.calc_guardband)
         self.actSaveReport.triggered.connect(self.save_report)
-        self.initplot()
+        self.actShowJointPDF.triggered.connect(self.changemode)
         self.changemode()  # Show/hide controls
 
     def calculate(self):
@@ -592,8 +596,7 @@ class RiskWidget(QtWidgets.QWidget):
         self.guardband.setVisible(not simple)
         self.block(False)
         if replot:
-            self.initplot()
-            self.replot_and_update()
+            self.replot()
 
     def changecalc(self):
         ''' Change calculation mode (integration vs monte carlo vs gbsweep) '''
@@ -643,16 +646,15 @@ class RiskWidget(QtWidgets.QWidget):
             self.sweepsetup.setVisible(False)
             self.testprocclick()
         self.block(False)
-        self.initplot()
-        self.replot_and_update()
+        self.replot()
 
     def entry_changed(self):
         ''' An entry changed. Trigger replot except in curves mode '''
         if self.calctype.currentText() != 'Risk Curves':
-            self.replot_and_update()
-        # Curves mode triggers replot_and_update directly with button
+            self.replot()
+        # Curves mode triggers replot directly with button
 
-    def replot_and_update(self):
+    def replot(self):
         ''' Replot and update the text fields '''
         self.block(True)
         if self.mode.currentText() == 'Simple':
@@ -685,113 +687,16 @@ class RiskWidget(QtWidgets.QWidget):
             self.replot_sweep()
         else:
             self.update_range()
-            self.replot()
+            if (self.actShowJointPDF.isChecked()
+                and self.urisk.get_procdist() is not None
+                and self.urisk.get_testdist() is not None):
+                self.urisk.out.plot_joint(self.fig)
+                self.canvas.draw_idle()
+            else:
+                self.urisk.out.plot_dists(self.fig)
+                self.canvas.draw_idle()
             self.update_report()
         self.block(False)
-
-    def initplot(self):
-        ''' (Re)initialize the plot when the mode or options change '''
-        self.fig.clf()
-        self.axes = []  # List of axes (1, 2, or 3)
-        self.plotlines = {}
-        if self.calctype.currentText() in ['Monte Carlo', 'Guardband sweep', 'Risk Curves']:
-            pass
-
-        else:
-            # Set up distributions plot(s)
-            nrows = self.chkTest.isChecked() + self.chkProc.isChecked()
-            plotnum = 0
-            LL, UL = self.limits.getValue()
-            LL = np.nan if not np.isfinite(LL) else LL
-            UL = np.nan if not np.isfinite(UL) else UL
-            GBL, GBU = self.guardband.getValue()
-            if self.chkProc.isChecked():
-                ax = self.fig.add_subplot(nrows, 1, plotnum+1)
-                self.axes.append(ax)
-                self.plotlines['procdist'], = ax.plot(0, 0, label='Process Distribution')
-                self.plotlines['LL'] = ax.axvline(LL, ls='--', color='C2', label='Specification Limits')
-                self.plotlines['UL'] = ax.axvline(UL, ls='--', color='C2')
-                ax.set_ylabel('Probability Density')
-                ax.set_xlabel('Value')
-                ax.legend(loc='upper left')
-                plotnum += 1
-
-            if self.chkTest.isChecked():
-                ax = self.fig.add_subplot(nrows, 1, plotnum+1)
-                self.axes.append(ax)
-                self.plotlines['testdist'], = ax.plot(0, 0, color='C1', label='Test Distribution')
-                self.plotlines['testmed'] = ax.axvline(0, ls='--', color='lightgray', lw=1)
-                self.plotlines['testexpected'] = ax.axvline(0, ls='--', color='C1')
-                self.plotlines['LL2'] = ax.axvline(LL, ls='--', color='C2', label='Specification Limits')
-                self.plotlines['UL2'] = ax.axvline(UL, ls='--', color='C2')
-                if self.chkGB.isChecked():
-                    self.plotlines['GBL'] = ax.axvline(LL + GBL, ls='-.', color='C3', label='Guardband Limit')
-                    self.plotlines['GBU'] = ax.axvline(UL - GBU, ls='-.', color='C3')
-                else:
-                    # Make invisible plot lines to edit later
-                    self.plotlines['GBL'] = ax.axvline(np.nan, ls='-.', color='C3', label='Guardband Limit')
-                    self.plotlines['GBU'] = ax.axvline(np.nan, ls='-.', color='C3')
-                ax.set_ylabel('Probability Density')
-                ax.set_xlabel('Value')
-                ax.legend(loc='upper left')
-
-    def replot(self):
-        ''' Update the plot (without clearing completely) '''
-        # Note GUI is not using urisk.output.plot_dists() so that it can work interactively without replotting full figure.
-        LL, UL = self.urisk.get_speclimits()
-        LL, UL = min(LL, UL), max(LL, UL)
-        LLplot = np.nan if not np.isfinite(LL) else LL
-        ULplot = np.nan if not np.isfinite(UL) else UL
-        GBL = 0
-        GBU = 0
-        if ((self.mode.currentText() == 'Simple' and self.simple.get_gbf() > 0) or
-            (self.mode.currentText() != 'Simple' and self.chkGB.isChecked())):
-            GBL, GBU = self.urisk.get_guardband()
-
-        xmin, xmax = self.get_range()
-        x = np.linspace(xmin, xmax, num=300)
-        [ax.collections.clear() for ax in self.axes]  # Remove old fill-betweens
-
-        plotnum = 0
-        if self.chkProc.isChecked() or self.mode.currentText() == 'Simple':
-            yproc = self.urisk.get_procdist().pdf(x)
-            self.plotlines['procdist'].set_data(x, yproc)
-            self.axes[plotnum].fill_between(x, yproc, where=((x <= LL) | (x >= UL)), label='Nonconforming', alpha=.5, color='C0')
-            self.plotlines['LL'].set_xdata([LLplot, LLplot])
-            self.plotlines['UL'].set_xdata([ULplot, ULplot])
-            if self.mode.currentText() == 'Simple':
-                self.axes[plotnum].xaxis.set_major_formatter(FormatStrFormatter(r'%.1fSL'))
-            else:
-                self.axes[plotnum].xaxis.set_major_formatter(ScalarFormatter())
-            plotnum += 1
-
-        if self.chkTest.isChecked() or self.mode.currentText() == 'Simple':
-            ytest = self.urisk.get_testdist().pdf(x)
-            median = self.urisk.get_testmedian()
-            measured = median + self.urisk.get_testbias()
-            self.plotlines['testdist'].set_data(x, ytest)
-            self.plotlines['testmed'].set_xdata([median]*2)
-            self.plotlines['testexpected'].set_xdata([measured]*2)
-            self.plotlines['LL2'].set_xdata([LLplot, LLplot])
-            self.plotlines['UL2'].set_xdata([ULplot, ULplot])
-            if self.mode.currentText() == 'Simple':
-                self.axes[plotnum].xaxis.set_major_formatter(FormatStrFormatter(r'%.1fSL'))
-            else:
-                self.axes[plotnum].xaxis.set_major_formatter(ScalarFormatter())
-
-            if measured > UL-GBU or measured < LL+GBL:  # Shade PFR
-                self.axes[plotnum].fill_between(x, ytest, where=((x >= LL) & (x <= UL)), label='False Reject', alpha=.5, color='C1')
-            else:  # Shade PFA
-                self.axes[plotnum].fill_between(x, ytest, where=((x <= LL) | (x >= UL)), label='False Accept', alpha=.5, color='C1')
-
-            if self.chkGB.isChecked():
-                self.plotlines['GBL'].set_xdata([LL+GBL, LL+GBL])
-                self.plotlines['GBU'].set_xdata([UL-GBU, UL-GBU])
-
-        [ax.relim() for ax in self.axes]
-        [ax.autoscale_view(True, True, True) for ax in self.axes]
-        self.fig.tight_layout()
-        self.canvas.draw_idle()
 
     def update_report(self):
         ''' Update label fields, recalculating risk values '''
@@ -853,13 +758,11 @@ class RiskWidget(QtWidgets.QWidget):
 
         self.chkGB.setEnabled(self.chkTest.isChecked())
         self.guardband.setEnabled(self.chkTest.isChecked() and self.chkGB.isChecked())
-        self.initplot()
         self.entry_changed()
 
     def gbclick(self):
         ''' Guardband checkbox was clicked '''
         self.guardband.setEnabled(self.chkGB.isChecked())
-        self.initplot()
         self.entry_changed()
 
     def get_range(self):
@@ -929,8 +832,7 @@ class RiskWidget(QtWidgets.QWidget):
             self.guardband.setEnabled(True)
 
             self.block(False)
-            self.initplot()
-            self.replot_and_update()
+            self.replot()
 
     def set_costs(self):
         ''' Set expected cost of FA and FR '''

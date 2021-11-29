@@ -693,39 +693,55 @@ class IntervalWidget(QtWidgets.QWidget):
                 QtWidgets.QMessageBox.warning(self, 'Data Import', 'No columns selected.')
                 return
             
-            # Group by assets then repopulate entire table
-            keys = list(dat.keys())
-            rows = len(dat[keys[0]])
-            assetdat = {}
-            for row in range(rows):
-                if 'Asset' in dat:
-                    asset = str(dat['Asset'][row])
-                else:
-                    asset = str(self.asset.currentText())
-                if asset not in assetdat:
-                    assetdat[asset] = {}
-                for colname in cols:
-                    if colname != 'Asset' and colname in dat:
-                        colid = {'Interval End': 'enddates',
-                                 'Interval Start': 'startdates',
-                                 'Pass/Fail': 'passfail',
-                                 'As-Found': 'asfound',
-                                 'As-Left': 'asleft',
-                                 'As-Found Value': 'asfound',
-                                 'As-Left Value': 'asleft',
-                                 }.get(colname, None)
-                        if colid is not None:
-                            if colid not in assetdat[asset]:
-                                assetdat[asset][colid] = []
-                            val = dat[colname][row]
-                            assetdat[asset][colid].append(val)
-            for asset, dat in assetdat.items():
-                dat.setdefault('enddates', None)
-                dat.setdefault('passfail', None)
-                dat.setdefault('startdates', None)
-                dat.setdefault('asfound', None)
-                dat.setdefault('asleft', None)
-                self.uinterval.updateasset(asset, **dat)
+            if 'asset' in self.mode:
+                # Group by assets then repopulate entire table
+                keys = list(dat.keys())
+                rows = len(dat[keys[0]])
+                assetdat = {}
+                for row in range(rows):
+                    if 'Asset' in dat:
+                        asset = str(dat['Asset'][row])
+                    else:
+                        asset = str(self.asset.currentText())
+                    if asset not in assetdat:
+                        assetdat[asset] = {}
+                    for colname in cols:
+                        if colname != 'Asset' and colname in dat:
+                            colid = {'Interval End': 'enddates',
+                                     'Interval Start': 'startdates',
+                                     'Pass/Fail': 'passfail',
+                                     'As-Found': 'asfound',
+                                     'As-Left': 'asleft',
+                                     'As-Found Value': 'asfound',
+                                     'As-Left Value': 'asleft',
+                                     }.get(colname, None)
+                            if colid is not None:
+                                if colid not in assetdat[asset]:
+                                    assetdat[asset][colid] = []
+                                val = dat[colname][row]
+                                assetdat[asset][colid].append(val)
+                for asset, dat in assetdat.items():
+                    dat.setdefault('enddates', None)
+                    dat.setdefault('passfail', None)
+                    dat.setdefault('startdates', None)
+                    dat.setdefault('asfound', None)
+                    dat.setdefault('asleft', None)
+                    self.uinterval.updateasset(asset, **dat)
+            elif self.mode == 'intervaltest':
+                intol = dat.get('Number In-Tolerance')
+                n = dat.get('Total Calibrations')
+                intol = intol[0] if intol is not None else None
+                n = n[0] if n is not None else None
+                self.uinterval.update(intol, n)
+            elif self.mode == 'intervalbinom':
+                ti = dat.get('Interval Length')
+                ri = dat.get('Observed Reliability')
+                ni = dat.get('Total Calibrations')
+                self.uinterval.update(ti, ri, ni)
+            elif self.mode == 'intervalvariables':
+                t = dat.get('Interval Length')
+                delta = dat.get('Deviation from Prior')
+                self.uinterval.update(t, delta)
             self.init_data()
 
     def get_menu(self):

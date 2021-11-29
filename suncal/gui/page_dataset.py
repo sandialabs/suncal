@@ -204,7 +204,6 @@ class DataSetWidget(QtWidgets.QWidget):
 
         self.init_data()
         self.changemode()  # Initialize setVisible on controls
-        self.figure.add_subplot(1, 1, 1)
         self.canvas.draw_idle()
 
     def calculate(self):
