@@ -34,7 +34,15 @@ class DoubleLineEdit(QtWidgets.QWidget):
 
     def getValue(self):
         ''' Return tuple value of two lines '''
-        return float(self.line1.text()), float(self.line2.text())
+        try:
+            val1 = float(self.line1.text())
+        except ValueError:
+            val1 = 0
+        try:
+            val2 = float(self.line2.text())
+        except ValueError:
+            val2 = 0
+        return val1, val2
 
     def setValue(self, value1, value2):
         ''' Set value of both lines '''
@@ -104,6 +112,8 @@ class SweepWidget(QtWidgets.QGroupBox):
     def __init__(self, parent=None):
         super().__init__('Sweep Setup', parent=parent)
         items = ['Sweep (x) variable', 'Step (z) variable', 'Constant']
+        self.itpvssigma = QtWidgets.QComboBox()
+        self.itpvssigma.addItems(['In-tol probability %', 'SL/Process Std. Dev.'])
         self.itp = QtWidgets.QComboBox()
         self.tur = QtWidgets.QComboBox()
         self.gbf = QtWidgets.QComboBox()
@@ -132,11 +142,12 @@ class SweepWidget(QtWidgets.QGroupBox):
         self.itpval.setVisible(False)
         self.turval.setVisible(False)
         self.plot3d = QtWidgets.QCheckBox('3D Plot')
+        self.logy = QtWidgets.QCheckBox('Log Scale')
         self.plottype = QtWidgets.QComboBox()
         self.plottype.addItems(['PFA', 'PFR', 'Both'])
         self.btnrefresh = QtWidgets.QPushButton('Replot')
         layout = QtWidgets.QGridLayout()
-        layout.addWidget(QtWidgets.QLabel('In-tol probability %'), 0, 0)
+        layout.addWidget(self.itpvssigma, 0, 0)
         layout.addWidget(self.itp, 0, 1)
         layout.addWidget(self.itpval, 0, 2)
         layout.addWidget(QtWidgets.QLabel('Test uncertainty ratio'), 1, 0)
@@ -164,7 +175,8 @@ class SweepWidget(QtWidgets.QGroupBox):
         layout.addWidget(QtWidgets.QLabel('Plot'), 11, 0)
         layout.addWidget(self.plottype, 11, 1)
         layout.addWidget(self.plot3d, 12, 1, 1, 2)
-        layout.addWidget(self.btnrefresh, 13, 1)
+        layout.addWidget(self.logy, 13, 1, 1, 2)
+        layout.addWidget(self.btnrefresh, 14, 1)
         self.setLayout(layout)
 
         self.itp.currentIndexChanged.connect(lambda i, x=self.itp: self.cmbchange(x))
@@ -215,7 +227,10 @@ class SweepWidget(QtWidgets.QGroupBox):
             return None
 
         # Defaults if not being swept
+        sig0 = None
         itpval = float(self.itpval.text()) / 100  # Percent
+        if 'SL' in self.itpvssigma.currentText():
+            sig0 = float(self.itpval.text())
         turval = float(self.turval.text())
         pbias = float(self.procbiasval.text()) / 100
         tbias = float(self.testbiasval.text()) / 100
@@ -225,8 +240,10 @@ class SweepWidget(QtWidgets.QGroupBox):
             gbfval = self.gbf.currentText().lower()
             gbfval = 'test' if 'test' in gbfval else gbfval
 
-        if 'Step' in self.itp.currentText():
+        if 'Step' in self.itp.currentText() and 'In-' in self.itpvssigma.currentText():
             zvar = 'itp'
+        elif 'Step' in self.itp.currentText():
+            zvar = 'sig0'
         elif 'Step' in self.tur.currentText():
             zvar = 'tur'
         elif 'Step' in self.gbf.currentText():
@@ -239,8 +256,10 @@ class SweepWidget(QtWidgets.QGroupBox):
             zvar = 'none'
             zvals = [None]  # Need one item to loop
 
-        if 'Sweep' in self.itp.currentText():
+        if 'Sweep' in self.itp.currentText() and 'In-' in self.itpvssigma.currentText():
             xvar = 'itp'
+        elif 'Sweep' in self.itp.currentText():
+            xvar = 'sig0'
         elif 'Sweep' in self.tur.currentText():
             xvar = 'tur'
         elif 'Sweep' in self.gbf.currentText():
@@ -261,9 +280,10 @@ class SweepWidget(QtWidgets.QGroupBox):
 
         threed = self.plot3d.isChecked()
         y = self.plottype.currentText()
-        SweepSetup = namedtuple('SweepSetup', ['x', 'z', 'xvals', 'zvals', 'itp', 'tur', 'gbf',
-                                               'pbias', 'tbias', 'threed', 'y'])
-        return SweepSetup(xvar, zvar, xvals, zvals, itpval, turval, gbfval, pbias, tbias, threed, y)
+        logy = self.logy.isChecked()
+        SweepSetup = namedtuple('SweepSetup', ['x', 'z', 'xvals', 'zvals', 'itp', 'tur', 'gbf', 'sig0',
+                                               'pbias', 'tbias', 'threed', 'y', 'logy'])
+        return SweepSetup(xvar, zvar, xvals, zvals, itpval, turval, gbfval, sig0, pbias, tbias, threed, y, logy)
 
 
 class GuardBandFinderWidget(QtWidgets.QDialog):
@@ -731,7 +751,7 @@ class RiskWidget(QtWidgets.QWidget):
         self.urisk.set_tur(setup.tur)
         rpt = self.urisk.out.report_sweep(plot=self.fig, xvar=setup.x, zvar=setup.z, xvals=setup.xvals,
                                           zvals=setup.zvals, yvar=setup.y, threed=setup.threed,
-                                          gbf=setup.gbf, tbias=setup.tbias, pbias=setup.pbias)
+                                          gbf=setup.gbf, sig0=setup.sig0, tbias=setup.tbias, pbias=setup.pbias, logy=setup.logy)
         self.fig.tight_layout()
         self.canvas.draw_idle()
         self.txtOutput.setReport(rpt)

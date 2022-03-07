@@ -525,10 +525,10 @@ class PageOutputCurveFit(QtWidgets.QWidget):
         self.paramlist = gui_widgets.ListSelectWidget()
         self.paramlist.setVisible(False)
         self.kvalue = gui_widgets.GUMExpandedWidget(label='Expanded:', multiselect=False, dflt=[1])
-        self.predictlabel = QtWidgets.QLabel('Prediction Band Population Variance:')
+        self.predictlabel = QtWidgets.QLabel('Prediction Band Uncertainty of New Measurement:')
         self.predictmode = QtWidgets.QComboBox()
         self.predictmode.addItems(['Syx (Residuals)', 'Interpolate u(y)', 'Last u(y)'])
-        self.predictmode.setItemData(0, 'Apply the average of residuals to all x values. Does not consider any user-entered u(y)', QtCore.Qt.ToolTipRole)
+        self.predictmode.setItemData(0, 'Use the average of residuals for all x values. Does not consider any user-entered u(y)', QtCore.Qt.ToolTipRole)
         self.predictmode.setItemData(1, 'Extrapolate user-entered u(y) between x data points', QtCore.Qt.ToolTipRole)
         self.predictmode.setItemData(2, 'Use the last user-entered u(y) for all predictions. Choose this option,\nfor example, when predicting into the future assuming the most recent\nmeasurement uncertainty applies to all new measurements.', QtCore.Qt.ToolTipRole)
 

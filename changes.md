@@ -1,5 +1,16 @@
 # Change History
 
+
+## Version 1.5.6
+
+- Allow up to 8 significant figures in reports
+- Account for process bias when computing decision risk from in-tolerance probability
+- Fixed reporting of Monte Carlo sensitivity coefficients for non-vectorizable functions
+- Fixed risk plotting when one specification limit is infinite, or invalid guardband factor is entered
+- Restored axis labels in risk distribution plots
+- Corrected the equation displayed for prediction band curve fit uncertainty based on u(y) mode
+
+
 ## Version 1.5.5
 
 - Added joint Risk probability plot

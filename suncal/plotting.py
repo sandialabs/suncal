@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 from . import distributions
 
 
-plotstyle = {'figure.figsize': (8, 6), 'font.size': 14}   # Common plot parameters, usage: "with mpl.style.context(plotstyle):"
+plotstyle = {'figure.figsize': (8, 6), 'font.size': 12}   # Common plot parameters, usage: "with mpl.style.context(plotstyle):"
 
 # This unfortunately overwrites the user's MPL context, so user notebooks will end up with these params
 # after importing suncal. But matplotlib contexts are broken such that certain parameters won't stay

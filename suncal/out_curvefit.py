@@ -218,7 +218,7 @@ class CurveFitOutputLSQ(output.Output):
             raise NotImplementedError('uconf expression only implemented for line fits.')
         return expr
 
-    def expr_upred(self, subs=True, n=4, full=True):
+    def expr_upred(self, subs=True, n=4, full=True, mode=None):
         ''' Return sympy expression for prediction interval
 
             Parameters
@@ -230,6 +230,11 @@ class CurveFitOutputLSQ(output.Output):
             full: bool
                 Show full expression, ie "U_conf = ...". When full==false,
                 just the right hand side is returned
+            mode: string
+                How to apply uncertainty in new measurement. 'Syx' will use Syx calculated from
+                residuals. 'sigy' uses user-provided y-uncertainty, extrapolating between
+                values as necessary. 'sigylast' uses last sigy value (useful when x is time
+                and fit is being predicted into the future)
 
             Notes
             -----
@@ -237,12 +242,24 @@ class CurveFitOutputLSQ(output.Output):
             Syx to determine y-uncertainty.
         '''
         if self.model.fitname == 'line':
-            expr = sympy.sympify('S_yx * sqrt(1 + 1 / n + (x-xbar)**2 * (sigma_b/S_yx)^2)')
+            mode = self.predmode if mode is None else mode
+            subsdict = {'n': len(self.inputs),
+                        'xbar': self.inputs.x.mean(),
+                        'sigma_b': self.uncerts[0],
+                        'S_yx': self.residuals.Syx}
+            if mode == 'Syx':
+                expr = sympy.sympify('S_yx * sqrt(1 + 1 / n + (x-xbar)**2 * (sigma_b/S_yx)^2)')
+            else:
+                expr = sympy.sympify('sqrt(u_y^2 + S_yx^2 * (1 / n + (x-xbar)**2 * (sigma_b/S_yx)^2))')
+                sigy = self.inputs.uy
+                if mode == 'sigy' and sigy.min() == sigy.max():
+                    # Interpolate, but all elements are equal
+                    subsdict.update({'u_y': sigy[0]})
+                elif mode == 'sigylast':
+                    subsdict.update({'u_y': sigy[-1]})
+
             if subs:
-                expr = expr.subs({'S_yx': self.residuals.Syx,
-                                  'n': len(self.inputs),
-                                  'xbar': self.inputs.x.mean(),
-                                  'sigma_b': self.uncerts[0]}).evalf(n=n)
+                expr = expr.subs(subsdict).evalf(n=n)
             if full:
                 expr = sympy.Eq(sympy.Symbol('u_{pred}'), expr)
         else:
@@ -521,8 +538,10 @@ class CurveFitOutputLSQ(output.Output):
         rows = []
         for i in range(len(x)):
             yi, yconfminus, yconfplus, ypredminus, ypredplus = report.Number.number_array([y[i], y[i]-uconf[i], y[i]+uconf[i], y[i]-upred[i], y[i]+upred[i]], fmin=2, **kwargs)
-            rows.append([str(xval[i]), yi, '±{} [{}, {}]'.format(report.Number(uconf[i], fmin=2), yconfminus, yconfplus),
-                         '±{} [{}, {}]'.format(report.Number(upred[i], fmin=2), ypredminus, ypredplus)])
+            rows.append([str(xval[i]),
+                         yi,
+                         ('±', report.Number(uconf[i], fmin=2, **kwargs), ' (', yconfminus, ', ', yconfplus, ')'),
+                         ('±', report.Number(upred[i], fmin=2, **kwargs), ' (', ypredminus, ', ', ypredplus, ')')])
 
         r = report.Report(**kwargs)
         if plot:

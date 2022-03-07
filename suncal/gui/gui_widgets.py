@@ -517,7 +517,7 @@ class MarkdownTextEdit(QtWidgets.QTextEdit):
         menu = self.createStandardContextMenu()
         menu.addSeparator()
         menufigs = QtWidgets.QMenu('Significant Figures')
-        for i in range(6):
+        for i in range(8):
             actfigs = menufigs.addAction(str(i+1))
             actfigs.triggered.connect(lambda x, n=i+1: self.setFigs(n))
             if self.sigfigs == i+1:

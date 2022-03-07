@@ -927,6 +927,54 @@ class Model():
         ''' Calculate GUM uncertainty/covariance matrix - Uy (6.2.1.3 GS2) '''
         raise NotImplementedError  # Subclass
 
+    def _eval_vectorized(self, inputsamples):
+        ''' Evaluate MC samples by vectorizing the model '''
+        try:
+            samples = self.eval(inputsamples)
+        except DimensionalityError:
+            # Hack around Pint bug/inconsistency (see https://github.com/hgrecco/pint/issues/670, closed without solution)
+            #   with x = np.arange(5) * units.dimensionless
+            #   np.exp(x) --> returns dimensionless array
+            #   2**x --> raises DimensionalityError
+            # Since units/dimensionality has already been verified, this fix strips units and adds them back.
+            inputsamples = {k: v.magnitude for k, v in inputsamples.items()}
+            samples = self.eval(inputsamples)
+        except (TypeError, ValueError):
+            # Call might have failed if function is not vectorizable. Use numpy vectorize
+            # to broadcast over array and try again.
+            logging.info('Vectorizing function {}...'.format(str(self.function)))
+
+            # Vectorize will strip units - see https://github.com/hgrecco/pint/issues/828.
+            # First, run a single sample through the function to determine what units come out
+            outsingle = uparser.callf(self.function, {k: v[0] for k, v in inputsamples.items()})
+            mcoutunits = outsingle.units if hasattr(outsingle, 'units') else unitmgr.dimensionless
+
+            # Then apply those units to whole array of sampled values.
+            # vectorize() will issue a UnitStripped warning, but we're handling it outside Pint, so ignore it.
+            with warnings.catch_warnings():
+                warnings.simplefilter('ignore')
+                out = unitmgr.Quantity(uparser.callf(np.vectorize(self.function), inputsamples), mcoutunits)
+                if len(self.outnames) > 1:
+                    samples = dict(zip(self.outnames, out))
+                else:
+                    samples = {self.outnames[0]: out}
+
+        # Fix weird cases where function returns array of objects instead of floats
+        for i, (k, v) in enumerate(samples.items()):
+            if not hasattr(v, 'magnitude'):
+                # Some functions may strip units
+                v = unitmgr.Quantity(v, 'dimensionless')
+
+            try:
+                len(v)
+            except TypeError:
+                v = unitmgr.Quantity(np.full(self.inputs.nsamples, v.magnitude), v.units)
+            samples[k] = v.astype(np.float)
+
+            if self.outunits[i]:
+                samples[k] = samples[k].to(self.outunits[i])
+            return samples
+
     def MCsample(self):
         ''' Generate Monte Carlo samples, NxM
 
@@ -944,51 +992,7 @@ class Model():
         if not covok:
             warns.append('Covariance matrix is not positive semi-definite.')
 
-        try:
-            self.sampledvalues = self.eval(inputsamples)
-        except DimensionalityError:
-            # Hack around Pint bug/inconsistency (see https://github.com/hgrecco/pint/issues/670, closed without solution)
-            #   with x = np.arange(5) * units.dimensionless
-            #   np.exp(x) --> returns dimensionless array
-            #   2**x --> raises DimensionalityError
-            # Since units/dimensionality has already been verified, this fix strips units and adds them back.
-            inputsamples = {k: v.magnitude for k, v in inputsamples.items()}
-            self.sampledvalues = self.eval(inputsamples)
-        except (TypeError, ValueError):
-            # Call might have failed if function is not vectorizable. Use numpy vectorize
-            # to broadcast over array and try again.
-            logging.info('Vectorizing function {}...'.format(str(self.function)))
-
-            # Vectorize will strip units - see https://github.com/hgrecco/pint/issues/828.
-            # First, run a single sample through the function to determine what units come out
-            outsingle = uparser.callf(self.function, {k: v[0] for k, v in inputsamples.items()})
-            mcoutunits = outsingle.units if hasattr(outsingle, 'units') else unitmgr.dimensionless
-
-            # Then apply those units to whole array of sampled values.
-            # vectorize() will issue a UnitStripped warning, but we're handling it outside Pint, so ignore it.
-            with warnings.catch_warnings():
-                warnings.simplefilter('ignore')
-                out = unitmgr.Quantity(uparser.callf(np.vectorize(self.function), inputsamples), mcoutunits)
-                if len(self.outnames) > 1:
-                    self.sampledvalues = dict(zip(self.outnames, out))
-                else:
-                    self.sampledvalues = {self.outnames[0]: out}
-
-        # Fix weird cases where function returns array of objects instead of floats
-        for i, (k, v) in enumerate(self.sampledvalues.items()):
-            if not hasattr(v, 'magnitude'):
-                # Some functions may strip units
-                v = unitmgr.Quantity(v, 'dimensionless')
-
-            try:
-                len(v)
-            except TypeError:
-                v = unitmgr.Quantity(np.full(self.inputs.nsamples, v.magnitude), v.units)
-            self.sampledvalues[k] = v.astype(np.float)
-
-            if self.outunits[i]:
-                self.sampledvalues[k] = self.sampledvalues[k].to(self.outunits[i])
-
+        self.sampledvalues = self._eval_vectorized(inputsamples)
         nom = [v.mean() for v in self.sampledvalues.values()]
         uncert = []
         for i, (out, vals) in enumerate(self.sampledvalues.items()):
@@ -1029,14 +1033,7 @@ class Model():
             x = nom.copy()
             # Then set each input to sampled values, one at a time
             x[name] = self.inputs[i].sampledvalues
-            try:
-                ustd = self.eval(x)  # dict of each function out   ####uparser.callf(basefunc, x).std()
-            except DimensionalityError:
-                x = {name: val.magnitude for name, val in x.items()}
-                ustd = self.eval(x)
-            except AttributeError:
-                ustd = 0   # callf returns single value.. no std
-
+            ustd = self._eval_vectorized(x)
             ustd = [v.std() for v in ustd.values()]  # dict to list of stds for each function out
 
             # to_reduced_units() will take care of prefix multipliers and dimensionless values

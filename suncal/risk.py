@@ -268,7 +268,32 @@ def guardbandfactor_to_offset(gbf, LL, UL):
     return (UL-LL)/2 * (1-gbf)
 
 
-def PFA_norm(itp, TUR, GB=1, biastest=0, biasproc=0, observeditp=False, **kwargs):
+def get_sigmaproc_from_itp(itp, bias=0):
+    ''' Get process standard deviation from in-tolerance probability.
+        Assumes normal distribution, but accounts for bias.
+    '''
+    if bias == 0:
+        return 1/stats.norm.ppf((1+itp)/2)
+    else:
+        # With bias, PDF is asymetric, can't just use PPF
+        
+        def sp_risk(mu, sigma):
+            ''' Simplified version of specific risk function '''
+            rl = stats.norm(mu, sigma).cdf(-1)
+            ru = 1 - stats.norm(mu, sigma).cdf(1)
+            return rl + ru
+
+        # fsolve is sensitive to initial guess x0 - try another x0 if first one doesn't work
+        out = fsolve(lambda x: (1-sp_risk(bias, x))-itp, x0=.1, full_output=1)
+        if out[2] != 1:
+            out = fsolve(lambda x: (1-sp_risk(bias, x))-itp, x0=.8, full_output=1)
+        if out[2] != 1:
+            return 0
+        return out[0][0]
+
+
+
+def PFA_norm(itp, TUR, GB=1, sig0=None, biastest=0, biasproc=0, observeditp=False, **kwargs):
     ''' PFA for normal distributions in terms of TUR and
         in-tolerance probability
 
@@ -285,6 +310,8 @@ def PFA_norm(itp, TUR, GB=1, biastest=0, biasproc=0, observeditp=False, **kwargs
             A = T - U*M. GB = 1 implies no guardbanding.
             If GB is a string, it can be one of options in guardband_norm
             method. kwargs passed to guardband_norm.
+        sig0: float
+            Process standard deviation in terms of #SL, overrides itp
         biastest: float
             Bias/shift in the test measurement distribution, in percent of SL
         biasproc: float
@@ -296,7 +323,7 @@ def PFA_norm(itp, TUR, GB=1, biastest=0, biasproc=0, observeditp=False, **kwargs
     '''
     # Convert itp to stdev of process
     # This is T in equation 2 in Dobbert's Guardbanding Strategy, with T = 1.
-    sigma0 = 1/stats.norm.ppf((1+itp)/2)
+    sigma0 = sig0 if sig0 is not None else get_sigmaproc_from_itp(itp, biasproc)
     sigmatest = 1/TUR/2
 
     if observeditp:
@@ -322,7 +349,7 @@ def PFA_norm(itp, TUR, GB=1, biastest=0, biasproc=0, observeditp=False, **kwargs
     return c
 
 
-def PFR_norm(itp, TUR, GB=1, biastest=0, biasproc=0, observeditp=False, **kwargs):
+def PFR_norm(itp, TUR, GB=1, sig0=None, biastest=0, biasproc=0, observeditp=False, **kwargs):
     ''' PFR for normal distributions in terms of TUR and
         in-tolerance probability
 
@@ -339,6 +366,8 @@ def PFR_norm(itp, TUR, GB=1, biastest=0, biasproc=0, observeditp=False, **kwargs
             A = T - U*M. GB = 1 implies no guardbanding.
             If GB is a string, it can be one of options in guardband_norm
             method. kwargs passed to guardband_norm.
+        sig0: float
+            Process standard deviation in terms of #SL, overrides itp
         biastest: float
             Bias/shift in the test measurement distribution
         biasproc: float
@@ -348,7 +377,7 @@ def PFR_norm(itp, TUR, GB=1, biastest=0, biasproc=0, observeditp=False, **kwargs
             to account for measurement uncertainty in observing itp. See
             Mimbs "Using Reliability to Meet Z540.3's 2% Rule", NCSLI 2011.
     '''
-    sigma0 = 1/stats.norm.ppf((1+itp)/2)
+    sigma0 = sig0 if sig0 is not None else get_sigmaproc_from_itp(itp, biasproc)
     sigmatest = 1/TUR/2
 
     if observeditp:
@@ -702,7 +731,7 @@ def PFAR_MC(dist_proc, dist_test, LL, UL, GBL=0, GBU=0, N=100000, testbias=0):
 
 
 def PFA_sweep_simple(xvar='itp', zvar='TUR', xvals=None, zvals=None,
-                     GBFdflt=1, itpdflt=.95, TURdflt=4, tbias=0, pbias=0, risk='PFA'):
+                     GBFdflt=1, itpdflt=.95, TURdflt=4, sig0=None, tbias=0, pbias=0, risk='PFA'):
     ''' Sweep PFA vs. itp, tur, or gbf for producing risk curves in simple mode
 
         Parameters
@@ -721,6 +750,8 @@ def PFA_sweep_simple(xvar='itp', zvar='TUR', xvals=None, zvals=None,
             Default itp value, if itp is not being swept
         TURdflt : float
             Default tur value, if tur is not being swept
+        sig0: float
+            Process standard deviation in terms of #SL, overrides itp
         tbias : float
             Default test measurement bias
         pbias : float
@@ -733,9 +764,10 @@ def PFA_sweep_simple(xvar='itp', zvar='TUR', xvals=None, zvals=None,
         risk : array
             2D array (shape len(xvals) x len(zvals)) of risk values
     '''
-    assert xvar.lower() in ['itp', 'tur', 'gbf', 'tbias', 'pbias']
-    assert zvar.lower() in ['itp', 'tur', 'gbf', 'tbias', 'pbias', 'none']
+    assert xvar.lower() in ['itp', 'tur', 'gbf', 'tbias', 'pbias', 'sig0']
+    assert zvar.lower() in ['itp', 'tur', 'gbf', 'tbias', 'pbias', 'sig0', 'none']
     assert risk.lower() in ['pfa', 'pfr']
+
     if zvar == 'none':
         zvals = [None]
         xx = np.array([xvals])
@@ -779,10 +811,18 @@ def PFA_sweep_simple(xvar='itp', zvar='TUR', xvals=None, zvals=None,
     else:
         pbias = np.full(xx.shape, pbias)
 
+    if xvar.lower() == 'sig0':
+        sig0 = 1/xx
+    elif zvar.lower() == 'sig0':
+        sig0 = 1/zz
+    else:
+        sig0 = np.full(xx.shape, 1/sig0 if sig0 is not None else None)
+
     curves = np.empty_like(xx)
     for zidx in range(len(zvals)):
         for xidx in range(len(xvals)):
             curves[zidx, xidx] = riskfunc(itp[zidx, xidx], TUR[zidx, xidx], GBF[zidx, xidx],
+                                          sig0=sig0[zidx, xidx],
                                           biastest=tbias[zidx, xidx], biasproc=pbias[zidx, xidx])
     return curves
 
@@ -1290,9 +1330,8 @@ class RiskOutput(output.Output):
     ''' Output object for risk calculation. Just a reporting wrapper around
         Risk object for parallelism with other calculator modes.
     '''
-    def __init__(self, risk, labelsigma=False):
+    def __init__(self, risk):
         self.risk = risk
-        self.labelsigma = labelsigma
 
     def report(self, **kwargs):
         ''' Generate report of risk calculation '''
@@ -1384,7 +1423,21 @@ class RiskOutput(output.Output):
             if testdist is not None:
                 pad = max(pad, testdist.std() * 3)
 
-            x = np.linspace(LL - pad, UL + pad, 300)
+            xmin = xmax = pad
+            if np.isfinite(LL):
+                xmin = LL-pad
+            elif procdist:
+                xmin = procdist.mean() - pad*2
+            elif testdist:
+                xmin = testdist.mean() - pad*2
+            if np.isfinite(UL):
+                xmax = UL+pad
+            elif procdist:
+                xmax = procdist.mean() + pad*2
+            elif testdist:
+                xmax = testdist.mean() + pad*2
+
+            x = np.linspace(xmin, xmax, 300)
             if procdist is not None:
                 yproc = procdist.pdf(x)
                 ax = fig.add_subplot(nrows, 1, plotnum+1)
@@ -1395,8 +1448,8 @@ class RiskOutput(output.Output):
                 ax.set_ylabel('Probability Density')
                 ax.set_xlabel('Value')
                 ax.legend(loc='upper left', fontsize=10)
-                if self.labelsigma:
-                    ax.xaxis.set_major_formatter(FormatStrFormatter(r'%dSL'))
+                if self.risk.is_simple():
+                    ax.xaxis.set_major_formatter(FormatStrFormatter(r'%.1fSL'))
                 plotnum += 1
 
             if testdist is not None:
@@ -1421,8 +1474,8 @@ class RiskOutput(output.Output):
                 ax.set_ylabel('Probability Density')
                 ax.set_xlabel('Value')
                 ax.legend(loc='upper left', fontsize=10)
-                if self.labelsigma:
-                    ax.xaxis.set_major_formatter(FormatStrFormatter(r'%dSL'))
+                if self.risk.is_simple():
+                    ax.xaxis.set_major_formatter(FormatStrFormatter(r'%.1fSL'))
             fig.tight_layout()
         return fig
 
@@ -1441,7 +1494,11 @@ class RiskOutput(output.Output):
 
             LL, UL = self.risk.get_speclimits()
             GBL, GBU = self.risk.get_guardband()
-            x = y = np.linspace(LL - pad, UL + pad, 300)
+
+            xmin = LL-pad if np.isfinite(LL) else procdist.mean() - pad*2
+            xmax = UL+pad if np.isfinite(UL) else procdist.mean() + pad*2
+
+            x = y = np.linspace(xmin, xmax, 300)
             xx, yy = np.meshgrid(x, y)
             pdf1 = procdist.pdf(xx)
             expected = testdist.median()
@@ -1487,11 +1544,21 @@ class RiskOutput(output.Output):
             ax1.set_ylabel('Test Result')
             ax1.set_ylim(y.min(), y.max())
 
-            ax1.fill_between(x, LL+GBL, UL-GBU, where=(x<LL), color='C1', alpha=.15, label='False Accept')
-            ax1.fill_between(x, LL+GBL, UL-GBU, where=(x>UL), color='C1', alpha=.15)
-            ax1.fill_betweenx(y, LL, UL, where=(x<LL+GBL), color='C2', alpha=.15, label='False Reject')
-            ax1.fill_betweenx(y, LL, UL, where=(x>UL-GBU), color='C2', alpha=.15)
+            LLGB = LL+GBL if np.isfinite(LL+GBL) else xmin
+            ULGB = UL-GBU if np.isfinite(UL-GBU) else xmax
+            LL1 = LL if np.isfinite(LL) else xmin
+            UL1 = UL if np.isfinite(UL) else xmax
+            ax1.fill_between(x, LLGB, ULGB, where=(x<LL), color='C1', alpha=.15, label='False Accept')
+            ax1.fill_between(x, LLGB, ULGB, where=(x>UL), color='C1', alpha=.15)
+            ax1.fill_betweenx(y, LL1, UL1, where=(x<LL+GBL), color='C2', alpha=.15, label='False Reject')
+            ax1.fill_betweenx(y, LL1, UL1, where=(x>UL-GBU), color='C2', alpha=.15)
             ax1.legend(loc='upper left', fontsize=10)
+            ax1.set_xlim(xmin, xmax)
+            ax1.set_ylim(xmin, xmax)
+
+            if self.risk.is_simple():
+                ax1.xaxis.set_major_formatter(FormatStrFormatter(r'%.1fSL'))
+                ax1.yaxis.set_major_formatter(FormatStrFormatter(r'%.1fSL'))
         return fig
 
 
@@ -1663,14 +1730,16 @@ class RiskOutput(output.Output):
         zvals = kwargs.get('zvals')
         yvar = kwargs.get('yvar', 'PFA')
         threed = kwargs.get('threed', False)
+        logy = kwargs.get('logy', False)
         gbmode = kwargs.get('gbf', None)
+        sig0 = kwargs.get('sig0', None)
         tbias = kwargs.get('tbias', 0)
         pbias = kwargs.get('pbias', 0)
 
         gbf = self.risk.get_gbf() if gbmode is None else gbmode
 
         labels = {'tur': 'TUR', 'itp': 'In-Tolerance Probability %', 'tbias': 'Test Measurement Bias',
-                  'pbias': 'Process Distribution Bias', 'gbf': 'GBF'}
+                  'pbias': 'Process Distribution Bias', 'gbf': 'GBF', 'sig0': r'$SL/\sigma_0$'}
 
         rpt = report.Report(**kwargs)
 
@@ -1683,14 +1752,15 @@ class RiskOutput(output.Output):
                 curves = PFA_sweep_simple(xvar, zvar, xvals, zvals,
                                           GBFdflt=gbf, itpdflt=self.risk.get_itp(),
                                           TURdflt=self.risk.get_tur(), risk=yvar,
+                                          sig0=sig0,
                                           tbias=tbias, pbias=pbias) * 100
 
                 xlabel = labels.get(xvar, 'x')
                 zlabel = labels.get(zvar, 'z')
                 ylabel = '{} %'.format(yvar.upper())
 
-                xplot = xvals if xvar.lower() != 'itp' else xvals * 100
-                zplot = np.zeros(len(xvals)) if xvar == 'none' else zvals if zvar.lower() != 'itp' else zvals * 100
+                xplot = xvals if xvar.lower() not in ['itp', 'tbias', 'pbias'] else xvals * 100
+                zplot = np.zeros(len(xvals)) if xvar == 'none' else zvals if zvar.lower() not in ['itp', 'tbias', 'pbias'] else zvals * 100
 
                 if threed:
                     ax = fig.add_subplot(1, len(yvars), k+1, projection='3d')
@@ -1707,6 +1777,9 @@ class RiskOutput(output.Output):
                 ax.set_xlabel(xlabel)
                 if zvar != 'none' and not threed:
                     ax.legend(title=zlabel, fontsize=10)
+
+                if logy:
+                    ax.set_yscale('log')
 
                 rpt.hdr(ylabel, level=2)
                 if zvar == 'none':

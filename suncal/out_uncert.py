@@ -699,7 +699,7 @@ class MCOutput(output.Output):
         samples = self.samples(fidx).magnitude
         return {'samples': samples,
                 'median': np.median(samples),
-                'expected': self.model.eval()[fname]}
+                'expected': self.model.eval()[fname].magnitude}
 
     def _plot_funcpdf(self, ax, fidx=0, hist=True, **kwargs):
         ''' Plot PDF of one function in the model on the axis '''
