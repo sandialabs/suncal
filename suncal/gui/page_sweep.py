@@ -17,6 +17,9 @@ class StartStopCountWidget(QtWidgets.QDialog):
     ''' Dialog for defining a sweep from start/stop/step values '''
     def __init__(self, title=None, parent=None):
         super().__init__(parent=parent)
+        font = self.font()
+        font.setPointSize(10)
+        self.setFont(font)
         self.setWindowTitle(title if title else 'Enter Range')
         self.start = QtWidgets.QLineEdit()
         self.stop = QtWidgets.QLineEdit()
@@ -239,6 +242,9 @@ class SweepParamWidget(QtWidgets.QDialog):
     ''' Widget for selecting what is being swept in this column '''
     def __init__(self, inptlist, parent=None):
         super().__init__(parent=parent)
+        font = self.font()
+        font.setPointSize(10)
+        self.setFont(font)
         self.inptlist = inptlist
         self.setWindowTitle('Add Parameter Sweep')
         self.mode = QtWidgets.QComboBox()

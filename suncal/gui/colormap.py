@@ -84,6 +84,9 @@ class ColorMapDialog(QtWidgets.QDialog):
     ''' Dialog for showing colormappicker and ok/cancel buttons '''
     def __init__(self, parent=None, selectedcmap=None):
         super().__init__(parent)
+        font = self.font()
+        font.setPointSize(10)
+        self.setFont(font)
         self.setGeometry(600, 200, 600, 800)
         self.setWindowTitle('Select Color Map')
 

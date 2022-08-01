@@ -106,6 +106,9 @@ class DistDialog(QtWidgets.QDialog):
     ''' Dialog for editing distribution parameters '''
     def __init__(self, name, dist, parent=None):
         super().__init__(parent=parent)
+        font = self.font()
+        font.setPointSize(10)
+        self.setFont(font)
         self.name = name
         self.dist = dist
         args = self.dist.get_config()

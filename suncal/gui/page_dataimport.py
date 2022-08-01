@@ -182,6 +182,9 @@ class DistributionSelectWidget(QtWidgets.QDialog):
 
     def __init__(self, project=None, singlecol=True, coloptions=None, enablecorr=True, parent=None):
         super().__init__(parent=parent)
+        font = self.font()
+        font.setPointSize(10)
+        self.setFont(font)
         self.project = project
         self.singlecol = singlecol
         gui_widgets.centerWindow(self, 1000, 800)
@@ -580,6 +583,9 @@ class ArraySelectWidget(QtWidgets.QDialog):
     ''' Widget for selecting an array of values from the project or a file '''
     def __init__(self, project=None, singlecol=False, colnames=None, parent=None):
         super().__init__(parent=parent)
+        font = self.font()
+        font.setPointSize(10)
+        self.setFont(font)
         self.project = project
         self.singlecol = singlecol
         gui_widgets.centerWindow(self, 1000, 800)

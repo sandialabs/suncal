@@ -55,7 +55,9 @@ class TableItemTex(QtWidgets.QTableWidgetItem):
     def setExpr(self, expr):
         # Remove display text, replace with rendered math
         px = QtGui.QPixmap()
-        px.loadFromData(report.Math(expr).svg_buf().read())
+        ratio = QtWidgets.QApplication.instance().devicePixelRatio()
+        px.loadFromData(report.Math(expr).svg_buf(fontsize=16*ratio).read())
+        px.setDevicePixelRatio(ratio)
         self.setData(QtCore.Qt.DecorationRole, px)
         self.setData(gui_widgets.ROLE_ORIGDATA, expr)
 
@@ -1241,6 +1243,9 @@ class PageInput(QtWidgets.QWidget):
         self.corrtable = CorrelationTableWidget()
         self.btnCalc = QtWidgets.QPushButton('Calculate')
         self.description = QtWidgets.QPlainTextEdit()
+        font = self.description.font()
+        font.setPointSize(10)
+        self.description.setFont(font)
         self.settings = SettingsWidget()
 
         self.panel = gui_widgets.WidgetPanel()

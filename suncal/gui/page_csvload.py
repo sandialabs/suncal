@@ -21,7 +21,7 @@ def _gettype(val):
         try:
             parse(val)
             return 'date'
-        except ValueError:
+        except (ValueError, OverflowError):
             return 'str'
 
 
@@ -31,6 +31,9 @@ class SelectCSVData(QtWidgets.QDialog):
     '''
     def __init__(self, fname, parent=None):
         super().__init__(parent=parent)
+        font = self.font()
+        font.setPointSize(10)
+        self.setFont(font)
         gui_widgets.centerWindow(self, 900, 600)
         self.table = QtWidgets.QTableWidget()
         self.transpose = QtWidgets.QCheckBox('Transpose')
@@ -56,26 +59,21 @@ class SelectCSVData(QtWidgets.QDialog):
         if fname == '_clipboard_':
             rawcsv = QtWidgets.QApplication.instance().clipboard().text()
             csvfile = StringIO(rawcsv)
-            try:
-                dialect = csv.Sniffer().sniff(csvfile.read(1024))
-            except (csv.Error, UnicodeDecodeError):
-                QtWidgets.QMessageBox.warning(None, 'CSV Error', 'Could not determine CSV format.')
-                return
-
-            csvfile.seek(0)
-            reader = csv.reader(csvfile, dialect)
-            lines = list(reader)
-
         else:
-            with open(fname) as csvfile:
-                try:
-                    dialect = csv.Sniffer().sniff(csvfile.read(1024))
-                except (csv.Error, UnicodeDecodeError):
-                    QtWidgets.QMessageBox.warning(None, 'CSV Error', 'Could not determine CSV format.')
-                    return
-                csvfile.seek(0)
-                reader = csv.reader(csvfile, dialect)
-                lines = list(reader)
+            csvfile = open(fname, 'r')
+        try:
+            dialect = csv.Sniffer().sniff(csvfile.read(1024), [',', ';', ' '])
+        except (csv.Error, UnicodeDecodeError):
+            dialect = None
+        csvfile.seek(0)
+        try:
+            reader = csv.reader(csvfile, dialect)
+        except (csv.Error, UnicodeDecodeError):
+            QtWidgets.QMessageBox.warning(None, 'CSV Error', 'Could not determine CSV format.')
+            csvfile.close()
+            return
+        lines = list(reader)
+        csvfile.close()
 
         self.table.setRowCount(len(lines))
         self.table.setColumnCount(len(lines[0]))
@@ -136,7 +134,7 @@ class SelectCSVData(QtWidgets.QDialog):
             except ValueError:
                 try:
                     datcol = [parse(v) for v in col]
-                except ValueError:
+                except (ValueError, OverflowError):
                     datcol = col
             datcolumns.append(np.array(datcol))
 

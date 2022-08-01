@@ -290,6 +290,9 @@ class GuardBandFinderWidget(QtWidgets.QDialog):
     ''' Widget providing options for calculating a guardband '''
     def __init__(self, parent=None):
         super().__init__(parent)
+        font = self.font()
+        font.setPointSize(10)
+        self.setFont(font)
         self.setWindowTitle('Calculate Guardband')
         self.pfa = QtWidgets.QRadioButton('Target PFA %')
         self.pfaval = QtWidgets.QDoubleSpinBox()
@@ -370,6 +373,9 @@ class CostEntryWidget(QtWidgets.QDialog):
     ''' Widget for entering cost of FA and FR '''
     def __init__(self, costFA=None, costFR=None, parent=None):
         super().__init__(parent)
+        font = self.font()
+        font.setPointSize(10)
+        self.setFont(font)
         self.setWindowTitle('Expected costs')
         self.costfa = QtWidgets.QDoubleSpinBox()
         self.costfr = QtWidgets.QDoubleSpinBox()

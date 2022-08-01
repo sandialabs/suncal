@@ -5,12 +5,14 @@ from collections import ChainMap
 import numpy as np
 from dateutil.parser import parse
 import matplotlib.dates as mdates
+import markdown
 
 from PyQt5 import QtWidgets, QtCore, QtGui
 
 from . import gui_common
 from .. import report
 from .. import distributions
+from .. import css
 
 
 # Custom data roles for tree/table widgets
@@ -194,7 +196,9 @@ class LatexDelegate(QtWidgets.QStyledItemDelegate):
         if editor.text() != olddata:  # Don't refresh unless necessary
             model.setData(index, editor.text(), ROLE_ORIGDATA)    # Save for later
             px = QtGui.QPixmap()
-            px.loadFromData(report.Math(editor.text()).svg_buf().read())
+            ratio = QtWidgets.QApplication.instance().devicePixelRatio()
+            px.loadFromData(report.Math(editor.text()).svg_buf(fontsize=16*ratio).read())
+            px.setDevicePixelRatio(ratio)
             model.blockSignals(False)
             model.setData(index, px, QtCore.Qt.DecorationRole)
         model.blockSignals(False)
@@ -311,7 +315,7 @@ class FloatTableWidget(QtWidgets.QTableWidget):
                             try:
                                 parse(st)
                                 val = st
-                            except ValueError:
+                            except (ValueError, OverflowError):
                                 val = '-'
 
                     if self.rowCount() <= startrow+i:
@@ -329,7 +333,7 @@ class FloatTableWidget(QtWidgets.QTableWidget):
                         try:
                             parse(st)
                             val = st
-                        except ValueError:
+                        except (ValueError, OverflowError):
                             val = '-'
                 j = 0
                 self.setItem(startrow+i, startcol, QtWidgets.QTableWidgetItem(str(val)))
@@ -408,18 +412,18 @@ class FloatTableWidget(QtWidgets.QTableWidget):
     def _itemchanged(self, row, col):
         ''' Item was changed. Add new row and move selected cell as appropriate. '''
         item = self.item(row, col)
-        if item.text() != '':
+        if item and item.text() != '':
             try:
                 float(item.text())
             except ValueError:
                 if item.text().lower() not in ['pass', 'true', 'fail', 'false',  'yes', 'no', 'none', 'n/a', 'null']:
                     try:
                         parse(item.text()).toordinal()
-                    except ValueError:
+                    except (ValueError, OverflowError):
                         item.setText('-')
                     try:
                         parse(item.text()).toordinal()
-                    except ValueError:
+                    except (ValueError, OverflowError):
                         item.setText('-')
 
         if row == self.rowCount() - 1 and item is not None and item.text() != '':
@@ -447,7 +451,7 @@ class FloatTableWidget(QtWidgets.QTableWidget):
             except ValueError:
                 try:
                     mdates.date2num(parse(text))
-                except ValueError:
+                except (ValueError, OverflowError):
                     pass
                 else:
                     hasdates = True
@@ -469,7 +473,7 @@ class FloatTableWidget(QtWidgets.QTableWidget):
                 else:
                     try:
                         vals.append(mdates.date2num(parse(text)))
-                    except ValueError:
+                    except (ValueError, OverflowError):
                         vals.append(np.nan)
         return np.asarray(vals)
 
@@ -504,6 +508,9 @@ class MarkdownTextEdit(QtWidgets.QTextEdit):
     ''' Text Edit widget with a Save option in context menu. '''
     def __init__(self):
         super().__init__()
+        font = self.font()
+        font.setPointSize(10)
+        self.setFont(font)
         self.setReadOnly(True)
         self.zoomIn(1)
         self.rawhtml = ''
@@ -559,10 +566,55 @@ class MarkdownTextEdit(QtWidgets.QTextEdit):
             rpt: report.Report
                 Report object to format and display as HTML.
         '''
+        # Don't just self.setHtml to self.rpt.get_html(), since that won't properly scale for
+        # hi-dpi displays. Unfortunately, need to recreate report.get_md here but using
+        # the TextCursor of TextEdit to add the images.
+
         self.rpt = rpt
-        args = ChainMap({'mathfmt': 'svg', 'n': self.sigfigs, 'fmt': self.numformat}, gui_common.get_rptargs())
-        html = self.rpt.get_html(**args)
-        self.setHtml(html)
+        args = ChainMap({'n': self.sigfigs, 'fmt': self.numformat}, gui_common.get_rptargs())
+        document = self.document()
+        cursor = self.textCursor()
+        ratio = QtWidgets.QApplication.instance().devicePixelRatio()
+
+        # Convert markdown to HTML, but leave [[xxx]] image tags
+        s = self.rpt._s
+        html = markdown.markdown(s, extensions=['markdown.extensions.tables'])
+        document.clear()
+        document.setDefaultStyleSheet(css.css)
+        self.insertHtml(html)
+
+        regex = QtCore.QRegularExpression(r'(\[\[(?:EQN|VAL|PLT|UNT)[0-9].*?\]\])')
+        cursor = document.find(regex)
+        while cursor is not None and cursor.selectedText():
+            tag = cursor.selectedText()
+            tagindex = int(tag[5:-2])  # strip [[XXX and closing ]]
+            if 'EQN' in tag:
+                eqn = self.rpt._eqns[tagindex]
+                svg = eqn.svg_buf(fontsize=16*ratio).getvalue()
+                px = QtGui.QPixmap()
+                px.loadFromData(svg)
+                px.setDevicePixelRatio(ratio)
+                im = QtGui.QImage(px)
+                cursor.removeSelectedText()
+                cursor.insertImage(im)
+            elif 'VAL' in tag:
+                cursor.removeSelectedText()
+                cursor.insertText(self.rpt._values[tagindex].string(**args))
+            elif 'UNT' in tag:
+                cursor.removeSelectedText()
+                cursor.insertText(self.rpt._units[tagindex].string(**args))
+            elif 'PLT' in tag:
+                plt = self.rpt._plots[tagindex]
+                svg = plt.svg_buf(scale=ratio).getvalue()
+                px = QtGui.QPixmap()
+                px.loadFromData(svg)
+                px.setDevicePixelRatio(ratio)
+                im = QtGui.QImage(px)
+                cursor.removeSelectedText()
+                cursor.insertImage(im)
+            else:
+                raise ValueError
+            cursor = document.find(regex, cursor)
 
     def setHtml(self, html):
         ''' Override setHtml to save off raw html as QTextEdit reformats it, strips css, etc. '''
@@ -628,6 +680,9 @@ class SaveReportOptions(QtWidgets.QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle('Save report options')
+        font = self.font()
+        font.setPointSize(10)
+        self.setFont(font)
         self.setMinimumWidth(500)
         self.btnbox = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel)
         self.btnbox.rejected.connect(self.reject)

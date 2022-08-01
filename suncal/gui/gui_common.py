@@ -144,7 +144,10 @@ def get_rptargs():
 
 def setLabelTex(label, tex):
     ''' Set QLabel to math-image of tex expression '''
-    imgbuf = report.Math.from_latex(tex).svg_buf()
+    ratio = QtWidgets.QApplication.instance().devicePixelRatio()
+    imgbuf = report.Math.from_latex(tex).svg_buf(fontsize=16*ratio)
+    ratio = QtWidgets.QApplication.instance().devicePixelRatio()
     px = QtGui.QPixmap()
     px.loadFromData(imgbuf.getvalue())
+    px.setDevicePixelRatio(ratio)
     label.setPixmap(px)

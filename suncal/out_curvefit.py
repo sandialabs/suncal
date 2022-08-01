@@ -460,7 +460,7 @@ class CurveFitOutputLSQ(output.Output):
         r.txt('For the interval {} to {}:\n\n'.format(t1str, t2str))
         r.add('Value = ', report.Number(value, fmin=2), ' ± ', report.Number(uncert*k, fmin=2), '(k={:.3g}{})'.format(k, confstr))
         if plot:
-            with plt.style.context(output.plotstyle):
+            with plt.style.context(plotting.plotstyle):
                 fig, ax = plt.subplots()
                 self.plot_interval_uncert(t1, t2, ax=ax, k=k, conf=conf, mode=kwargs.get('mode', self.predmode))
                 r.plot(fig)
@@ -523,7 +523,7 @@ class CurveFitOutputLSQ(output.Output):
         x = []
         for val in xval:
             if self.inputs.xdate:
-                with suppress(AttributeError, ValueError):
+                with suppress(AttributeError, ValueError, OverflowError):
                     x.append(mdates.date2num(parse(val)))
             else:
                 with suppress(ValueError):
@@ -557,7 +557,6 @@ class CurveFitOutputLSQ(output.Output):
                 ax.legend(loc='best')
                 r.plot(fig)
         r.table(rows, hdr=hdr)
-        r.append(self.report_confpred(**kwargs))
         return r
 
     def _inputx(self, dates=False):
@@ -1175,7 +1174,7 @@ class CurveFitOutput(output.Output):
     def report_all(self, k=2, conf=None, **kwargs):
         ''' Report all info on curve fit, including summary, residual plots, and correlations '''
         r = report.Report(**kwargs)
-        r.hdr('Curve Fit Results', level=2)
+        r.hdr('Curve Fit', level=2)
 
         outs = [(getattr(self, m), m) for m in ['lsq', 'gum', 'mc', 'mcmc']]
         outs = [out for out in outs if out[0] is not None]
@@ -1183,17 +1182,38 @@ class CurveFitOutput(output.Output):
 
             if len(outs) > 1:
                 r.hdr('Method: {}'.format(method), level=3)
-            r.append(out.report_summary(k=k, conf=conf, **kwargs))
-            fig, ax = plotting.initplot()
-            out.plot_summary(ax=ax, k=k, conf=conf, **kwargs)
-            r.plot(fig)
-            plt.close(fig)
-            r.append(out.report_fit(**kwargs))
-            r.append(out.report_confpred(**kwargs))
+            
+            if kwargs.get('summary', True):
+                r.append(out.report_summary(k=k, conf=conf, **kwargs))
 
-            r.div()
-            r.hdr('Residuals', level=3)
-            r.append(out.report_residuals(k=k, conf=conf, **kwargs))
+            if kwargs.get('fitplot', True):
+                fig, ax = plotting.initplot()
+                out.plot_summary(ax=ax, k=k, conf=conf, **kwargs)
+                r.plot(fig)
+                plt.close(fig)
+            
+            if kwargs.get('goodness', True):
+                r.append(out.report_fit(**kwargs))
+
+            if kwargs.get('confpred', False):
+                r.append(out.report_confpred(**kwargs))
+
+            if kwargs.get('prediction', False):
+                r.append(out.report_confpred_xval(kwargs['xvals'], k=k, conf=conf, plot=True, mode=kwargs.get('mode', 'Syx')))
+
+            if kwargs.get('interval') is not None:
+                r.append(out.report_interval_uncert(*kwargs.get('interval'), k=k, conf=conf))
+
+            if kwargs.get('residuals', False):
+                r.div()
+                r.hdr('Residuals', level=3)
+                r.append(out.report_residuals(k=k, conf=conf, **kwargs))
+
+            if kwargs.get('correlations', False):
+                r.div()
+                r.hdr('Correlations', level=3)
+                r.append(out.report_correlation())
+
         return r
 
     def get_dists(self):

@@ -47,6 +47,9 @@ class NewIntDialog(QtWidgets.QDialog):
     ''' Dialog for choosing type of interval calculation '''
     def __init__(self, parent=None):
         super().__init__(parent)
+        font = self.font()
+        font.setPointSize(10)
+        self.setFont(font)
         self.setWindowTitle('Interval Calculation Setup')
         self.optA3 = QtWidgets.QRadioButton('Attributes (pass/fail only) data, all intervals similar (Method A3)')
         self.optS2 = QtWidgets.QRadioButton('Attributes (pass/fail only) data, many different intervals (Method S2)')
@@ -761,6 +764,9 @@ class BinData(QtWidgets.QDialog):
     ''' Dialog for binning historical pass/fail data for method S2 '''
     def __init__(self, uinterval, parent=None):
         super().__init__(parent)
+        font = self.font()
+        font.setPointSize(10)
+        self.setFont(font)
         self.uinterval = uinterval
         self.selectedbinidx = None
         self.press = None

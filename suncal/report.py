@@ -1,4 +1,5 @@
 import os
+import re
 import subprocess
 from io import BytesIO
 import base64
@@ -61,6 +62,19 @@ def _matchprecision(num, num2, n=2):
     else:
         figs = max(2, figs)
     return figs
+
+
+def _scale_svg(svg, scale=1):
+    ''' Change "width" and "height" parameters of an SVG string '''
+    def _repl(match):
+        ''' Regex replacement function '''
+        size = match.group(2)
+        num = ''.join(c for c in size if c in '0123456789.')
+        unit = ''.join(c for c in size if c not in num)
+        return match.group(1) + f'{float(num)*scale}{unit}"'
+    svg = re.sub(r'(<svg.*width=")(\w.*?)"', _repl, svg, count=1)
+    svg = re.sub(r'(<svg.*height=")(\w.*?)"', _repl, svg, count=1)
+    return svg
 
 
 class Number(object):
@@ -599,6 +613,7 @@ class Plot(object):
     def _repr_markdown_(self):
         ''' Markdown representation for Jupyter '''
         md = '![]({})'.format(self.svg_b64())
+        return md
 
     def png_buf(self, dpi=120):
         ''' Render figure as BytesIO buffer in PNG format
@@ -609,7 +624,7 @@ class Plot(object):
                 Dots per inch for PNG
         '''
         buf = BytesIO()
-        self.fig.savefig(buf, format='png', dpi=150)
+        self.fig.savefig(buf, format='png', dpi=dpi)
         buf.seek(0)
         return buf
 
@@ -624,12 +639,14 @@ class Plot(object):
         buf = self.png_buf(dpi=dpi)
         return 'data:image/png;base64,{}'.format(base64.b64encode(buf.read()).decode('utf-8'))
 
-    def svg_buf(self):
+    def svg_buf(self, scale=1):
         ''' Render to BytesIO buffer in SVG format '''
         buf = BytesIO()
         self.fig.savefig(buf, bbox_inches='tight', format='svg')
         svg = buf.getvalue().decode('utf-8')
         svg = svg[svg.find('<svg'):]  # Strip HTML header stuff
+        if scale != 1:
+            svg = _scale_svg(svg, scale)
         buf = BytesIO(svg.encode())
         buf.seek(0)
         return buf

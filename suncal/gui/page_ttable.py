@@ -19,6 +19,9 @@ class TTableDialog(QtWidgets.QDialog):
     def __init__(self, parent=None):
         super().__init__(parent=parent)
         self.setWindowTitle('T-table')
+        font = self.font()
+        font.setPointSize(10)
+        self.setFont(font)
         self.cmbSolveFor = QtWidgets.QComboBox()
         self.cmbSolveFor.addItems(['Coverage Factor', 'Confidence', 'Degrees of Freedom'])
         self.degf = gui_widgets.LineEditLabelWidget('Degrees of Freedom', '30')

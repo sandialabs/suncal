@@ -133,7 +133,7 @@ def _parse_math(expr, fns=_functions, name=None, allowcomplex=False):
     _locals['I'] = sympy.I if allowcomplex else sympy.Symbol('I')
     try:
         fn = sympy.sympify(expr, _locals)
-    except (ValueError, sympy.SympifyError):
+    except (ValueError, TypeError, sympy.SympifyError):
         raise ValueError('Cannot sympify expression "{}"'.format(expr))
 
     if name and name in [str(i) for i in fn.free_symbols]:

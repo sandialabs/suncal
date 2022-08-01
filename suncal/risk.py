@@ -1198,9 +1198,9 @@ class Risk(object):
         med = self.testdist.median() + self.testbias
         LL, UL = self.speclimits
         LL, UL = min(LL, UL), max(LL, UL)  # Make sure LL < UL
-        accept = (med >= LL + self.guardband[0] and med <= UL - self.guardband[0])
+        accept = (med >= LL + self.guardband[0] and med <= UL - self.guardband[1])
 
-        if med >= LL + self.guardband[0] and med <= UL - self.guardband[0]:
+        if med >= LL + self.guardband[0] and med <= UL - self.guardband[1]:
             PFx = self.testdist.cdf(LL) + (1 - self.testdist.cdf(UL))
         else:
             PFx = abs(self.testdist.cdf(LL) - self.testdist.cdf(UL))

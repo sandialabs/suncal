@@ -1,5 +1,15 @@
 # Change History
 
+## Version 1.5.7
+
+- Improved plot and equation resolution when using high-DPI displays
+- Fixed importing CSV files with single column
+- Fixed accept/reject indication on risk calculation with asymmetric guardbands
+- Added configuration for Curve Fit full report
+- Corrected off-by-one error in autocorrelation calculation
+- Handle several edge-case errors
+- Fixed Jupyter representation of plots
+
 
 ## Version 1.5.6
 

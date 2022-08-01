@@ -12,6 +12,9 @@ class UnitsConverter(QtWidgets.QDialog):
     ''' Dialog for parsing and converting units. '''
     def __init__(self, parent=None):
         super().__init__(parent=parent)
+        font = self.font()
+        font.setPointSize(10)
+        self.setFont(font)
         self.setWindowTitle('Units Converter')
         self.valuein = QtWidgets.QLineEdit('1.0')
         self.valueout = QtWidgets.QLabel('1.0')

@@ -563,6 +563,9 @@ class DlgMultiLineEdit(QtWidgets.QDialog):
     ''' Dialog for entering a multiline string '''
     def __init__(self, title, label='', text=''):
         super().__init__()
+        font = self.font()
+        font.setPointSize(10)
+        self.setFont(font)
         self.setWindowTitle(title)
         label = QtWidgets.QLabel(label)
         self.text = QtWidgets.QPlainTextEdit()
@@ -584,6 +587,10 @@ class PgSettingsDlg(QtWidgets.QDialog):
     ''' Dialog for editing of settings '''
     def __init__(self, parent=None):
         super().__init__(parent)
+        font = self.font()
+        font.setPointSize(10)
+        self.setFont(font)
+
         self.settings = Settings()
         self.setWindowTitle('Uncertainty Calculator Settings')
 

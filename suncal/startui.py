@@ -15,26 +15,37 @@ from suncal import version
 import sys
 
 
-message = '''<font size=6>Uncertainty Calculator</font><br>
-Version: {} - {}<br><br>
-<font size=4>Primary Standards Lab<br>Sandia National Laboratories<br></font>
-<font size=4>uncertainty@sandia.gov<br><br></font>
-<font size=3>
-<br>
-Copyright 2019-2021 National Technology & Engineering Solutions<br>of Sandia, LLC (NTESS).
-Under the terms of Contract<br>DE-NA0003525 with NTESS, the U.S. Government<br>retains certain rights in this software.'''.format(version.__version__, version.__date__)
-
 QtWidgets.QApplication.setAttribute(QtCore.Qt.AA_EnableHighDpiScaling)
 QtWidgets.QApplication.setAttribute(QtCore.Qt.AA_UseHighDpiPixmaps)
 app = QtWidgets.QApplication(sys.argv)
+pxratio = app.devicePixelRatio()
 
-pixmap = QtGui.QPixmap(480, 320)
+message = f'''Suncal - Sandia Uncertainty Calculator
+
+Version: {version.__version__} - {version.__date__}
+Primary Standards Lab
+Sandia National Laboratories
+uncertainty@sandia.gov
+
+Copyright 2019-2022 National Technology & Engineering
+Solutions of Sandia, LLC (NTESS). Under the terms
+of Contract DE-NA0003525 with NTESS, the U.S.
+Government retains certain rights in this software.
+'''
+
+pixmap = QtGui.QPixmap(480*pxratio, 320*pxratio)
 pixmap.fill(app.palette().color(QtGui.QPalette.Window))
 painter = QtGui.QPainter(pixmap)
-painter.drawPixmap(10, 250, gui_common.get_snllogo(pixmap=True))
-splash = QtWidgets.QSplashScreen(pixmap)
+painter.drawPixmap(10*pxratio, 250*pxratio, gui_common.get_snllogo(pixmap=True))
+pixmap.setDevicePixelRatio(pxratio)
+splash = QtWidgets.QSplashScreen(pixmap, QtCore.Qt.SplashScreen)
+font = splash.font()
+font.setPointSize(12)
+splash.setFont(font)
+
 splash.showMessage(message)
 splash.show()
+splash.repaint()
 QtCore.QTimer.singleShot(2000, splash.close)
 
 app.processEvents()

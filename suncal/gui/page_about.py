@@ -1,7 +1,5 @@
 ''' About box for GUI '''
 
-import os
-import sys
 from PyQt5 import QtWidgets
 
 from .. import version
@@ -17,7 +15,7 @@ Version: {} - {}<br><br>
 <font size=5>Primary Standards Lab<br>Sandia National Laboratories<br></font>
 <font size=4>uncertainty@sandia.gov<br><br></font>
 <font size=3>
-Copyright 2019-2021 National Technology & Engineering Solutions of Sandia, LLC (NTESS).
+Copyright 2019-2022 National Technology & Engineering Solutions of Sandia, LLC (NTESS).
 <br>Under the terms of Contract DE-NA0003525 with NTESS, the U.S. Government
 <br>retains certain rights in this software.
 </font>'''.format(version.__version__, version.__date__)
@@ -27,6 +25,8 @@ Copyright 2019-2021 National Technology & Engineering Solutions of Sandia, LLC (
         layout = QtWidgets.QVBoxLayout()
         layout.addWidget(QtWidgets.QLabel(self.ABOUT))
         snlico = gui_common.get_snllogo(pixmap=True)
+        ratio = QtWidgets.QApplication.instance().devicePixelRatio()
+        snlico.setDevicePixelRatio(ratio)
         snllbl = QtWidgets.QLabel()
         snllbl.setPixmap(snlico)
         layout.addStretch()
@@ -40,6 +40,10 @@ class AboutBox(QtWidgets.QDialog):
         super().__init__(parent=parent)
         self.setWindowTitle('Sandia PSL Uncertainty Calculator')
         self.setMinimumHeight(450)
+        font = self.font()
+        font.setPointSize(10)
+        self.setFont(font)
+
         self.ok = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok)
         self.ok.accepted.connect(self.accept)
         self.txtLicense = QtWidgets.QTextEdit()

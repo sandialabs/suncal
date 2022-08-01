@@ -127,9 +127,11 @@ class ModelWidget(QtWidgets.QWidget):
             self.tblGuess.setVisible(False)
 
         expr = self.fitcalc.expr
-        imgbuf = report.Math.from_sympy(expr).svg_buf()
+        ratio = QtWidgets.QApplication.instance().devicePixelRatio()
+        imgbuf = report.Math.from_sympy(expr).svg_buf(fontsize=16*ratio)
         px = QtGui.QPixmap()
         px.loadFromData(imgbuf.getvalue())
+        px.setDevicePixelRatio(ratio)
         self.lblEquation.setPixmap(px)
 
     def update_custom(self, showhide=True):
@@ -306,8 +308,8 @@ class PageInputCurveFit(QtWidgets.QWidget):
         clayout.addStretch()
         clayout.addWidget(self.btnCalculate)
         rlayout.addLayout(clayout)
-        layout.addLayout(llayout)
-        layout.addLayout(rlayout)
+        layout.addLayout(llayout, stretch=1)
+        layout.addLayout(rlayout, stretch=3)
         self.setLayout(layout)
         self.table.valueChanged.connect(self.update_arr)
         self.notes.textChanged.connect(self.savenotes)
@@ -494,6 +496,45 @@ class IntervalWidget(QtWidgets.QWidget):
         self.x2.setVisible(not self.xdate)
 
 
+class FullReportSetup(QtWidgets.QWidget):
+    changed = QtCore.pyqtSignal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.chkFitPlot = QtWidgets.QCheckBox('Fit Plot')
+        self.chkCoeffs = QtWidgets.QCheckBox('Fit Coefficients')
+        self.chkGoodness = QtWidgets.QCheckBox('Goodness of Fit')
+        self.chkConfEqn = QtWidgets.QCheckBox('Conf. Band Equations')
+        self.chkPrediction = QtWidgets.QCheckBox('Prediction')
+        self.chkInterval = QtWidgets.QCheckBox('Interval')
+        self.chkResid = QtWidgets.QCheckBox('Residuals')
+        self.chkCorr = QtWidgets.QCheckBox('Correlations')
+
+        self.chkFitPlot.setChecked(True)
+        self.chkCoeffs.setChecked(True)
+        self.chkGoodness.setChecked(True)
+
+        layout = QtWidgets.QVBoxLayout()
+        layout.addWidget(self.chkCoeffs)
+        layout.addWidget(self.chkFitPlot)
+        layout.addWidget(self.chkGoodness)
+        layout.addWidget(self.chkConfEqn)
+        layout.addWidget(self.chkPrediction)
+        layout.addWidget(self.chkInterval)
+        layout.addWidget(self.chkResid)
+        layout.addWidget(self.chkCorr)
+        self.setLayout(layout)
+
+        self.chkCoeffs.stateChanged.connect(self.changed)
+        self.chkFitPlot.stateChanged.connect(self.changed)
+        self.chkGoodness.stateChanged.connect(self.changed)
+        self.chkPrediction.stateChanged.connect(self.changed)
+        self.chkConfEqn.stateChanged.connect(self.changed)
+        self.chkInterval.stateChanged.connect(self.changed)
+        self.chkResid.stateChanged.connect(self.changed)
+        self.chkCorr.stateChanged.connect(self.changed)
+
+
 class PageOutputCurveFit(QtWidgets.QWidget):
     ''' Output page for curve fit calculation '''
     namelookup = {'lsq': 'Least Squares', 'gum': 'GUM', 'mc': 'Monte Carlo', 'mcmc': 'Markov-Chain Monte Carlo'}
@@ -505,7 +546,7 @@ class PageOutputCurveFit(QtWidgets.QWidget):
         self.btnBack = QtWidgets.QPushButton('Back')
 
         self.outSelect = QtWidgets.QComboBox()
-        self.outSelect.addItems(['Fit Plot', 'Prediction', 'Interval', 'Residuals', 'Correlations'])
+        self.outSelect.addItems(['Fit Plot', 'Prediction', 'Interval', 'Residuals', 'Correlations', 'Full Report'])
         self.cmbMethod = QtWidgets.QComboBox()     # For selecting a single method
         self.cmbMethod.setVisible(False)
 
@@ -531,6 +572,7 @@ class PageOutputCurveFit(QtWidgets.QWidget):
         self.predictmode.setItemData(0, 'Use the average of residuals for all x values. Does not consider any user-entered u(y)', QtCore.Qt.ToolTipRole)
         self.predictmode.setItemData(1, 'Extrapolate user-entered u(y) between x data points', QtCore.Qt.ToolTipRole)
         self.predictmode.setItemData(2, 'Use the last user-entered u(y) for all predictions. Choose this option,\nfor example, when predicting into the future assuming the most recent\nmeasurement uncertainty applies to all new measurements.', QtCore.Qt.ToolTipRole)
+        self.reportoptions = FullReportSetup()
 
         self.fig = Figure()
         self.canvas = FigureCanvas(self.fig)
@@ -550,6 +592,7 @@ class PageOutputCurveFit(QtWidgets.QWidget):
         llayout.addWidget(self.paramlist)
         llayout.addWidget(self.predictlabel)
         llayout.addWidget(self.predictmode)
+        llayout.addWidget(self.reportoptions)
         llayout.addStretch()
         llayout.addWidget(self.btnBack)
         rlayout = QtWidgets.QVBoxLayout()
@@ -577,10 +620,14 @@ class PageOutputCurveFit(QtWidgets.QWidget):
         self.paramlist.checkChange.connect(self.update)
         self.kvalue.changed.connect(self.update)
         self.predictmode.currentIndexChanged.connect(self.update)
+        self.reportoptions.changed.connect(self.update)
 
     def changeview(self):
         ''' Combobox selection was changed. '''
         showpredict = self.output.inputs.has_uy()
+        self.canvas.setVisible(True)
+        self.toolbar.setVisible(True)
+
         if self.outSelect.currentText() == 'Fit Plot':
             self.cmbMethod.setVisible(self.methodcnt > 1)
             self.xvals.setVisible(False)
@@ -592,6 +639,7 @@ class PageOutputCurveFit(QtWidgets.QWidget):
             self.kvalue.setVisible(True)
             self.predictlabel.setVisible(showpredict)
             self.predictmode.setVisible(showpredict)
+            self.reportoptions.setVisible(False)
 
         elif self.outSelect.currentText() == 'Prediction':
             self.cmbMethod.setVisible(self.methodcnt > 1)
@@ -604,6 +652,7 @@ class PageOutputCurveFit(QtWidgets.QWidget):
             self.kvalue.setVisible(True)
             self.predictlabel.setVisible(showpredict)
             self.predictmode.setVisible(showpredict)
+            self.reportoptions.setVisible(False)
 
         elif self.outSelect.currentText() == 'Interval':
             self.cmbMethod.setVisible(self.methodcnt > 1)
@@ -616,6 +665,7 @@ class PageOutputCurveFit(QtWidgets.QWidget):
             self.kvalue.setVisible(True)
             self.predictlabel.setVisible(showpredict)
             self.predictmode.setVisible(showpredict)
+            self.reportoptions.setVisible(False)
 
         elif self.outSelect.currentText() == 'Residuals':
             self.cmbMethod.setVisible(self.methodcnt > 1)
@@ -628,6 +678,7 @@ class PageOutputCurveFit(QtWidgets.QWidget):
             self.cmbMCplot.setVisible(False)
             self.predictlabel.setVisible(False)
             self.predictmode.setVisible(False)
+            self.reportoptions.setVisible(False)
 
         elif self.outSelect.currentText() == 'Correlations':
             self.cmbMethod.setVisible(self.methodcnt > 1)
@@ -640,6 +691,7 @@ class PageOutputCurveFit(QtWidgets.QWidget):
             self.kvalue.setVisible(False)
             self.predictlabel.setVisible(False)
             self.predictmode.setVisible(False)
+            self.reportoptions.setVisible(False)
 
         elif 'Monte Carlo' in self.outSelect.currentText():
             self.cmbMethod.setVisible(False)
@@ -650,6 +702,21 @@ class PageOutputCurveFit(QtWidgets.QWidget):
             self.interval.setVisible(False)
             self.cmbMCplot.setVisible(True)
             self.kvalue.setVisible(False)
+            self.reportoptions.setVisible(False)
+        
+        elif 'Full Report' in self.outSelect.currentText():
+            self.cmbMethod.setVisible(False)
+            self.chkConfBand.setVisible(False)
+            self.chkPredBand.setVisible(False)
+            self.paramlist.setVisible(False)
+            self.xvals.setVisible(False)
+            self.interval.setVisible(False)
+            self.cmbMCplot.setVisible(False)
+            self.kvalue.setVisible(False)
+            self.reportoptions.setVisible(True)
+            self.canvas.setVisible(False)
+            self.toolbar.setVisible(False)
+
         self.update()
 
     def update(self):
@@ -789,8 +856,43 @@ class PageOutputCurveFit(QtWidgets.QWidget):
                 r.hdr('Acceptance Rate', level=3)
                 r.append(out.report_acceptance())
 
+        elif 'Full Report' in self.outSelect.currentText():
+            r = self.get_report()
+
         self.txtOutput.setReport(r)
         self.canvas.draw_idle()
+
+    def get_report(self):
+        ''' Get full report of curve fit, using page settings '''
+        kstr = self.kvalue.get_covlist()[0]
+        if 'k' in kstr:
+            k = float(kstr.split('=')[1].strip())
+            conf = None
+        else:
+            k = None
+            conf = float(kstr[:-1]) / 100  # Without the % sign, as decimal
+
+        xvals=self.xvals.get_columntext(0)
+        method = self.methodlookup[self.cmbMethod.currentText()]
+        predmode = getattr(self.output, method).predmode
+        x1 = float(self.interval.x1.text()) if not self.output.inputs.xdate else self.interval.xdate1.date().toPyDate().strftime('%d-%b-%Y')
+        x2 = float(self.interval.x2.text()) if not self.output.inputs.xdate else self.interval.xdate2.date().toPyDate().strftime('%d-%b-%Y')
+        interval = (x1, x2)
+        
+        args = {
+            'summary': self.reportoptions.chkCoeffs.isChecked(),
+            'fitplot': self.reportoptions.chkFitPlot.isChecked(),
+            'goodness': self.reportoptions.chkGoodness.isChecked(),
+            'confpred': self.reportoptions.chkConfEqn.isChecked(),
+            'prediction': self.reportoptions.chkPrediction.isChecked(),
+            'residuals': self.reportoptions.chkResid.isChecked(),
+            'correlations': self.reportoptions.chkCorr.isChecked(),
+            'xvals': xvals,
+            'mode': predmode,
+            'interval': interval if self.reportoptions.chkInterval.isChecked() else None
+            }
+        r = self.output.report_all(k=k, conf=conf, **args)
+        return r
 
     def set_output(self, output):
         ''' Set the output object
@@ -812,7 +914,7 @@ class PageOutputCurveFit(QtWidgets.QWidget):
         self.paramlist.selectAll()
         self.outSelect.blockSignals(True)
         self.outSelect.clear()
-        self.outSelect.addItems(['Fit Plot', 'Prediction', 'Interval', 'Residuals', 'Correlations'])
+        self.outSelect.addItems(['Fit Plot', 'Prediction', 'Interval', 'Residuals', 'Correlations', 'Full Report'])
         if methods['mc']:
             self.outSelect.addItem('Monte Carlo')
         if methods['mcmc']:
@@ -1041,27 +1143,7 @@ class CurveFitWidget(QtWidgets.QWidget):
 
     def get_report(self):
         ''' Get full report of curve fit, using page settings '''
-        kstr = self.pgoutput.kvalue.get_covlist()[0]
-        if 'k' in kstr:
-            k = float(kstr.split('=')[1].strip())
-            conf = None
-        else:
-            k = None
-            conf = float(kstr[:-1]) / 100  # Without the % sign, as decimal
-
-        r = report.Report()
-        out = self.fitcalc.get_output()
-        if out:
-            if self.pgoutput.outSelect.currentText() == 'Prediction':
-                xvals = self.pgoutput.xvals.get_columntext(0)
-                r = self.fitcalc.get_output().report_all(xval=xvals, k=k, conf=conf)
-            elif self.pgoutput.outSelect.currentText() == 'Interval':
-                x1 = float(self.pgoutput.interval.x1.text()) if not self.fitcalc.out.xdates else self.pgoutput.interval.xdate1.date().toPyDate().strftime('%d-%b-%Y')
-                x2 = float(self.pgoutput.interval.x2.text()) if not self.fitcalc.out.xdates else self.pgoutput.interval.xdate2.date().toPyDate().strftime('%d-%b-%Y')
-                r = self.fitcalc.get_output().report_all(interval=(x1, x2), k=k, conf=conf)
-            else:
-                r = self.fitcalc.get_output().report_all(k=k, conf=conf)
-        return r
+        return self.pgoutput.get_report()
 
     def save_report(self):
         ''' Save full report of curve fit, asking user for settings/filename '''

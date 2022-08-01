@@ -144,7 +144,7 @@ class InsertCalcWidget(QtWidgets.QWidget):
         self.btnSweep = ToolButton('Uncertainty\nSweep', gui_common.load_icon('targetlist'))
         self.btnReverse = ToolButton('Reverse\nPropagation', gui_common.load_icon('calipers'))
         self.btnReverseSweep = ToolButton('Reverse\nSweep', gui_common.load_icon('rulersweep'))
-        self.btnDataset = ToolButton('Data Sets and\nAnalysis of\nVariance', gui_common.load_icon('boxplot'))
+        self.btnDataset = ToolButton('Data Sets &&\nANOVA', gui_common.load_icon('boxplot'))
         self.btnInterval = ToolButton('Calibration\nIntervals', gui_common.load_icon('interval'))
         self.btnDist = ToolButton('Distribution\nExplorer', gui_common.load_icon('dists'))
 
@@ -194,6 +194,9 @@ class MainGUI(QtWidgets.QMainWindow):
         super().__init__(parent)
         self.setWindowTitle('Sandia PSL Uncertainty Calculator - v' + version.__version__)
         gui_widgets.centerWindow(self, 1200, 900)
+        font = self.font()
+        font.setPointSize(10)
+        self.setFont(font)
 
         self.project = project.Project()  # New empty project
 

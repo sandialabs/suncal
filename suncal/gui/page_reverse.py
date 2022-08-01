@@ -1,7 +1,9 @@
 '''
 GUI page for calculating reverse uncertainty propagation.
 '''
+import re
 from PyQt5 import QtWidgets, QtGui, QtCore
+from pint import DimensionalityError, UndefinedUnitError, OffsetUnitCalculusError
 
 from .. import reverse
 from . import gui_widgets
@@ -43,6 +45,15 @@ class TargetSetupWidget(QtWidgets.QTableWidget):
         self.txtTarget = QtWidgets.QLineEdit('0.0')
         self.txtTargetUnc = QtWidgets.QLineEdit('0.0')
         self.cmbSolveFor = QtWidgets.QComboBox()
+        
+        # I don't know why these widgets don't pick up the parent font size...
+        font = self.cmbFunction.font()
+        font.setPointSize(10)
+        self.cmbFunction.setFont(font)
+        self.txtTarget.setFont(font)
+        self.txtTargetUnc.setFont(font)
+        self.cmbSolveFor.setFont(font)
+
         self.setCellWidget(self.ROW_FUNC, self.COL_VALUE, self.cmbFunction)
         self.setCellWidget(self.ROW_SOLVEFOR, self.COL_VALUE, self.cmbSolveFor)
         self.setCellWidget(self.ROW_TARG, self.COL_VALUE, self.txtTarget)
@@ -155,8 +166,26 @@ class UncertReverseWidget(page_uncertprop.UncertPropWidget):
             QtWidgets.QMessageBox.warning(self, 'Uncertainty Calculator', 'Need at least one measurement function to calculate.')
             valid = False
 
+        elif self.uncReverse.model.check_circular():
+            msg = 'Circular reference in function definitions'
+
         elif self.revsetup.cmbSolveFor.currentText() == '':
             QtWidgets.QMessageBox.warning(self, 'Uncertainty Calculator', 'Please define solve-for parameter in the Target tab.')
+            valid = False
+
+        msg = ''
+        try:
+            self.uncReverse.model.check_dimensionality()
+        except (TypeError, DimensionalityError, UndefinedUnitError) as e:
+            msg = 'Units Error: {}'.format(e)
+        except OffsetUnitCalculusError as e:
+            badunit = re.findall(r'\((.+ )', str(e))[0].split()[0].strip(', ')
+            msg = 'Ambiguous unit {}. Try "{}".'.format(badunit, 'delta_{}'.format(badunit))
+        except RecursionError:
+            msg = 'Error - possible circular reference in function definitions'
+
+        if msg:
+            QtWidgets.QMessageBox.warning(self, 'Uncertainty Calculator', msg)
             valid = False
 
         if not valid:
@@ -167,6 +196,14 @@ class UncertReverseWidget(page_uncertprop.UncertPropWidget):
         try:
             self.uncReverse.calculate()
         except (ValueError, RecursionError):
+            msg = 'Error computing solution!'
+            valid = False
+        except OffsetUnitCalculusError as e:
+            badunit = re.findall(r'\((.+ )', str(e))[0].split()[0].strip(', ')
+            msg = 'Ambiguous unit {}. Try "{}".'.format(badunit, 'delta_{}'.format(badunit))
+            valid = False
+        except RecursionError:
+            msg = 'Error - possible circular reference in function definitions'
             valid = False
 
         if valid:
@@ -175,7 +212,7 @@ class UncertReverseWidget(page_uncertprop.UncertPropWidget):
             self.actSaveReport.setEnabled(True)
             self.mnuSaveSamples.setEnabled(True)
         else:
-            QtWidgets.QMessageBox.warning(self, 'Uncertainty Calculator', 'Invalid Input Parameter!')
+            QtWidgets.QMessageBox.warning(self, 'Uncertainty Calculator', msg)
             self.actSaveReport.setEnabled(False)
             self.mnuSaveSamples.setEnabled(False)
 

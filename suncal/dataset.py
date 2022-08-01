@@ -76,7 +76,7 @@ def uncert_autocorrelated(x, conf=.95):
         else:
             nc = 0
 
-        i = np.arange(nc)
+        i = np.arange(1, nc+1)
         r = 1 + 2/n*sum((n-i) * rho[1:nc+1])  # Skip the rho[0] == 1 point.
         unc = np.sqrt(np.var(x, ddof=1) / n * r)
     else:
@@ -95,9 +95,8 @@ def _sigma_rhok(rho):
     if n == 0:
         return np.array([0])
     sigma_rhok = np.zeros(n)
-    sigma_rhok[0] = 1/np.sqrt(n)
-    for k in range(1, n):
-        sigma_rhok[k] = np.sqrt((1 + 2 * sum(rho[1:k]**2))/n)
+    for k in range(n):
+        sigma_rhok[k] = np.sqrt((1 + 2 * sum(rho[1:k+1]**2))/n)
     return sigma_rhok
 
 
@@ -150,7 +149,7 @@ class DataSet(object):
                 try:
                     cols = [parse(c) for c in value]
                     coltype = 'date'
-                except ValueError:
+                except (ValueError, OverflowError):
                     cols = np.arange(len(value))
                     coltype = 'str'
 
