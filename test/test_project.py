@@ -1,19 +1,14 @@
 ''' Test project class - saving/loading config file for multiple calculations '''
 
 from io import StringIO
-import os
 import numpy as np
-from scipy import stats
 
 import suncal
+from suncal.common import distributions
 from suncal import project
-from suncal import dataset
-from suncal import sweeper
+from suncal import sweep
 from suncal import reverse
-from suncal import risk
 from suncal import curvefit
-from suncal import dist_explore
-from suncal import distributions
 
 
 def test_saveload_fname(tmpdir):
@@ -23,49 +18,62 @@ def test_saveload_fname(tmpdir):
 
     np.random.seed(588132535)
     # Set up several project components of the different types
-    u = suncal.UncertCalc('f = m/(pi*r**2)', seed=44444)
-    u.set_input('m', nom=2, std=.2)
-    u.set_input('r', nom=1, std=.1)
+    u = suncal.Model('f = m/(pi*r**2)')
+    u.var('m').measure(2).typeb(std=.2)
+    u.var('r').measure(1).typeb(std=.1)
+    proj1 = project.ProjectUncert(u)
+    proj1.seed = 44444
 
-    u2 = suncal.UncertCalc('g = m * 5', seed=4444)
-    u2.set_input('m', nom=5, std=.5)
+    u2 = suncal.Model('g = m * 5')
+    u2.var('m').measure(5).typeb(std=.5)
+    proj2 = project.ProjectUncert(u2)
+    proj2.seed = 4444
 
-    rsk = risk.Risk()
-    rsk.set_procdist(distributions.get_distribution('t', loc=.5, scale=1, df=9))
+    projrsk = project.ProjectRisk()
+    projrsk.model.procdist = distributions.get_distribution('t', loc=.5, scale=1, df=9)
 
-    swp = sweeper.UncertSweep(u)
+    swp = sweep.UncertSweep(u)
     swp.add_sweep_nom('m', values=[.5, 1, 1.5, 2])
+    projswp = project.ProjectSweep(swp)
 
     x = np.linspace(-10, 10, num=21)
     y = x*2 + np.random.normal(loc=0, scale=.5, size=len(x))
     arr = curvefit.Array(x, y, uy=0.5)
-    fit = curvefit.CurveFit(arr, seed=909090)
+    fit = curvefit.CurveFit(arr)
+    projfit = project.ProjectCurveFit(fit)
+    projfit.seed = 909090
 
-    rev = reverse.UncertReverse('f = m/(pi*r**2)', seed=5555, targetnom=20, targetunc=.5, solvefor='m')
-    rev.set_input('r', nom=5, std=.05)
+    rev = reverse.ModelReverse('f = m/(pi*r**2)', targetnom=20, targetunc=.5, solvefor='m')
+    rev.var('r').measure(5).typeb(std=.05)
+    projrev = project.ProjectReverse(rev)
+    projrev.seed = 5555
 
-    revswp = sweeper.UncertSweepReverse(rev)
-    revswp.add_sweep_unc('r', values=[.01, .02, .03, .04], comp='u(r)', param='std')
+    revswp = sweep.UncertSweepReverse('f = m/(pi*r**2)', targetnom=20, targetunc=.5, solvefor='m')
+    revswp.model.var('r').measure(5).typeb(std=.05)
+    revswp.add_sweep_unc('r', values=[.01, .02, .03, .04], comp='Type B', param='std')
+    projrevswp = project.ProjectReverseSweep(revswp)
 
-    explore = dist_explore.DistExplore(seed=8888)
-    explore.dists = {'a': distributions.get_distribution('normal', loc=3, scale=2),
-                     'b': distributions.get_distribution('uniform', loc=0, scale=2),
-                     'a+b': None}
-    explore.get_config()
+    projexp = project.ProjectDistExplore()
+    projexp.seed = 8888
+    projexp.model.dists = {'a': distributions.get_distribution('normal', loc=3, scale=2),
+                           'b': distributions.get_distribution('uniform', loc=0, scale=2),
+                           'a+b': None}
+    projexp.get_config()
 
-    dset = dataset.DataSet()
-    dset.set_data(np.vstack((np.repeat(np.arange(5), 5), np.random.normal(loc=10, scale=1, size=25))).transpose())
+    projdset = project.ProjectDataSet()
+    projdset.model.data = np.vstack((np.repeat(np.arange(5), 5),
+                                     np.random.normal(loc=10, scale=1, size=25))).transpose()
 
     proj = project.Project()
-    proj.add_item(u)
-    proj.add_item(u2)
-    proj.add_item(rsk)
-    proj.add_item(swp)
-    proj.add_item(fit)
-    proj.add_item(rev)
-    proj.add_item(revswp)
-    proj.add_item(explore)
-    proj.add_item(dset)
+    proj.add_item(proj1)
+    proj.add_item(proj2)
+    proj.add_item(projrsk)
+    proj.add_item(projswp)
+    proj.add_item(projfit)
+    proj.add_item(projrev)
+    proj.add_item(projrevswp)
+    proj.add_item(projexp)
+    proj.add_item(projdset)
     reportorig = proj.calculate()
 
     # Save_config given file NAME
@@ -89,19 +97,20 @@ def test_saveload_fname(tmpdir):
 
 def test_projrem():
     # Test add/remove items from project
-    u = suncal.UncertCalc('f = a*b', name='function1')
-    u2 = suncal.UncertCalc('g = c*d', name='function2')
+    u = suncal.Model('f = a*b')
+    u2 = suncal.Model('g = c*d')
+    p1 = project.ProjectUncert(u, name='function1')
+    p2 = project.ProjectUncert(u2, name='function2')
 
     proj = project.Project()
-    proj.add_item(u)
-    proj.add_item(u2)
+    proj.add_item(p1)
+    proj.add_item(p2)
     assert proj.get_names() == ['function1', 'function2']
     proj.rem_item(0)
     assert proj.get_names() == ['function2']
 
     proj = project.Project()
-    proj.add_item(u)
-    proj.add_item(u2)
+    proj.add_item(p1)
+    proj.add_item(p2)
     proj.rem_item('function2')
     assert proj.get_names() == ['function1']
-

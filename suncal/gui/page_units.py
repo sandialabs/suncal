@@ -4,8 +4,10 @@ from PyQt5 import QtWidgets
 from pint import DimensionalityError, UndefinedUnitError
 
 from . import gui_common
-from .. import unitmgr
-from .. import report
+from ..common import unitmgr, report
+
+
+CHR_X_RED = '<font color="Red" size=5>✗</font>'
 
 
 class UnitsConverter(QtWidgets.QDialog):
@@ -27,7 +29,7 @@ class UnitsConverter(QtWidgets.QDialog):
         self.abbrout = QtWidgets.QLabel()
         self.dimin = QtWidgets.QLabel()
         self.dimout = QtWidgets.QLabel()
-        self.dimok = QtWidgets.QLabel(gui_common.CHR_RARROW)
+        self.dimok = QtWidgets.QLabel('➡')
         self.msg = QtWidgets.QLabel()
 
         layout = QtWidgets.QVBoxLayout()
@@ -38,7 +40,7 @@ class UnitsConverter(QtWidgets.QDialog):
         hlayout.addWidget(QtWidgets.QLabel('Units'), 0, 4)
         hlayout.addWidget(self.valuein, 1, 0)
         hlayout.addWidget(self.unitin, 1, 1)
-        hlayout.addWidget(QtWidgets.QLabel(gui_common.CHR_RARROW), 1, 2)
+        hlayout.addWidget(QtWidgets.QLabel('➡'), 1, 2)
         hlayout.addWidget(self.valueout, 1, 3)
         hlayout.addWidget(self.unitout, 1, 4)
         hlayout.addWidget(QtWidgets.QLabel('Unit Name:'), 2, 0)
@@ -66,13 +68,13 @@ class UnitsConverter(QtWidgets.QDialog):
         try:
             inpt = float(self.valuein.text())
         except ValueError:
-            msg.append('Invalid number {}'.format(self.valuein.text()))
+            msg.append(f'Invalid number {self.valuein.text()}')
             inpt = 0
 
         try:
             uin = unitmgr.parse_units(self.unitin.text())
         except (AttributeError, UndefinedUnitError, ValueError, TypeError):
-            msg.append('Undefined unit {}'.format(self.unitin.text()))
+            msg.append(f'Undefined unit {self.unitin.text()}')
             self.namein.setText('---')
             self.abbrin.setText('---')
             self.dimin.setText('---')
@@ -85,7 +87,7 @@ class UnitsConverter(QtWidgets.QDialog):
         try:
             uout = unitmgr.parse_units(self.unitout.text())
         except UndefinedUnitError:
-            msg.append('Undefined unit {}'.format(self.unitout.text()))
+            msg.append(f'Undefined unit {self.unitout.text()}')
             uout = None
             self.nameout.setText('---')
             self.abbrout.setText('---')
@@ -100,10 +102,10 @@ class UnitsConverter(QtWidgets.QDialog):
                 valout = (inpt * uin).to(uout).magnitude
             except DimensionalityError:
                 msg.append('Dimensionality Mismatch')
-                self.dimok.setText(gui_common.CHR_X_RED)
+                self.dimok.setText(CHR_X_RED)
             else:
-                self.valueout.setText(format(valout, '.4g'))
-                self.dimok.setText(gui_common.CHR_RARROW)
+                self.valueout.setText(f'{valout:.4g}')
+                self.dimok.setText('➡')
 
         if len(msg) > 0:
             self.valueout.setText('---')

@@ -7,9 +7,9 @@ from PyQt5 import QtWidgets, QtGui
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 
-from . import gui_common
+from . import gui_common  # noqa: F401
 from . import gui_widgets
-from .. import ttable
+from ..common import ttable
 
 
 class TTableDialog(QtWidgets.QDialog):
@@ -34,6 +34,7 @@ class TTableDialog(QtWidgets.QDialog):
         self.output = QtWidgets.QLabel()
         self.fig = Figure()
         self.canvas = FigureCanvas(self.fig)
+        self.canvas.setStyleSheet("background-color:transparent;")
         self.canvas.setMaximumWidth(500)
         self.canvas.setMaximumHeight(500)
 
@@ -62,26 +63,27 @@ class TTableDialog(QtWidgets.QDialog):
         ''' Run the calculation and plot '''
         if self.cmbSolveFor.currentText() == 'Coverage Factor':
             degf = float(self.degf.text())
-            k = ttable.t_factor(float(self.conf.text())/100, float(self.degf.text()))
-            self.output.setText('<font size=4>k: {:.4f}</font>'.format(k))
+            k = ttable.k_factor(float(self.conf.text())/100, float(self.degf.text()))
+            self.output.setText(f'<font size=4>k: {k:.4f}</font>')
         elif self.cmbSolveFor.currentText() == 'Confidence':
             degf = float(self.degf.text())
             k = float(self.k.text())
             conf = ttable.confidence(k, degf) * 100
-            self.output.setText('<font size=4>Confidence: {:.3f}%</font>'.format(conf))
+            self.output.setText(f'<font size=4>Confidence: {conf:.3f}%</font>')
         else:
             k = float(self.k.text())
             degf = ttable.degf(k, float(self.conf.text())/100)
             if degf > 1E6:
                 self.output.setText('<font size=4>Degrees of Freedom: &infin;</font>')
             else:
-                self.output.setText('<font size=4>Degrees of Freedom: {:.2f}</font>'.format(degf))
+                self.output.setText(f'<font size=4>Degrees of Freedom: {degf:.2f}</font>')
 
         self.fig.clf()
         ax = self.fig.add_subplot(1, 1, 1)
         xx = np.linspace(-4, 4, num=200)
         ax.plot(xx, stats.norm.pdf(xx), label='Normal')
-        ax.plot(xx, stats.t.pdf(xx, df=degf), label='t (df={})'.format('{:.2f}'.format(degf) if degf < 1E6 else r'$\infty$'))
+        ax.plot(xx, stats.t.pdf(xx, df=degf),
+                label=f't (df={degf:.2f})' if degf < 1E6 else r't ($\infty$)')
         ax.axvline(k, ls=':', color='black')
         ax.axvline(-k, ls=':', color='black')
         ax.set_ylabel('Probability Density Function')

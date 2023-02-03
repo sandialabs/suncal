@@ -6,10 +6,8 @@ from matplotlib.figure import Figure
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
 
-from .. import dist_explore
-from .. import distributions
-from .. import report
-from .. import uparser
+from ..project import ProjectDistExplore
+from ..common import report, distributions, uparser
 from . import gui_common
 from . import gui_widgets
 
@@ -39,7 +37,7 @@ class DistEntry(QtWidgets.QWidget):
         self.btnCustom = QtWidgets.QToolButton()
         self.btnSample = QtWidgets.QToolButton()
         self.btnAdd.setText('+')
-        self.btnRem.setText(gui_common.CHR_ENDASH)
+        self.btnRem.setText('–')  # endash
         self.btnCustom.setText('normal...')
         self.btnSample.setText('Sample')
         self.btnAdd.setToolTip('Insert distribution')
@@ -116,6 +114,7 @@ class DistDialog(QtWidgets.QDialog):
         self.table = gui_widgets.DistributionEditTable(args)
         self.fig = Figure()
         self.canvas = FigureCanvas(self.fig)
+        self.canvas.setStyleSheet("background-color:transparent;")
         self.btnBox = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel)
 
         self.setWindowTitle('Configure Probability Distribution')
@@ -216,10 +215,10 @@ class DistributionListWidget(QtWidgets.QWidget):
 
 class DistWidget(QtWidgets.QWidget):
     ''' Page widget for distribution explorer '''
-    def __init__(self, item, parent=None):
+    def __init__(self, projitem, parent=None):
         super().__init__(parent)
-        assert isinstance(item, dist_explore.DistExplore)
-        self.distexplore = item
+        assert isinstance(projitem, ProjectDistExplore)
+        self.projitem = projitem
 
         self.distlist = DistributionListWidget()
         self.scroll = QtWidgets.QScrollArea()
@@ -229,56 +228,66 @@ class DistWidget(QtWidgets.QWidget):
         self.samples = QtWidgets.QLineEdit('10000')
         self.samples.setValidator(QtGui.QIntValidator(1, 10000000))
         self.samples.setMaximumWidth(300)
-        self.samples.editingFinished.connect(lambda: self.distexplore.set_numsamples(int(self.samples.text())))
+        self.samples.editingFinished.connect(lambda: self.projitem.model.set_numsamples(int(self.samples.text())))
         self.seed = QtWidgets.QLineEdit('None')
 
         self.cmbView = QtWidgets.QComboBox()
-        self.cmbView.addItems(self.distexplore.samplevalues.keys())
+        self.cmbView.addItems(self.projitem.model.samplevalues.keys())
         self.cmbFit = QtWidgets.QComboBox()
         dists = gui_common.settings.getDistributions()
         dists = [d for d in dists if distributions.fittable(d)]
         self.cmbFit.addItems(['None'] + dists)
-        self.chkCoverage = QtWidgets.QCheckBox('Show 95% Coverage')
+        self.chkInterval = QtWidgets.QCheckBox('Show 95% Coverage')
         self.chkProbPlot = QtWidgets.QCheckBox('Show Probability Plot')
         self.fig = Figure()
         self.canvas = FigureCanvas(self.fig)
         self.toolbar = NavigationToolbar(self.canvas, self, coordinates=True)
         self.txtOutput = gui_widgets.MarkdownTextEdit()
 
-        llayout = QtWidgets.QVBoxLayout()
-        llayout.addWidget(QtWidgets.QLabel('Input distributions and Monte Carlo expressions:'))
-        llayout.addWidget(self.scroll)
         slayout = QtWidgets.QHBoxLayout()
         slayout.addWidget(QtWidgets.QLabel('Samples:'))
         slayout.addWidget(self.samples)
         slayout.addStretch()
         slayout.addWidget(QtWidgets.QLabel('Random Seed:'))
         slayout.addWidget(self.seed)
+        llayout = QtWidgets.QVBoxLayout()
+        llayout.addWidget(QtWidgets.QLabel('Input distributions and Monte Carlo expressions:'))
+        llayout.addWidget(self.scroll)
         llayout.addLayout(slayout)
-        rlayout = QtWidgets.QVBoxLayout()
         clayout = QtWidgets.QHBoxLayout()
         clayout.addWidget(QtWidgets.QLabel('Output:'))
         clayout.addWidget(self.cmbView)
         clayout.addStretch()
         clayout.addWidget(QtWidgets.QLabel('Fit:'))
         clayout.addWidget(self.cmbFit)
-        clayout.addWidget(self.chkCoverage)
+        clayout.addWidget(self.chkInterval)
         clayout.addWidget(self.chkProbPlot)
+        rlayout = QtWidgets.QVBoxLayout()
         rlayout.addLayout(clayout)
         rlayout.addWidget(self.canvas, stretch=10)
         rlayout.addWidget(self.toolbar)
-        rlayout.addWidget(self.txtOutput, stretch=6)
+        self.topwidget = QtWidgets.QWidget()
+        self.topwidget.setLayout(rlayout)
+        self.rightsplitter = QtWidgets.QSplitter(QtCore.Qt.Vertical)
+        self.rightsplitter.addWidget(self.topwidget)
+        self.rightsplitter.addWidget(self.txtOutput)
+        self.leftwidget = QtWidgets.QWidget()
+        self.leftwidget.setLayout(llayout)
+        self.splitter = QtWidgets.QSplitter()
+        self.splitter.addWidget(self.leftwidget)
+        self.splitter.addWidget(self.rightsplitter)
+        self.splitter.setCollapsible(0, False)
+        self.splitter.setCollapsible(1, False)
         layout = QtWidgets.QHBoxLayout()
-        layout.addLayout(llayout)
-        layout.addLayout(rlayout)
+        layout.addWidget(self.splitter)
         self.setLayout(layout)
 
         # Initialize
-        if len(self.distexplore.dists) == 0:
+        if len(self.projitem.model.dists) == 0:
             self.distlist.addItem('a')  # Make a new distribution named 'a'
             self.dist_changed()   # Save it
         else:
-            for expr, dist in self.distexplore.dists.items():
+            for expr, dist in self.projitem.model.dists.items():
                 self.distlist.addItem(str(expr), dist)
 
         self.menu = QtWidgets.QMenu('Distributions')
@@ -291,7 +300,7 @@ class DistWidget(QtWidgets.QWidget):
         self.cmbView.currentIndexChanged.connect(self.changeview)
         self.cmbFit.currentIndexChanged.connect(self.changeview)
         self.chkProbPlot.stateChanged.connect(self.changeview)
-        self.chkCoverage.stateChanged.connect(self.changeview)
+        self.chkInterval.stateChanged.connect(self.changeview)
         self.distlist.sample.connect(self.sample)
         self.distlist.changed.connect(self.dist_changed)
 
@@ -300,26 +309,32 @@ class DistWidget(QtWidgets.QWidget):
         return self.menu
 
     def calculate(self):
-        pass
+        ''' Run the calculation. It runs automatically, so this does nothing '''
+
+    def update_proj_config(self):
+        ''' Update model with values entered on page.
+            Happens on entry, nothing to do here.
+        '''
 
     def clear(self):
         ''' Clear the distribution list '''
-        self.distexplore.samplevalues = {}
+        self.projitem.model.samplevalues = {}
         self.distlist.clear()
         self.cmbView.clear()
 
     def changeview(self):
         ''' Output view changed. Update plot and text report. '''
         name = self.cmbView.currentText()
-        if name in self.distexplore.samplevalues:
+        if name in self.projitem.model.samplevalues:
             fitdist = self.cmbFit.currentText()
             fitdist = None if fitdist == 'None' else fitdist
             qq = self.chkProbPlot.isChecked()
             if fitdist is None and qq:
                 fitdist = 'normal'
 
-            self.distexplore.out.plot_hist(name, plot=self.fig, fitdist=fitdist, qqplot=qq, coverage=self.chkCoverage.isChecked())
-            self.txtOutput.setReport(self.distexplore.out.report_single(name))
+            fitparams = self.projitem.result.report.plot.hist(
+                name, fig=self.fig, fitdist=fitdist, qqplot=qq, interval=self.chkInterval.isChecked())
+            self.txtOutput.setReport(self.projitem.result.report.single(name, fitparams))
             self.fig.suptitle(report.Math(name).latex())
             self.canvas.draw_idle()
         else:
@@ -328,9 +343,9 @@ class DistWidget(QtWidgets.QWidget):
     def dist_changed(self, name=None):
         ''' Distribution changed, store to DistExplore object '''
         dists = self.distlist.get_dists()
-        self.distexplore.dists = dists
+        self.projitem.model.dists = dists
         if name is not None:
-            self.distexplore.samplevalues.pop(name, None)
+            self.projitem.model.samplevalues.pop(name, None)
         self.updatecmbView()
         self.changeview()
 
@@ -338,7 +353,7 @@ class DistWidget(QtWidgets.QWidget):
         ''' Add available (sampled) items to combo box and select name, if given '''
         self.cmbView.blockSignals(True)
         self.cmbView.clear()
-        self.cmbView.addItems(list(self.distexplore.samplevalues.keys()))
+        self.cmbView.addItems(list(self.projitem.model.samplevalues.keys()))
         if name is not None:
             self.cmbView.setCurrentIndex(self.cmbView.findText(name))
         else:
@@ -357,9 +372,9 @@ class DistWidget(QtWidgets.QWidget):
             np.random.seed(seed)
 
         try:
-            self.distexplore.sample(name)
+            self.projitem.model.sample(name)
         except ValueError:
-            QtWidgets.QMessageBox.warning(self, 'Sampling', 'Undefined variable in expression {}'.format(name))
+            QtWidgets.QMessageBox.warning(self, 'Sampling', f'Undefined variable in expression {name}')
         self.updatecmbView(name=name)
         self.changeview()
 
@@ -368,8 +383,8 @@ class DistWidget(QtWidgets.QWidget):
         fitdist = self.cmbFit.currentText()
         fitdist = None if fitdist == 'None' else fitdist
         qq = self.chkProbPlot.isChecked()
-        cov = self.chkCoverage.isChecked()
-        return self.distexplore.get_output().report_all(fitdist=fitdist, coverage=cov, qqplot=qq)
+        cov = self.chkInterval.isChecked()
+        return self.projitem.result.report.all(fitdist=fitdist, coverage=cov, qqplot=qq)
 
     def save_report(self):
         ''' Save full report, asking user for settings/filename '''

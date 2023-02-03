@@ -7,9 +7,9 @@ from dateutil.parser import parse
 
 from PyQt5 import QtWidgets, QtCore
 
-from .. import dataset
+from ..datasets.dataset_model import DataSet
+from ..project import ProjectDataSet
 from . import gui_widgets
-
 
 
 def _gettype(val):
@@ -60,7 +60,7 @@ class SelectCSVData(QtWidgets.QDialog):
             rawcsv = QtWidgets.QApplication.instance().clipboard().text()
             csvfile = StringIO(rawcsv)
         else:
-            csvfile = open(fname, 'r')
+            csvfile = open(fname, 'r', encoding='utf-8')
         try:
             dialect = csv.Sniffer().sniff(csvfile.read(1024), [',', ';', ' '])
         except (csv.Error, UnicodeDecodeError):
@@ -81,12 +81,15 @@ class SelectCSVData(QtWidgets.QDialog):
             for col, val in enumerate(columns):
                 self.table.setItem(row, col, QtWidgets.QTableWidgetItem(val.strip()))
                 if self.table.item(row, col) is not None:
-                    self.table.item(row, col).setFlags(QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled)  # No editable
+                    self.table.item(row, col).setFlags(QtCore.Qt.ItemIsSelectable |
+                                                       QtCore.Qt.ItemIsEnabled)  # No editable
         self.table.resizeColumnsToContents()
-        self.table.setRangeSelected(QtWidgets.QTableWidgetSelectionRange(0, 0, self.table.rowCount()-1, self.table.columnCount()-1), True)
+        self.table.setRangeSelected(
+            QtWidgets.QTableWidgetSelectionRange(0, 0, self.table.rowCount()-1, self.table.columnCount()-1), True)
         self.selection_change()
 
     def selection_change(self):
+        ''' Selection has changed '''
         rng = self.table.selectedRanges()
         self.dlgbutton.button(QtWidgets.QDialogButtonBox.Ok).setEnabled(len(rng) > 0)
 
@@ -144,16 +147,7 @@ class SelectCSVData(QtWidgets.QDialog):
         self.accept()
 
     def dataset(self):
-        ''' Get DataSet object (assumes checkdatarange already called to validate) '''
-
-        def padnans(v, fillval=np.nan):
-            # https://stackoverflow.com/questions/40569220/efficiently-convert-uneven-list-of-lists-to-minimal-containing-array-padded-with
-            lens = np.array([len(item) for item in v])
-            mask = lens[:, None] > np.arange(lens.max())
-            out = np.full(mask.shape, fillval)
-            out[mask] = np.concatenate(v)
-            return out
-
+        ''' Get ProjectDataSet object (assumes checkdatarange already called to validate) '''
         data = self.columns
         hdr = self.header if len(self.header) > 0 else [f'Column {i}' for i in range(len(self.columns))]
-        return dataset.DataSet(data, hdr)
+        return ProjectDataSet(DataSet(data, hdr))

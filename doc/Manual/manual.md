@@ -1,6 +1,6 @@
 ---
-title: Sandia Primary Standards Laboratory Uncertainty Calculator User's Guide
-date: November 9, 2020
+title: Suncal User's Guide
+date: January 9, 2023
 author:
 - Sandia National Laboratories^[Sandia National Laboratories is a multimission laboratory managed and operated by National Technology and Engineering Solutions of Sandia, LLC., a wholly owned subsidiary of Honeywell International, Inc., for the U.S. Department of Energy’s National Nuclear Security Administration under contract DE-NA-0003525.]
 - uncertainty@sandia.gov
@@ -12,12 +12,8 @@ link-citations: true
 
 # Introduction
 
-The Sandia PSL Uncertainty Calculator software was developed by the Primary Standards Laboratory (PSL) at Sandia National Laboratories.
-After repeatedly writing individual bits of Python code to perform uncertainty propagation calculations for different systems, the decision was made to generalize the code and make it available to the PSL's customers as a tool for performing GUM and Monte Carlo uncertainty propagation on any measurement system.
-The initial software versions were limited to GUM and Monte Carlo uncertainty propagation, and were primarily used primarily at the PSL and Sandia.
-The calculations had to be written in Python Code. Eventually, a simple user interface was added to remove the coding requirement.
-Additional features, such as risk analysis and evaluating uncertainty in curve fitting, were later added as more code was developed.
-
+Suncal, the Sandia Uncertainty Calculator, was developed by the Primary Standards Laboratory (PSL) at Sandia National Laboratories.
+The software provides a user interface and Python API for performing various statistical calulations related to metrology and calibration.
 
 ## Features
 
@@ -27,14 +23,14 @@ The available calculation types are:
 - Reverse uncertainty propagation to determine measurement uncertainty required to meet a target combined uncertainty
 - Uncertainty sweep to calculate multiple uncertainty propagations over a range of inputs
 - Reverse uncertainty sweep to calculate multiple reverse uncertainty propagations
-- Analyze measured data sets, including computation of autocorrelation and analysis of variance
+- Analyze measured data sets for repeatability and reproducibility, including computation of autocorrelation and analysis of variance
 - Curve fitting, accounting for uncertainty in x and y measurements, and providing uncertainty in the output curve
-- Risk analysis for determining probability of false accept and false reject
+- Risk analysis for determining probability of false accept and false reject and guardbanded acceptance limits
 - Calibration interval analysis for finding optimal interval lengths
 - T-Table calculator for determining values based on a Student's-t distribution
 
 
-The PSL Uncertainty Calculator has a number of features that differentiate it from other uncertainty software solutions:
+Suncal has a number of features that differentiate it from other uncertainty software solutions:
 
 - The GUM method is solved symbolically, providing the user with the actual formulas used, not just numerical results.
 - Automatic conversion of measurement units and dimensional analysis.
@@ -43,9 +39,9 @@ The PSL Uncertainty Calculator has a number of features that differentiate it fr
 - Over 90 probability distributions are available. If used as a Python module, custom distributions can also be defined.
 - Multiple output functions can be computed in parallel, and any output functions may be used as the input to another measurement function.
 - Uncertainty propagation can be calculated in reverse to determine how much uncertainty an individual measurement must have to meet a target uncertainty requirement.
-- The ability to propagate uncertainty through arbitrary functions, including iteratively-solved functions.
-- The software is based on Python, quickly becoming the most popular language for data analysis as well as communication with hardware instruments.
-- Command line interface for embedding the calculator in other programming languages.
+- The ability to propagate uncertainty through arbitrary functions, including iteratively-solved functions, using Python code.
+- The software is based on Python, a popular language for data analysis as well as communication with hardware instruments.
+- Command line interface for embedding Suncal in other programming languages.
 - Calculation of uncertainty in curve fitting, including arbitrary curve models.
 - Calculation results and plots can be saved in HTML, PDF, Word, or Open Office formats.
 - Desktop usage, no internet connection is required and all data stays local.
@@ -57,18 +53,18 @@ The PSL Uncertainty Calculator has a number of features that differentiate it fr
 Many of the statistics and calculations used in this software leverage the well-established computing packages available in Python, including [NumPy](http://www.numpy.org), [SciPy](http://www.scipy.org), and [SymPy](https://www.sympy.org/).
 The SymPy package allows this software to provide and solve symbolic equations for uncertainty propagation rather than relying on numeric methods.
 SciPy contains a vast collection of statistical methods and probability distribution definitions that are used throughout this software.
-The Monte Carlo simulations make use of the Mersenne Twister random number generator as implemented in SciPy, generally regarded as a quality PRNG for Monte Carlo methods.
+The Monte Carlo simulations make use of the Mersenne Twister random number generator as implemented in SciPy, generally regarded as a quality Pseudo-Random Number Generator (PRNG) for Monte Carlo methods.
 
 
 ## Installation
 
-The calculator user interface is available on Windows and Mac operating systems. For Linux systems, install and run as a [Python package](#python-usage).
+Suncal's user interface is available on Windows and Mac operating systems. For Linux systems, install and run as a [Python package](#python-usage).
 On Windows, two options are available. A standalone EXE file can be run without administrator privileges. If admin rights are available, an installer EXE can be run to install the program for faster operation. On Mac operating systems, the APP can be copied to the Applications folder and run directly from there.
 
 
 # Calculations
 
-When the calculator user interface is launched, the Select Calculation Type menu displays (see {*@fig:startup}).
+When the user interface is launched, the Select Calculation Type menu displays (see {*@fig:startup}).
 Select one of the calculation options, or alternatively load a setup file from disk using the **Project** menu.
 The **Project** menu also contains options for adding additional calculations, saving the current setup, or saving a report of all output results.
 The **Window** menu provides options for calculating t-table values and showing a list of all calculations in the project.
@@ -87,14 +83,24 @@ The uncertainty propagation function uses the method described in the GUM [@GUM]
 
 $$u_c = \sqrt{ \sum_{i=1}^{N} \left(\frac{\partial f}{\partial x_i}\right)^2 u(x_i)^2 + 2\sum_{i=1}^N \sum_{j=i+1}^N \frac{\partial f}{\partial x_i} \frac{\partial f}{\partial x_j} u(x_i, x_j)}$$
 
-where $u(x_i)$ is the standard uncertainty in the measured variable $x_i$ and $u(x_i, x_j)$ is the covariance between variables $x_i$ and $x_j$. When possible, the partial derivatives are solved symbolically and a full symbolic expression for uncertainty can be obtained along with numeric values. In the rare case a symbolic derivative is not possible, the calculator will fall back on numerical methods for finding the derivatives.
+where $u(x_i)$ is the standard uncertainty in the measured variable $x_i$ and $u(x_i, x_j)$ is the covariance between variables $x_i$ and $x_j$. When possible, the partial derivatives are solved symbolically and a full symbolic expression for uncertainty can be obtained along with numeric values. In the rare case a symbolic derivative is not possible, Suncal will fall back on numerical methods for finding the derivatives.
 
 At the same time, a Monte-Carlo uncertainty propagation is performed in accordance with GUM Supplement 1. Each of the input variables are sampled from their respective probability distributions, and passed through the measurement function to obtain a probability distribution for the output variable. Mean, median, and standard deviation statistics can be pulled from this distribution to summarize the results.
 
-Both calculation methods also provide a method for computing expanded uncertainties. The GUM method uses the Welch-Satterthwaite (W-S) approximation to determine an effective degree of freedom and determine the resulting k-factor for a given confidence interval. It should be noted that the W-S formula is technically only valid for uncorrelated input variables, although the calculator will use it even for problems involving correlations. The Monte Carlo method determines expanded uncertainty intervals by taking either the shortest or symmetric percentiles of the output probability distribution.
+Both calculation methods also provide a method for computing expanded uncertainties. The GUM method uses the Welch-Satterthwaite (W-S) approximation to determine an effective degree of freedom and determine the resulting k-factor for a given confidence interval. It should be noted that the W-S formula is technically only valid for uncorrelated input variables, although Suncal will use it even for problems involving correlations. The Monte Carlo method determines expanded uncertainty intervals by taking either the shortest or symmetric percentiles of the output probability distribution.
+
+### Wizard Interface
+
+Selecting the **Uncertainty Wizard** button from the main menu opens a guided interface for entering a measurement model and uncertainties associated with each input variable.
+While the wizard is limited to a single function in the measurement model, it does provide easy methods for configuring variables based on a single measurement value, or a repeatability or reproducibility array of values, while taking care of the uncertainty calculation from the array of data.
+The **Help** button in the wizard interface shows more details about the prompt for information to ensure the correct values are entered.
+After calculating, results from the wizard interface are identical to results from the standard interface described below.
 
 
-### Inputs
+### Standard Uncertainty Interface
+
+The standard uncertainty interface provides a few more options for uncertainty propagation calculations, but does not provide the simple, step-by-step guidance.
+Start by clicking the **Uncertainty Propagation** button from the main screen.
 
 ![Uncertainty Propagation Page](figs/uncertprop.png){#fig:uncertpropview}
 
@@ -217,8 +223,7 @@ There are options for switching between single and joint probability (if multipl
 
 #### Expanded Uncertainties
 
-The Expanded Uncertainties view lists a table of expanded uncertainties at predefined confidence intervals for both calculation methods.
-The GUM expanded uncertainty can show either a student-t expanded uncertainty, where the k-factor is determined using the effective degrees of freedom, or a Normal/k expanded uncertainty, where k is exactly 1, 2, or 3.
+The Expanded Uncertainties view lists a the expanded uncertainty at a specified confidence interval for both calculation methods.
 The Monte Carlo method can show either the symmetric expanded uncertainty (e.g. the 2.5% and 97.5% percentiles for a 95% coverage), or the shortest range that covers the desired percentage of samples [@NPL10].
 
 #### Uncertainty Components
@@ -260,7 +265,7 @@ They can be plotted as individual histograms or as joint scatter plots to look f
 
 #### Monte Carlo Convergence
 
-The calculator runs the same number of samples regardless of the Monte Carlo simulation convergence.
+Suncal runs the same number of samples regardless of the Monte Carlo simulation convergence.
 This plot should be checked to ensure that enough samples were run to adequately converge on a mean and uncertainty solution.
 
 #### Full Report
@@ -593,9 +598,9 @@ A **Preferences** window allows you to change some common settings, including:
 These settings will remain in place the next time the program is opened.
 
 
-# Python usage
+# Python API
 
-The back end of the calculator can be installed and run as a Python package to allow greater flexibility in defining the calculations, loading input data, and processing the results.
+The back end of Suncal can be installed and run as a Python package to allow greater flexibility in defining the calculations, loading input data, and processing the results.
 Running as a package allows for uncertainty propagation through arbitrary functions, curve fitting to any curve, and loading/saving data to any file format available to Python.
 It can also run uncertainty propagation calculations on complex valued (real and imaginary) measurement models natively.
 
@@ -605,19 +610,19 @@ The Python package can be installed using pip:
 
 or by downloading the source code, navigating to the source folder, and running:
 
-        python setup.py install
+        pip install .
 
-The calculator can be imported into your code with
+Suncal can be imported into your code with
 
         import suncal
 
-Refer to the docs folder of the source code repository for usage examples in Jupyter Notebook format.
+Refer to the docs folder of the source code repository for API documentation and examples in Jupyter Notebook format.
 
 
 # Command line usage
 
-Once the Python package is installed, a command-line interface to the calculator is available.
-This allows for the calculator's algorithms to be used within other programming languages and scripts such as LabView, Metcal, or R.
+Once the Python package is installed, a command-line interface to Suncal is available.
+This allows for Suncal's algorithms to be used within other programming languages and scripts such as LabView, Metcal, or R.
 The following command line programs are installed with the Python package:
 
 - `suncalui`: Launches the user interface
@@ -743,7 +748,7 @@ The components are given with tolerances, and thus are interpreted as uniform di
 | $C_1$      | 0.22 $\mu$F   |  5%         |
 | $C_2$      | 0.1 $\mu$F    |  1%         |
 
-To determine the time constant and its uncertainty using the calculator, set up a new Uncertainty Propagation calculation.
+To determine the time constant and its uncertainty using Suncal, set up a new Uncertainty Propagation calculation.
 Enter the measurement model name (`tau`) and expression (`R*(C1+C2)`) as shown in {*@fig:rcrisktau}.
 The Uncertainties table will fill in with the variable names.
 Enter "ms" in the units column to obtain the resulting time constant and uncertainty in milliseconds.
@@ -804,7 +809,7 @@ The resistance between each pair of contacts is measured and plotted as a functi
 A line is fit to the data points and extrapolated back to zero length.
 The y-intercept of this point should include only resistance from the two contacts, and not the nanowire itself.
 
-The Uncertainty Calculator can be used to both fit the line and determine the uncertainty in extracting the y-intercept.
+Suncal can be used to both fit the line and determine the uncertainty in extracting the y-intercept.
 Start with a Curve Fit calculation.
 In the **Curve Fit** window, enter x values of the different lengths between contacts, and y values of the resistance measurement.
 If uncertainty in the resistance is known, those values can be entered in the u(y) column.
@@ -841,7 +846,7 @@ This problem involves using a reverse uncertainty propagation in order to find t
 Because there are two free variables (density and mass), there are actually infinite solutions to the problem.
 However, one variable can be sweept while solving the reverse uncertainty requirement for the other variable, and any solution falling under the resulting curve will be acceptable to meet the maximum density uncertainty.
 
-To enter this setup into the Calculator, add a **Reverse Sweep** to a new Project.
+To enter this setup into Suncal, add a **Reverse Sweep** to a new Project.
 Enter the measurement model and nominal quantities for mass and diameter.
 Next, enter the target uncertianty under the **Target** section.
 The function to solve is **rho**, the target value is **14.967**, and target uncertainty is **0.02**. Note the k = 1 value should be entered here.
@@ -881,11 +886,11 @@ The plot now displays a single mean value with uncertainty bars at each date, ef
 To predict the drift over the next year to the calibration due date of July 1, 2019, select **Add Calculation** from the **Project Menu** and select **Curve Fit**.
 Import the data we just loaded into the curve fit by selecting **Insert Data From** from the **Curve Fit** menu.
 Double-click **Summarized Array** to select it as the data source.
-The Calculator will predefine the first columns as x, y, and u(y).
+Suncal will predefine the first columns as x, y, and u(y).
 Click **OK** to load the data, then click **Calculate** to find the line fit.
 
 Next, use the fit line and its uncertainty to calculate the probability of the pressure gage falling outside the 185 PSI limit on the next calibration date.
-Add a new Risk Analysis to the calculator project by selecting **Add Calculation** from the **Project** menu and clicking **Risk Analysis**.
+Add a new Risk Analysis to the project by selecting **Add Calculation** from the **Project** menu and clicking **Risk Analysis**.
 From the **Risk** menu, select **Import Distribution**.
 Double click **curvefit** as the data source, then select **Prediction (LSQ)** in the table.
 Select **Process Distribution** from the **Assigned Variable** dropdown to indicate this column should be imported as the Process Disitribution.
@@ -903,7 +908,7 @@ This risk may be high enough to warrant an adjustment or repair to the gauge to 
 
 # Copyright and License
 
-Copyright 2019-2020 National Technology & Engineering Solutions of Sandia, LLC (NTESS).
+Copyright 2019-2023 National Technology & Engineering Solutions of Sandia, LLC (NTESS).
 Under the terms of Contract DE-NA0003525 with NTESS, the U.S. Government retains certain rights in this software.
 
 This program is free software: you can redistribute it and/or modify

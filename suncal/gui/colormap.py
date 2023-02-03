@@ -8,11 +8,11 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from PyQt5 import QtCore, QtWidgets
 
 # Sequential colormaps defined in matplotlib 2.0
-DFLT_CMAPS = ['viridis', 'plasma', 'inferno', 'magma', 'cividis', 'Greys', 'Purples', 'Blues', 'Greens', 'Oranges', 'Reds',
-              'YlOrBr', 'YlOrRd', 'OrRd', 'PuRd', 'RdPu', 'BuPu', 'GnBu', 'PuBu', 'YlGnBu', 'PuBuGn', 'BuGn', 'YlGn',
-              'bone', 'pink', 'spring', 'summer', 'autumn', 'winter', 'cool', 'Wistia', 'hot', 'gist_heat', 'copper',
-              'twilight', 'hsv', 'ocean', 'gist_earth', 'terrain', 'gnuplot', 'cubehelix', 'brg', 'gist_rainbow', 'jet'
-              ]
+DFLT_CMAPS = ['viridis', 'plasma', 'inferno', 'magma', 'cividis', 'Greys', 'Purples', 'Blues', 'Greens', 'Oranges',
+              'Reds', 'YlOrBr', 'YlOrRd', 'OrRd', 'PuRd', 'RdPu', 'BuPu', 'GnBu', 'PuBu', 'YlGnBu', 'PuBuGn', 'BuGn',
+              'YlGn', 'bone', 'pink', 'spring', 'summer', 'autumn', 'winter', 'cool', 'Wistia', 'hot', 'gist_heat',
+              'copper', 'twilight', 'hsv', 'ocean', 'gist_earth', 'terrain', 'gnuplot', 'cubehelix', 'brg',
+              'gist_rainbow', 'jet']
 
 
 class ColorMapPickerWidget(QtWidgets.QWidget):
@@ -43,12 +43,12 @@ class ColorMapPickerWidget(QtWidgets.QWidget):
 
         self.axes = []
         self.labels = []
-        for i, cm in enumerate(self.cmaps):
+        for i, cmap in enumerate(self.cmaps):
             ax = self.fig.add_subplot(len(self.cmaps), 1, (i+1))
-            ax.imshow(gradient, aspect='auto', cmap=mpl.cm.get_cmap(cm))
+            ax.imshow(gradient, aspect='auto', cmap=mpl.cm.get_cmap(cmap))
             ax.set_axis_off()
             pos = list(ax.get_position().bounds)
-            label = self.fig.text(pos[0]-.01, pos[1]+pos[3]/2, cm, va='center', ha='right', fontsize=10)
+            label = self.fig.text(pos[0]-.01, pos[1]+pos[3]/2, cmap, va='center', ha='right', fontsize=10)
             if i == self.selectedidx:
                 label.set_fontstyle('italic')
                 label.set_color('red')

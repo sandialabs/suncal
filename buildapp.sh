@@ -14,12 +14,12 @@ python ./suncal/gui/gen_licenses.py
 
 # Bundle app
 echo Building APP for Sandia PSL Uncert Calc $ver...
-pyinstaller --onefile --windowed uncertmac.spec
+pyinstaller uncertmac.spec
 
 # Build zip file
 echo Zipping package...
 cd dist
-zip -r SandiaUncertCalc-OSX-$ver.zip "Sandia PSL Uncertainty Calculator.app"
+zip -r SandiaUncertCalc-OSX-$ver.zip "Suncal.app"
 cd ../doc
 zip -r ../dist/SandiaUncertCalc-OSX-$ver.zip Examples/*.yaml
 zip -r ../dist/SandiaUncertCalc-OSX-$ver.zip Examples/Data/*.dat

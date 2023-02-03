@@ -10,15 +10,15 @@ from .licenses import licenses
 class AboutUC(QtWidgets.QWidget):
     ''' Widget with the normal "About" information '''
 
-    ABOUT = '''<font size=6>Uncertainty Calculator</font><br>
-Version: {} - {}<br><br>
+    ABOUT = f'''<font size=6>Suncal - Sandia Uncertainty Calculator</font><br>
+Version: {version.__version__} - {version.__date__}<br><br>
 <font size=5>Primary Standards Lab<br>Sandia National Laboratories<br></font>
 <font size=4>uncertainty@sandia.gov<br><br></font>
 <font size=3>
-Copyright 2019-2022 National Technology & Engineering Solutions of Sandia, LLC (NTESS).
+Copyright 2019-2023 National Technology & Engineering Solutions of Sandia, LLC (NTESS).
 <br>Under the terms of Contract DE-NA0003525 with NTESS, the U.S. Government
 <br>retains certain rights in this software.
-</font>'''.format(version.__version__, version.__date__)
+</font>'''
 
     def __init__(self, parent=None):
         super().__init__(parent=parent)
@@ -38,7 +38,7 @@ class AboutBox(QtWidgets.QDialog):
     ''' About dialog with copyright, credits, and license information '''
     def __init__(self, parent=None):
         super().__init__(parent=parent)
-        self.setWindowTitle('Sandia PSL Uncertainty Calculator')
+        self.setWindowTitle('Suncal')
         self.setMinimumHeight(450)
         font = self.font()
         font.setPointSize(10)

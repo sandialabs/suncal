@@ -1,31 +1,23 @@
-#!/usr/bin/env python
-'''
-Main Window for PSL Uncertainty Calculator GUI
-'''
+''' Main Window for PSL Uncertainty Calculator GUI '''
 import sys
 from contextlib import suppress
 from PyQt5 import QtWidgets, QtGui, QtCore
 
-from .. import project
-from .. import report
 from .. import version
-from .. import uncertainty as uc
-from .. import dataset
-from .. import dist_explore
-from .. import sweeper
-from .. import reverse
-from .. import risk
-from .. import curvefit
+from ..project import Project, ProjectUncert, ProjectRisk, ProjectDataSet, ProjectDistExplore, ProjectReverse, \
+                      ProjectSweep, ProjectReverseSweep, ProjectCurveFit, ProjectUncertWizard
+from ..common import report
 from . import gui_common
 from . import gui_widgets
 from . import configmgr
 from . import page_about
+from . import page_uncert
 from . import page_dataset
 from . import page_curvefit
 from . import page_reverse
 from . import page_risk
 from . import page_sweep
-from . import page_uncertprop
+from . import page_wizard
 from . import page_distribution
 from . import page_interval
 from . import page_ttable
@@ -60,6 +52,7 @@ class CalculationsListWidget(QtWidgets.QListWidget):
         item = self.item(self.count()-1)
         item.setFlags(item.flags() | QtCore.Qt.ItemIsEditable)
         iconame = {'uncertainty': 'target',
+                   'wizard': 'wizard',
                    'curvefit': 'curvefit',
                    'risk': 'risk',
                    'sweep': 'targetlist',
@@ -104,7 +97,7 @@ class ProjectDockWidget(QtWidgets.QWidget):
         self.btnadd = QtWidgets.QToolButton()
         self.btnrem = QtWidgets.QToolButton()
         self.btnadd.setText('+')
-        self.btnrem.setText(gui_common.CHR_ENDASH)
+        self.btnrem.setText('–')  # endash
         self.btnadd.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
         self.btnrem.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
         hlayout = QtWidgets.QHBoxLayout()
@@ -124,8 +117,8 @@ class ProjectDockWidget(QtWidgets.QWidget):
         idx = self.projectlist.currentRow()
         if idx >= 0:
             msgbox = QtWidgets.QMessageBox()
-            msgbox.setWindowTitle('Uncertainty Calculator')
-            msgbox.setText('Remove {} from project?'.format(self.projectlist.currentItem().text()))
+            msgbox.setWindowTitle('Suncal')
+            msgbox.setText(f'Remove {self.projectlist.currentItem().text()} from project?')
             msgbox.setStandardButtons(QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
             if msgbox.exec_() == QtWidgets.QMessageBox.Yes:
                 self.projectlist.takeItem(idx)
@@ -148,6 +141,11 @@ class InsertCalcWidget(QtWidgets.QWidget):
         self.btnInterval = ToolButton('Calibration\nIntervals', gui_common.load_icon('interval'))
         self.btnDist = ToolButton('Distribution\nExplorer', gui_common.load_icon('dists'))
 
+        self.btnWizard = QtWidgets.QPushButton('Uncertainty Wizard')
+        self.btnWizard.setIconSize(QtCore.QSize(32, 32))
+        self.btnWizard.setIcon(gui_common.load_icon('wizard'))
+        self.btnWizard.setFixedSize(84*3+10, int(84/1.5))
+
         self.btnUnc.clicked.connect(lambda x: self.newcomp.emit('uncertainty'))
         self.btnCurve.clicked.connect(lambda x: self.newcomp.emit('curvefit'))
         self.btnRisk.clicked.connect(lambda x: self.newcomp.emit('risk'))
@@ -157,6 +155,7 @@ class InsertCalcWidget(QtWidgets.QWidget):
         self.btnDataset.clicked.connect(lambda x: self.newcomp.emit('data'))
         self.btnDist.clicked.connect(lambda x: self.newcomp.emit('distributions'))
         self.btnInterval.clicked.connect(lambda x: self.newcomp.emit('interval'))
+        self.btnWizard.clicked.connect(lambda x: self.newcomp.emit('wizard'))
 
         glayout = QtWidgets.QGridLayout()
         glayout.addWidget(self.btnUnc, 0, 0)
@@ -174,13 +173,10 @@ class InsertCalcWidget(QtWidgets.QWidget):
         layout.addStretch()
         layout.addWidget(QtWidgets.QLabel('Select Calculation Type'))
         layout.addLayout(glayout)
+        layout.addSpacing(15)
+        layout.addWidget(self.btnWizard)
         layout.addStretch()
         self.setLayout(layout)
-
-    # TODO: MOVE TO MAINGUI
-    def showhelp(self):
-        filename = gui_common.resource_path('SUNCALmanual.pdf')
-        QtGui.QDesktopServices.openUrl(QtCore.QUrl(r'file:/' + filename))
 
 
 class MainGUI(QtWidgets.QMainWindow):
@@ -192,13 +188,13 @@ class MainGUI(QtWidgets.QMainWindow):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle('Sandia PSL Uncertainty Calculator - v' + version.__version__)
+        self.setWindowTitle('Suncal - v' + version.__version__)
         gui_widgets.centerWindow(self, 1200, 900)
         font = self.font()
         font.setPointSize(10)
         self.setFont(font)
 
-        self.project = project.Project()  # New empty project
+        self.project = Project()  # New empty project
 
         # project dock
         self.projdock = QtWidgets.QDockWidget('Project Components', self)
@@ -238,7 +234,7 @@ class MainGUI(QtWidgets.QMainWindow):
         actAbout = QtWidgets.QAction('&About', self)
         actAbout.triggered.connect(page_about.show)
         actHelp = QtWidgets.QAction('&Documentation', self)
-        actHelp.triggered.connect(self.pginsert.showhelp)
+        actHelp.triggered.connect(self.showhelp)
 
         # Project Menu
         self.actInsertCalc = QtWidgets.QAction('Add Calculation...', self)
@@ -301,43 +297,52 @@ class MainGUI(QtWidgets.QMainWindow):
                 Type of calculation to add.
         '''
         if typename == 'uncertainty':
-            item = uc.UncertCalc(gui_common.settings.getFunc(), seed=gui_common.settings.getRandomSeed())
+            item = ProjectUncert()
+            item.seed = gui_common.settings.getRandomSeed()
+            item.nsamples = gui_common.settings.getRandomSeed()
             self.project.add_item(item)
-            widget = page_uncertprop.UncertPropWidget(item)
+            widget = page_uncert.UncertPropWidget(item)
             widget.newtype.connect(self.change_component)
+        elif typename == 'wizard':
+            item = ProjectUncertWizard()
+            self.project.add_item(item)
+            widget = page_wizard.UncertWizard(item)
         elif typename == 'curvefit':
-            arr = curvefit.Array([], [])
-            item = curvefit.CurveFit(arr, func='line')
+            item = ProjectCurveFit()
+            item.seed = gui_common.settings.getRandomSeed()
             self.project.add_item(item)
             widget = page_curvefit.CurveFitWidget(item)
         elif typename == 'risk':
-            item = risk.Risk()
+            item = ProjectRisk()
             self.project.add_item(item)
             widget = page_risk.RiskWidget(item)
         elif typename == 'sweep':
-            uitem = uc.UncertCalc(gui_common.settings.getFunc(), seed=gui_common.settings.getRandomSeed())
-            uitem.project = self.project
-            item = sweeper.UncertSweep(uitem)
+            item = ProjectSweep()
+            item.seed = gui_common.settings.getRandomSeed()
+            item.nsamples = gui_common.settings.getRandomSeed()
             self.project.add_item(item)
             widget = page_sweep.UncertSweepWidget(item)
             widget.newtype.connect(self.change_component)
         elif typename == 'reverse':
-            item = reverse.UncertReverse(gui_common.settings.getFunc(), seed=gui_common.settings.getRandomSeed())
+            item = ProjectReverse()
+            item.seed = gui_common.settings.getRandomSeed()
+            item.nsamples = gui_common.settings.getRandomSeed()
             self.project.add_item(item)
             widget = page_reverse.UncertReverseWidget(item)
             widget.newtype.connect(self.change_component)
         elif typename == 'reversesweep':
-            uitem = reverse.UncertReverse(gui_common.settings.getFunc(), seed=gui_common.settings.getRandomSeed())
-            item = sweeper.UncertSweepReverse(uitem)
+            item = ProjectReverseSweep()
+            item.seed = gui_common.settings.getRandomSeed()
+            item.nsamples = gui_common.settings.getRandomSeed()
             self.project.add_item(item)
             widget = page_sweep.UncertReverseSweepWidget(item)
             widget.newtype.connect(self.change_component)
         elif typename == 'data':
-            item = dataset.DataSet()
+            item = ProjectDataSet()
             self.project.add_item(item)
             widget = page_dataset.DataSetWidget(item)
         elif typename == 'distributions':
-            item = dist_explore.DistExplore()
+            item = ProjectDistExplore()
             self.project.add_item(item)
             widget = page_distribution.DistWidget(item)
         elif typename == 'interval':
@@ -360,27 +365,27 @@ class MainGUI(QtWidgets.QMainWindow):
     def change_component(self, config, newtype):
         ''' Convert item into new type (e.g. uncertprop into reverse) '''
         if newtype == 'reverse':
-            item = reverse.UncertReverse.from_config(config)
+            item = ProjectReverse.from_config(config)
             self.project.add_item(item)
             widget = page_reverse.UncertReverseWidget(item)
             widget.newtype.connect(self.change_component)
         elif newtype == 'sweep':
-            item = sweeper.UncertSweep.from_config(config)
+            item = ProjectSweep.from_config(config)
             self.project.add_item(item)
             widget = page_sweep.UncertSweepWidget(item)
             widget.newtype.connect(self.change_component)
         elif newtype == 'uncertainty':
-            item = uc.UncertCalc.from_config(config)
+            item = ProjectUncert.from_config(config)
             self.project.add_item(item)
-            widget = page_uncertprop.UncertPropWidget(item)
+            widget = page_uncert.UncertPropWidget(item)
             widget.newtype.connect(self.change_component)
         elif newtype == 'reversesweep':
-            item = sweeper.UncertSweepReverse.from_config(config)
+            item = ProjectReverseSweep.from_config(config)
             self.project.add_item(item)
             widget = page_sweep.UncertReverseSweepWidget(item)
             widget.newtype.connect(self.change_component)
         else:
-            raise ValueError('Unknown calculation type {}'.format(newtype))
+            raise ValueError(f'Unknown calculation type {newtype}')
 
         item.name = newtype
         self.dockwidget.projectlist.addItem(newtype, item.name)
@@ -412,6 +417,11 @@ class MainGUI(QtWidgets.QMainWindow):
             self.topstack.setCurrentIndex(self.PG_TOP_PROJECT)
             self.projstack.currentWidget().get_menu().menuAction().setVisible(True)
 
+    def showhelp(self):
+        ''' Show the user manual '''
+        filename = gui_common.resource_path('SUNCALmanual.pdf')
+        QtGui.QDesktopServices.openUrl(QtCore.QUrl(r'file:/' + filename))
+
     def edit_prefs(self):
         ''' Show preferences dialog '''
         dlg = configmgr.PgSettingsDlg()
@@ -420,23 +430,38 @@ class MainGUI(QtWidgets.QMainWindow):
 
     def save_project(self):
         ''' Save project to file. '''
-        fname, _ = QtWidgets.QFileDialog.getSaveFileName(caption='Select file to save', filter='Suncal YAML (*.yaml);;All files (*.*)')
+        fname, _ = QtWidgets.QFileDialog.getSaveFileName(
+            caption='Select file to save', filter='Suncal YAML (*.yaml);;All files (*.*)')
         if fname:
+            for i in range(self.projstack.count()):
+                # Update each project component with values from page
+                widget = self.projstack.widget(i)
+                widget.update_proj_config()
             self.project.save_config(fname)
+
+    def build_config(self):
+        ''' Refresh configuration dictionary defining the project '''
+        config = []
+        for item in self.project.items:
+            config.append(item.get_config())
 
     def load_project(self):
         ''' Load a project from file, prompting user for filename '''
-        fname, self.openconfigfolder = QtWidgets.QFileDialog.getOpenFileName(caption='Select file to open', directory=self.openconfigfolder, filter='Suncal YAML (*.yaml);;All files (*.*)')
+        fname, self.openconfigfolder = QtWidgets.QFileDialog.getOpenFileName(
+            caption='Select file to open', directory=self.openconfigfolder,
+            filter='Suncal YAML (*.yaml);;All files (*.*)')
         if fname:
             self.newproject()
             oldproject = self.project  # just in case things go wrong...
-            self.project = project.Project.from_configfile(fname)
+            self.project = Project.from_configfile(fname)
             if self.project is not None:
                 for i in range(self.project.count()):
                     mode = self.project.get_mode(i)
                     if mode == 'uncertainty':
-                        widget = page_uncertprop.UncertPropWidget(self.project.items[i])
+                        widget = page_uncert.UncertPropWidget(self.project.items[i])
                         widget.newtype.connect(self.change_component)
+                    elif mode == 'wizard':
+                        widget = page_wizard.UncertWizard(self.project.items[i])
                     elif mode == 'sweep':
                         widget = page_sweep.UncertSweepWidget(self.project.items[i])
                         widget.newtype.connect(self.change_component)
@@ -466,7 +491,7 @@ class MainGUI(QtWidgets.QMainWindow):
                 self.projdock.setVisible(True)
                 self.topstack.setCurrentIndex(self.PG_TOP_PROJECT)
             else:
-                QtWidgets.QMessageBox.warning(self, 'Uncertainty Calculator', 'Error loading file!')
+                QtWidgets.QMessageBox.warning(self, 'Suncal', 'Error loading file!')
                 self.project = oldproject
 
     def newproject(self):
@@ -474,13 +499,13 @@ class MainGUI(QtWidgets.QMainWindow):
         ok = True
         if self.project is not None and self.project.count() > 0:
             msgbox = QtWidgets.QMessageBox()
-            msgbox.setWindowTitle('Uncertainty Calculator')
+            msgbox.setWindowTitle('Suncal')
             msgbox.setText('Existing project components will be removed. Are you sure?')
             msgbox.setStandardButtons(QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
             ok = msgbox.exec_() == QtWidgets.QMessageBox.Yes
         if ok:
             self.projstack.blockSignals(True)
-            self.project = project.Project()
+            self.project = Project()
             while self.projstack.count() > 0:  # No clear() method available
                 widget = self.projstack.widget(0)
                 self.menubar.removeAction(widget.get_menu().menuAction())
@@ -530,7 +555,7 @@ class MainGUI(QtWidgets.QMainWindow):
         ''' Window is being closed. Verify. '''
         if self.project.count() > 0:
             msgbox = QtWidgets.QMessageBox()
-            msgbox.setWindowTitle('Uncertainty Calculator')
+            msgbox.setWindowTitle('Suncal')
             msgbox.setText('Are you sure you want to close?')
             msgbox.setStandardButtons(QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
             if msgbox.exec_() == QtWidgets.QMessageBox.No:
@@ -546,10 +571,10 @@ def main():
     QtWidgets.QApplication.setAttribute(QtCore.Qt.AA_UseHighDpiPixmaps)
     app = QtWidgets.QApplication(sys.argv)
 
-    main = MainGUI()
+    maingui = MainGUI()
     icon = gui_common.get_logo()
-    main.setWindowIcon(icon)
-    main.show()
+    maingui.setWindowIcon(icon)
+    maingui.show()
     app.exec_()
 
 

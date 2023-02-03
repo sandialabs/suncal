@@ -3,12 +3,11 @@ from collections import namedtuple
 import numpy as np
 from PyQt5 import QtWidgets, QtCore
 from matplotlib.figure import Figure
-from matplotlib.ticker import FormatStrFormatter, ScalarFormatter
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
 
-from .. import risk
-from .. import distributions
+from ..project import ProjectRisk
+from ..common import distributions
 from . import gui_common
 from . import gui_widgets
 from . import page_dataimport
@@ -46,8 +45,8 @@ class DoubleLineEdit(QtWidgets.QWidget):
 
     def setValue(self, value1, value2):
         ''' Set value of both lines '''
-        self.line1.setText(format(value1, '.5g'))
-        self.line2.setText(format(value2, '.5g'))
+        self.line1.setText(f'{value1:.5g}')
+        self.line2.setText(f'{value2:.5g}')
 
 
 class SimpleRiskWidget(QtWidgets.QWidget):
@@ -123,11 +122,11 @@ class SweepWidget(QtWidgets.QGroupBox):
         self.tur.addItems(items)
         self.procbias.addItems(items)
         self.testbias.addItems(items)
-        self.gbf.addItems(items + ['RSS', 'Dobbert', 'RP10', '95% Test'])
-        self.tur.setCurrentIndex(1) # Z
-        self.gbf.setCurrentIndex(2) # Fixed
-        self.procbias.setCurrentIndex(2) # Fixed
-        self.testbias.setCurrentIndex(2) # Fixed
+        self.gbf.addItems(items + ['RDS', 'Dobbert', 'RP10', '95% Test'])
+        self.tur.setCurrentIndex(1)  # Z
+        self.gbf.setCurrentIndex(2)  # Fixed
+        self.procbias.setCurrentIndex(2)  # Fixed
+        self.testbias.setCurrentIndex(2)  # Fixed
         self.itpval = gui_widgets.FloatLineEdit('90')
         self.turval = gui_widgets.FloatLineEdit('4')
         self.gbfval = gui_widgets.FloatLineEdit('1')
@@ -301,7 +300,7 @@ class GuardBandFinderWidget(QtWidgets.QDialog):
         self.pfaval.setDecimals(2)
         self.pfaval.setSingleStep(0.1)
         self.dobbert = QtWidgets.QRadioButton('Dobbert Managed 2% PFA')
-        self.rss = QtWidgets.QRadioButton('RSS')
+        self.rss = QtWidgets.QRadioButton('RDS')
         self.rp10 = QtWidgets.QRadioButton('NCSL RP10')
         self.test = QtWidgets.QRadioButton('95% Test Uncertainty')
         self.fourtoone = QtWidgets.QRadioButton('Same as 4:1')
@@ -325,9 +324,9 @@ class GuardBandFinderWidget(QtWidgets.QDialog):
         layout.addWidget(self.pfa, 1, 0)
         layout.addWidget(self.pfaval, 1, 1)
         layout.addWidget(self.dobbert, 2, 0)
-        layout.addWidget(QtWidgets.QLabel(u'<b>k = 1 - M<sub>2{}</sub>/TUR</b>'.format(gui_common.CHR_PERCENT)), 2, 1)
+        layout.addWidget(QtWidgets.QLabel('<b>k = 1 - M<sub>2%</sub>/TUR</b>'), 2, 1)
         layout.addWidget(self.rss, 3, 0)
-        layout.addWidget(QtWidgets.QLabel(u'<b>k = {}(1-1/TUR<sup>2</sup>)</b>'.format(gui_common.CHR_SQRT)), 3, 1)
+        layout.addWidget(QtWidgets.QLabel('<b>k = √(1-1/TUR<sup>2</sup>)</b>'), 3, 1)
         layout.addWidget(self.rp10, 4, 0)
         layout.addWidget(QtWidgets.QLabel('<b>k = 1.25 - 1/TUR</b>'), 4, 1)
         layout.addWidget(self.test, 5, 0)
@@ -399,21 +398,23 @@ class CostEntryWidget(QtWidgets.QDialog):
             self.costfr.setValue(costFR)
 
     def getCost(self):
+        ''' Get costs entered into widget '''
         return self.costfa.value(), self.costfr.value()
 
 
 class RiskWidget(QtWidgets.QWidget):
     ''' Widget for risk calculations '''
-    def __init__(self, item, parent=None):
+    def __init__(self, projitem, parent=None):
         super().__init__(parent)
-        assert isinstance(item, risk.Risk)
-        self.urisk = item
-        self.urisk.calculate()  # With risk, calculate just creates an output object
+        assert isinstance(projitem, ProjectRisk)
+        self.projitem = projitem
+        self.projitem.calculate()  # With risk, calculate just creates an output object
         self.plotlines = {}  # Saved lines in plot
         self.mode = QtWidgets.QComboBox()
         self.mode.addItems(['Simple', 'Full'])
         self.calctype = QtWidgets.QComboBox()
-        self.calctype.addItems(['Integral', 'Monte Carlo', 'Guardband sweep', 'Probability of Conformance', 'Risk Curves'])
+        self.calctype.addItems(['Integral', 'Monte Carlo', 'Guardband sweep',
+                                'Probability of Conformance', 'Risk Curves'])
 
         self.simple = SimpleRiskWidget()
         self.limits = DoubleLineEdit(-2, 2, 'Lower Specification Limit:', 'Upper Specification Limit:')
@@ -433,17 +434,18 @@ class RiskWidget(QtWidgets.QWidget):
         self.txtNotes = QtWidgets.QPlainTextEdit()
         self.fig = Figure()
         self.canvas = FigureCanvas(self.fig)
+        self.canvas.setStyleSheet("background-color:transparent;")
         self.toolbar = NavigationToolbar(self.canvas, self, coordinates=True)
         self.txtOutput = gui_widgets.MarkdownTextEdit()
 
-        if self.urisk.is_simple():
+        if self.projitem.model.is_simple():
             self.mode.setCurrentIndex(0)
-            self.simple.tur.setValue(self.urisk.get_tur())
-            self.simple.gbfactor.setValue(self.urisk.get_gbf())
-            self.simple.itp.setValue(self.urisk.get_itp()*100)
-            procargs = self.urisk.get_procdist_args()
-            testargs = self.urisk.get_testdist_args()
-            testargs.update({'bias': self.urisk.testbias})
+            self.simple.tur.setValue(self.projitem.model.get_tur())
+            self.simple.gbfactor.setValue(self.projitem.model.get_gbf())
+            self.simple.itp.setValue(self.projitem.model.get_itp()*100)
+            procargs = self.projitem.model.get_procdist_args()
+            testargs = self.projitem.model.get_testdist_args()
+            testargs.update({'bias': self.projitem.model.testbias})
             self.dproc_table = gui_widgets.DistributionEditTable(initargs=procargs)
             self.dtest_table = gui_widgets.DistributionEditTable(initargs=testargs, locslider=True)
             self.chkProc.setChecked(True)
@@ -451,56 +453,52 @@ class RiskWidget(QtWidgets.QWidget):
 
         else:  # Full Risk
             self.mode.setCurrentIndex(1)
-            if self.urisk.get_procdist() is None:
+            if self.projitem.model.procdist is None:
                 procargs = {'dist': 'normal', 'median': 0, 'std': 1}
             else:
-                procargs = self.urisk.get_procdist_args()
+                procargs = self.projitem.model.get_procdist_args()
 
-            if self.urisk.get_testdist() is None:
+            if self.projitem.model.testdist is None:
                 testargs = {'dist': 'normal', 'std': .25, 'bias': 0}
             else:
-                testargs = self.urisk.get_testdist_args()
-                testargs.update({'bias': self.urisk.testbias})
+                testargs = self.projitem.model.get_testdist_args()
+                testargs.update({'bias': self.projitem.model.testbias})
             self.dproc_table = gui_widgets.DistributionEditTable(initargs=procargs)
             self.dtest_table = gui_widgets.DistributionEditTable(initargs=testargs, locslider=True)
-            self.limits.setValue(*self.urisk.get_speclimits())
-            self.guardband.setValue(*self.urisk.get_guardband())
+            self.limits.setValue(*self.projitem.model.speclimits)
+            self.guardband.setValue(*self.projitem.model.gbofsts)
 
-            if self.urisk.testdist is None and self.urisk.procdist is None:
-                self.urisk.set_testdist(distributions.get_distribution('normal', std=0.125))
-                self.urisk.set_procdist(distributions.get_distribution('normal', std=1))
+            if self.projitem.model.testdist is None and self.projitem.model.procdist is None:
+                self.projitem.model.testdist = distributions.get_distribution('normal', std=0.125)
+                self.projitem.model.procdist = distributions.get_distribution('normal', std=1)
 
-            elif self.urisk.testdist is None:
-                self.urisk.set_testdist(distributions.get_distribution('normal', std=0.125))
-                self.urisk.testdist_saved = self.urisk.testdist
-                self.urisk.testdist = None
+            elif self.projitem.model.testdist is None:
+                self.projitem.model.testdist = distributions.get_distribution('normal', std=0.125)
+                self.projitem.model.testdist_saved = self.projitem.model.testdist
+                self.projitem.model.testdist = None
                 self.dtest_table.setEnabled(False)
                 self.chkGB.setEnabled(False)
                 self.guardband.setEnabled(False)
 
-            elif self.urisk.procdist is None:
-                self.urisk.set_procdist(distributions.get_distribution('normal', std=1))
-                self.urisk.procdist_saved = self.urisk.procdist
-                self.urisk.procdist = None
+            elif self.projitem.model.procdist is None:
+                self.projitem.model.procdist = distributions.get_distribution('normal', std=1)
+                self.projitem.model.procdist_saved = self.projitem.model.procdist
+                self.projitem.model.procdist = None
                 self.dproc_table.setEnabled(False)
 
-            if self.urisk.testdist is not None:
+            if self.projitem.model.testdist is not None:
                 self.chkTest.setChecked(True)
-                if self.urisk.guardband[0] > 0 or self.urisk.guardband[1] > 0:
+                if self.projitem.model.gbofsts[0] > 0 or self.projitem.model.gbofsts[1] > 0:
                     self.chkGB.setChecked(True)
 
-        self.chkProc.setChecked(self.urisk.get_procdist() is not None)
-        self.txtNotes.setPlainText(self.urisk.description)
-        
+        self.chkProc.setChecked(self.projitem.model.procdist is not None)
+        self.txtNotes.setPlainText(self.projitem.description)
         self.tab = QtWidgets.QTabWidget()
 
-        layout = QtWidgets.QHBoxLayout()
-        llayout = QtWidgets.QVBoxLayout()
         vlayout = QtWidgets.QVBoxLayout()
         flayout = QtWidgets.QFormLayout()
         flayout.addRow('Mode:', self.mode)
         flayout.addRow('Calculation:', self.calctype)
-        
         vlayout.addLayout(flayout)
         vlayout.addWidget(self.simple)
         vlayout.addWidget(self.limits)
@@ -513,12 +511,20 @@ class RiskWidget(QtWidgets.QWidget):
         vlayout.addWidget(self.sweepsetup)
         vlayout.addStretch()
         rlayout = QtWidgets.QVBoxLayout()
-        rlayout.addWidget(self.canvas, stretch=20)
+        rlayout.addWidget(self.canvas, stretch=int(20))
         rlayout.addWidget(self.toolbar)
-        rlayout.addWidget(self.txtOutput, stretch=8)
-        llayout.addWidget(self.tab)
-        layout.addLayout(llayout, stretch=1)
-        layout.addLayout(rlayout, stretch=2.5)
+        self.topwidget = QtWidgets.QWidget()
+        self.topwidget.setLayout(rlayout)
+        self.rightsplitter = QtWidgets.QSplitter(QtCore.Qt.Vertical)
+        self.rightsplitter.addWidget(self.topwidget)
+        self.rightsplitter.addWidget(self.txtOutput)
+        self.splitter = QtWidgets.QSplitter()
+        self.splitter.addWidget(self.tab)
+        self.splitter.addWidget(self.rightsplitter)
+        self.splitter.setCollapsible(0, False)
+        self.splitter.setCollapsible(1, False)
+        layout = QtWidgets.QHBoxLayout()
+        layout.addWidget(self.splitter)
         self.setLayout(layout)
 
         setup = QtWidgets.QWidget()
@@ -560,7 +566,6 @@ class RiskWidget(QtWidgets.QWidget):
 
     def calculate(self):
         ''' Run calculation. Risk is calculated automatically, so this does nothing. '''
-        pass
 
     def get_menu(self):
         ''' Get the menu for this widget '''
@@ -568,7 +573,11 @@ class RiskWidget(QtWidgets.QWidget):
 
     def update_description(self):
         ''' Description was updated, save it. '''
-        self.urisk.description = self.txtNotes.toPlainText()
+        self.projitem.description = self.txtNotes.toPlainText()
+
+    def update_proj_config(self):
+        ''' Save page setup back to project item configuration '''
+        pass  # GUI updates model in real time
 
     def block(self, block):
         ''' Block all signals in Risk widget '''
@@ -590,25 +599,25 @@ class RiskWidget(QtWidgets.QWidget):
         ''' Mode changed (simple to full) '''
         self.block(True)
         simple = self.mode.currentText() == 'Simple'
-        if simple and not self.urisk.is_simple():
-            self.urisk.to_simple()
-            self.simple.tur.setValue(self.urisk.get_tur())
-            self.simple.gbfactor.setValue(self.urisk.get_gbf())
-            self.simple.itp.setValue(self.urisk.get_itp()*100)
+        if simple and not self.projitem.model.is_simple():
+            self.projitem.model.to_simple()
+            self.simple.tur.setValue(self.projitem.model.get_tur())
+            self.simple.gbfactor.setValue(self.projitem.model.get_gbf())
+            self.simple.itp.setValue(self.projitem.model.get_itp()*100)
             self.chkProc.setChecked(True)
             self.chkTest.setChecked(True)
             self.chkProc.setEnabled(True)
             self.chkTest.setEnabled(True)
-            self.dproc_table.set_disttype(self.urisk.get_procdist_args())
-            self.dtest_table.set_disttype(self.urisk.get_testdist_args())
+            self.dproc_table.set_disttype(self.projitem.model.get_procdist_args())
+            self.dtest_table.set_disttype(self.projitem.model.get_testdist_args())
             self.dproc_table.valuechanged()
             self.dtest_table.valuechanged()
 
-        elif not simple and self.urisk.is_simple():
-            self.limits.setValue(*[np.round(x, 3) for x in self.urisk.get_speclimits()])
-            self.guardband.setValue(*[np.round(x, 3) for x in self.urisk.get_guardband()])
-            self.dproc_table.set_disttype(self.urisk.get_procdist_args())
-            self.dtest_table.set_disttype(self.urisk.get_testdist_args())
+        elif not simple and self.projitem.model.is_simple():
+            self.limits.setValue(*[np.round(x, 3) for x in self.projitem.model.speclimits])
+            self.guardband.setValue(*[np.round(x, 3) for x in self.projitem.model.gbofsts])
+            self.dproc_table.set_disttype(self.projitem.model.get_procdist_args())
+            self.dtest_table.set_disttype(self.projitem.model.get_testdist_args())
             self.dproc_table.valuechanged()
             self.dtest_table.valuechanged()
 
@@ -684,24 +693,25 @@ class RiskWidget(QtWidgets.QWidget):
         ''' Replot and update the text fields '''
         self.block(True)
         if self.mode.currentText() == 'Simple':
-            if ((self.simple.get_gbf() != 1.0 and self.urisk.get_gbf() == 1.0) or
-                (self.simple.get_gbf() == 1.0 and self.urisk.get_gbf() != 1.0)):
+            if ((self.simple.get_gbf() != 1.0 and self.projitem.model.get_gbf() == 1.0) or
+               (self.simple.get_gbf() == 1.0 and self.projitem.model.get_gbf() != 1.0)):
                 self.chkGB.setChecked(self.simple.get_gbf() != 1.0)
-            self.urisk.set_itp(self.simple.get_itp())
-            self.urisk.set_tur(self.simple.get_tur())
-            self.urisk.set_gbf(self.simple.get_gbf())
-            self.urisk.set_testmedian(self.simple.get_measured_fraction() * self.get_range()[1])
+            self.projitem.model.set_itp(self.simple.get_itp())
+            self.projitem.model.set_tur(self.simple.get_tur())
+            self.projitem.model.set_gbf(self.simple.get_gbf())
+            self.projitem.model.set_testmedian(self.simple.get_measured_fraction() * self.get_range()[1])
 
         else:
             if self.chkProc.isChecked():
-                self.urisk.set_procdist(self.dproc_table.statsdist)
+                self.projitem.model.procdist = self.dproc_table.statsdist
             if self.chkTest.isChecked():
-                self.urisk.set_testdist(self.dtest_table.statsdist, self.dtest_table.distbias)
+                self.projitem.model.testdist = self.dtest_table.statsdist
+                self.projitem.model.testbias = self.dtest_table.distbias
             if self.chkGB.isChecked():
-                self.urisk.set_guardband(*self.guardband.getValue())
+                self.projitem.model.gbofsts = self.guardband.getValue()
             else:
-                self.urisk.set_guardband(0, 0)
-            self.urisk.set_speclimits(*self.limits.getValue())
+                self.projitem.model.gbofsts = (0, 0)
+            self.projitem.model.speclimits = self.limits.getValue()
 
         if self.calctype.currentText() == 'Monte Carlo':
             self.replot_mc()
@@ -714,37 +724,37 @@ class RiskWidget(QtWidgets.QWidget):
         else:
             self.update_range()
             if (self.actShowJointPDF.isChecked()
-                and self.urisk.get_procdist() is not None
-                and self.urisk.get_testdist() is not None):
-                self.urisk.out.plot_joint(self.fig)
+               and self.projitem.model.procdist is not None
+               and self.projitem.model.testdist is not None):
+                self.projitem.result.report.plot.joint(self.fig)
                 self.canvas.draw_idle()
             else:
-                self.urisk.out.plot_dists(self.fig)
+                self.projitem.result.report.plot.distributions(self.fig)
                 self.canvas.draw_idle()
             self.update_report()
         self.block(False)
 
     def update_report(self):
         ''' Update label fields, recalculating risk values '''
-        self.txtOutput.setReport(self.urisk.out.report())
+        self.txtOutput.setReport(self.projitem.result.report.summary())
 
     def replot_mc(self):
         ''' Replot/report monte carlo method '''
-        rpt = self.urisk.out.report_montecarlo(fig=self.fig)
+        rpt = self.projitem.result.report.montecarlo(fig=self.fig)
         self.fig.tight_layout()
         self.canvas.draw_idle()
         self.txtOutput.setReport(rpt)
 
     def replot_gbsweep(self):
         ''' Plot guardband sweep '''
-        rpt = self.urisk.out.report_gbsweep(plot=self.fig)
+        rpt = self.projitem.result.report.guardband_sweep(fig=self.fig)
         self.fig.tight_layout()
         self.canvas.draw_idle()
         self.txtOutput.setReport(rpt)
 
     def replot_probconform(self):
         ''' Plot probability of conformance given a test measurement result '''
-        rpt = self.urisk.out.report_probconform(plot=self.fig)
+        rpt = self.projitem.result.report.probconform(fig=self.fig)
         self.fig.tight_layout()
         self.canvas.draw_idle()
         self.txtOutput.setReport(rpt)
@@ -752,12 +762,14 @@ class RiskWidget(QtWidgets.QWidget):
     def replot_sweep(self):
         ''' Plot generic PFA(R) sweep '''
         setup = self.sweepsetup.get_sweepvals()
-        if setup is None: return  # No sweep variable
-        self.urisk.set_itp(setup.itp)  # Store defaults
-        self.urisk.set_tur(setup.tur)
-        rpt = self.urisk.out.report_sweep(plot=self.fig, xvar=setup.x, zvar=setup.z, xvals=setup.xvals,
-                                          zvals=setup.zvals, yvar=setup.y, threed=setup.threed,
-                                          gbf=setup.gbf, sig0=setup.sig0, tbias=setup.tbias, pbias=setup.pbias, logy=setup.logy)
+        if setup is None:
+            return  # No sweep variable
+        self.projitem.model.set_itp(setup.itp)  # Store defaults
+        self.projitem.model.set_tur(setup.tur)
+        rpt = self.projitem.result.report.sweep(fig=self.fig, xvar=setup.x, zvar=setup.z, xvals=setup.xvals,
+                                                zvals=setup.zvals, yvar=setup.y, threed=setup.threed,
+                                                gbf=setup.gbf, sig0=setup.sig0, tbias=setup.tbias,
+                                                pbias=setup.pbias, logy=setup.logy)
         self.fig.tight_layout()
         self.canvas.draw_idle()
         self.txtOutput.setReport(rpt)
@@ -770,17 +782,17 @@ class RiskWidget(QtWidgets.QWidget):
             self.chkGB.setChecked(False)
 
         # Save off distributions to restore later
-        if not self.chkTest.isChecked() and self.urisk.testdist is not None:
-            self.urisk.testdist_saved = self.urisk.testdist
-            self.urisk.testdist = None
-        elif self.chkTest.isChecked() and self.urisk.testdist is None:
-            self.urisk.testdist = self.urisk.testdist_saved
+        if not self.chkTest.isChecked() and self.projitem.model.testdist is not None:
+            self.projitem.model.testdist_saved = self.projitem.model.testdist
+            self.projitem.model.testdist = None
+        elif self.chkTest.isChecked() and self.projitem.model.testdist is None:
+            self.projitem.model.testdist = self.projitem.model.testdist_saved
 
-        if not self.chkProc.isChecked() and self.urisk.procdist is not None:
-            self.urisk.procdist_saved = self.urisk.procdist
-            self.urisk.procdist = None
-        elif self.chkProc.isChecked() and self.urisk.procdist is None:
-            self.urisk.procdist = self.urisk.procdist_saved
+        if not self.chkProc.isChecked() and self.projitem.model.procdist is not None:
+            self.projitem.model.procdist_saved = self.projitem.model.procdist
+            self.projitem.model.procdist = None
+        elif self.chkProc.isChecked() and self.projitem.model.procdist is None:
+            self.projitem.model.procdist = self.projitem.model.procdist_saved
 
         self.chkGB.setEnabled(self.chkTest.isChecked())
         self.guardband.setEnabled(self.chkTest.isChecked() and self.chkGB.isChecked())
@@ -816,12 +828,13 @@ class RiskWidget(QtWidgets.QWidget):
     def calc_guardband(self):
         ''' Determine guardband to hit specified PFA '''
         simple = self.mode.currentText() == 'Simple'
-        if self.urisk.get_testdist() is None:
-            QtWidgets.QMessageBox.information(self, 'Uncertainty Calculator', 'Please enable test distribution before finding guardband.')
+        if self.projitem.model.testdist is None:
+            QtWidgets.QMessageBox.information(self, 'Suncal',
+                                              'Please enable test distribution before finding guardband.')
             return
 
         dlg = GuardBandFinderWidget()
-        if not np.isfinite(self.urisk.get_tur()):
+        if not np.isfinite(self.projitem.model.get_tur()):
             dlg.dobbert.setEnabled(False)
             dlg.rss.setEnabled(False)
             dlg.rp10.setEnabled(False)
@@ -829,12 +842,12 @@ class RiskWidget(QtWidgets.QWidget):
             dlg.fourtoone.setEnabled(False)
             dlg.mincost.setEnabled(False)
             dlg.minimax.setEnabled(False)
-            if self.urisk.get_procdist() is None:
+            if self.projitem.model.procdist is None:
                 dlg.pfa.setEnabled(False)
                 dlg.pfaval.setEnabled(False)
                 dlg.maxspecific.setChecked(True)
 
-        elif self.urisk.get_procdist() is None:
+        elif self.projitem.model.procdist is None:
             dlg.pfa.setEnabled(False)
             dlg.pfaval.setEnabled(False)
             dlg.fourtoone.setEnabled(False)
@@ -848,12 +861,12 @@ class RiskWidget(QtWidgets.QWidget):
             if methodargs['method'] in ['mincost', 'minimax']:
                 self.set_costs()
 
-            self.urisk.calc_guardband(**methodargs)
+            self.projitem.model.calc_guardband(**methodargs)
             if simple:
-                self.simple.gbfactor.setValue(self.urisk.get_gbf())
+                self.simple.gbfactor.setValue(self.projitem.model.get_gbf())
                 self.chkGB.setChecked(True)
             else:
-                self.guardband.setValue(*self.urisk.get_guardband())
+                self.guardband.setValue(*self.projitem.model.gbofsts)
                 self.chkGB.setChecked(True)
             self.guardband.setEnabled(True)
 
@@ -862,16 +875,16 @@ class RiskWidget(QtWidgets.QWidget):
 
     def set_costs(self):
         ''' Set expected cost of FA and FR '''
-        dlg = CostEntryWidget(self.urisk.cost_FA, self.urisk.cost_FR, parent=self)
+        dlg = CostEntryWidget(self.projitem.model.cost_FA, self.projitem.model.cost_FR, parent=self)
         ok = dlg.exec()
         if ok:
-            self.urisk.set_costs(*dlg.getCost())
+            self.projitem.model.set_costs(*dlg.getCost())
         self.entry_changed()
 
     def get_report(self):
         ''' Get full report of curve fit, using page settings '''
         mc = self.calctype.currentText() == 'Monte Carlo'
-        return self.urisk.get_output().report_all(mc=mc)
+        return self.projitem.result.report.all(mc=mc)
 
     def save_report(self):
         ''' Save full report, asking user for settings/filename '''
@@ -879,8 +892,9 @@ class RiskWidget(QtWidgets.QWidget):
 
     def importdist(self):
         ''' Use process distribution from the project or a file '''
-        dlg = page_dataimport.DistributionSelectWidget(singlecol=False, enablecorr=False, project=self.urisk.project,
-                    coloptions=['Process Distribution', 'Test Distribution'])
+        dlg = page_dataimport.DistributionSelectWidget(
+            singlecol=False, enablecorr=False, project=self.projitem.project,
+            coloptions=['Process Distribution', 'Test Distribution'])
 
         ok = dlg.exec_()
         if ok:

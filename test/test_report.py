@@ -1,12 +1,10 @@
 ''' Test output.py and formatters '''
 
 import os
-import sympy
 import numpy
-import matplotlib.pyplot as plt
 
-from suncal import report
-from suncal import project
+from suncal.common import report
+from suncal.project import Project
 
 
 def test_format():
@@ -80,7 +78,7 @@ def test_format():
 
 def test_runreports():
     ''' Generate reports of each type. Can be manually verified. '''
-    u = project.Project.from_configfile('test/project.yaml')  # Project file with all calculation types in it
+    u = Project.from_configfile('test/project.yaml')  # Project file with all calculation types in it
     u.calculate()
 
     os.makedirs('testreports', exist_ok=True)

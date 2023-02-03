@@ -10,17 +10,8 @@ import markdown
 from PyQt5 import QtWidgets, QtCore, QtGui
 
 from . import gui_common
-from .. import report
-from .. import distributions
-from .. import css
-
-
-# Custom data roles for tree/table widgets
-ROLE_ORIGDATA = QtCore.Qt.UserRole + 1    # Original, user-entered data
-ROLE_HISTDATA = ROLE_ORIGDATA + 1         # Data for histogram distribution (tuple of (hist, edges))
-ROLE_VARIABLE = ROLE_ORIGDATA + 2         # InputVar object for this row
-ROLE_UNCERT = ROLE_ORIGDATA + 3           # InputUncert object for this row
-ROLE_TOPITEM = ROLE_ORIGDATA + 4          # Top row of Uncertainty item in the table
+from ..common import report, distributions
+from ..common.style import css
 
 
 def centerWindow(window, w, h):
@@ -47,21 +38,21 @@ class TreeButton(QtWidgets.QToolButton):
                      '''
 
     def __init__(self, text):
-        super(TreeButton, self).__init__(text=text)
+        super().__init__(text=text)
         self.setStyleSheet(self.buttonstyle)
         self.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
         self.setFixedSize(18, 18)
 
 
 class PlusMinusButton(QtWidgets.QWidget):
+    ''' Widget containing plus/minus buttons '''
     plusclicked = QtCore.pyqtSignal()
     minusclicked = QtCore.pyqtSignal()
 
-    ''' Widget containing plus/minus buttons '''
     def __init__(self, label='', parent=None):
         super().__init__(parent)
         self.btnplus = TreeButton('+')
-        self.btnminus = TreeButton(gui_common.CHR_ENDASH)
+        self.btnminus = TreeButton('–')  # endash
         layout = QtWidgets.QHBoxLayout()
         self.label = QtWidgets.QLabel(label)
         font = QtGui.QFont('Arial', 14)
@@ -162,7 +153,7 @@ class EditableTableItem(QtWidgets.QTableWidgetItem):
 class GroupBoxWidget(QtWidgets.QGroupBox):
     ''' GroupBox set by widget instead of layout '''
     def __init__(self, widget, title, parent=None):
-        super().__init__(title)
+        super().__init__(title, parent=parent)
         layout = QtWidgets.QVBoxLayout()
         layout.addWidget(widget)
         self.setLayout(layout)
@@ -174,12 +165,11 @@ class LatexDelegate(QtWidgets.QStyledItemDelegate):
         user-entered (not calculated) expression is displayed for editing. Math expressions are rendered
         as graphics instead of text when not in edit mode.
     '''
-    def __init__(self):
-        super().__init__()
+    ROLE_ENTERED = QtCore.Qt.UserRole + 1    # Original, user-entered data
 
     def setEditorData(self, editor, index):
         ''' Restore user-entered text when editing starts '''
-        text = index.model().data(index, ROLE_ORIGDATA)
+        text = index.model().data(index, self.ROLE_ENTERED)
         if text is None:
             text = index.model().data(index, QtCore.Qt.DisplayRole)
         editor.setText(text)
@@ -192,9 +182,9 @@ class LatexDelegate(QtWidgets.QStyledItemDelegate):
     def setModelData(self, editor, model, index):
         ''' Save user-entered text to restore in edit mode later '''
         model.blockSignals(True)  # Only signal on one setData
-        olddata = index.model().data(index, ROLE_ORIGDATA)
+        olddata = index.model().data(index, self.ROLE_ENTERED)
         if editor.text() != olddata:  # Don't refresh unless necessary
-            model.setData(index, editor.text(), ROLE_ORIGDATA)    # Save for later
+            model.setData(index, editor.text(), self.ROLE_ENTERED)    # Save for later
             px = QtGui.QPixmap()
             ratio = QtWidgets.QApplication.instance().devicePixelRatio()
             px.loadFromData(report.Math(editor.text()).svg_buf(fontsize=16*ratio).read())
@@ -254,20 +244,16 @@ class EditableHeaderView(QtWidgets.QHeaderView):
 class FloatTableWidget(QtWidgets.QTableWidget):
     ''' Widget for entering a table of floats
 
-        Parameters
-        ----------
-        movebyrows: bool
-            When done editing, move the selected cell to the next row (True)
-            or the next column (False).
-        headeredit: string or None
-            Editable header. If None, no editing. string options are 'str' or 'float'
-            to restrict header values to strings or floats.
-        paste_multicol: bool
-            Allow pasting multiple columns (and inserting columns as necessary)
+        Args:
+            movebyrows (bool): When done editing, move the selected cell to the next row (True)
+                or the next column (False).
+            headeredit (string): Editable header. If None, no editing. string options are 'str' or 'float'
+                to restrict header values to strings or floats.
+            paste_multicol (bool): Allow pasting multiple columns (and inserting columns as necessary)
     '''
     valueChanged = QtCore.pyqtSignal()
 
-    def __init__(self, movebyrows=False, headeredit=None, xstrings=False, paste_multicol=True, parent=None):
+    def __init__(self, movebyrows=False, headeredit=None, paste_multicol=True, parent=None):
         super().__init__(parent=parent)
         self.movebyrows = movebyrows
         self.paste_multicol = paste_multicol
@@ -277,7 +263,8 @@ class FloatTableWidget(QtWidgets.QTableWidget):
         self.setColumnCount(0)
         if headeredit is not None:
             assert headeredit in ['str', 'float']
-            self.setHorizontalHeader(EditableHeaderView(orientation=QtCore.Qt.Horizontal, floatonly=(headeredit == 'float')))
+            self.setHorizontalHeader(EditableHeaderView(
+                orientation=QtCore.Qt.Horizontal, floatonly=(headeredit == 'float')))
             self.horizontalHeader().headeredited.connect(self.valueChanged)
         QtWidgets.QShortcut(QtGui.QKeySequence('Ctrl+v'), self).activated.connect(self._paste)
         QtWidgets.QShortcut(QtGui.QKeySequence('Ctrl+c'), self).activated.connect(self._copy)
@@ -301,7 +288,7 @@ class FloatTableWidget(QtWidgets.QTableWidget):
         if self.maxcols is not None:
             rowlist = ['\t'.join(r.split()[:self.maxcols-startcol]) for r in rowlist]
 
-        j = 0
+        j = i = 0
         for i, row in enumerate(rowlist):
             collist = row.split()
             if self.paste_multicol:
@@ -324,6 +311,9 @@ class FloatTableWidget(QtWidgets.QTableWidget):
                         self.setColumnCount(startcol+j+1)
                     self.setItem(startrow+i, startcol+j, QtWidgets.QTableWidgetItem(str(val)))
             else:
+                if self.rowCount() <= startrow + i:
+                    self.setRowCount(startrow+i+1)
+                st = row
                 try:
                     val = float(st)
                 except ValueError:
@@ -561,10 +551,8 @@ class MarkdownTextEdit(QtWidgets.QTextEdit):
     def setReport(self, rpt):
         ''' Set text to display in markdown format.
 
-            Parameters
-            ----------
-            rpt: report.Report
-                Report object to format and display as HTML.
+            Args:
+                rpt: Report instance to format and display as HTML.
         '''
         # Don't just self.setHtml to self.rpt.get_html(), since that won't properly scale for
         # hi-dpi displays. Unfortunately, need to recreate report.get_md here but using
@@ -642,14 +630,21 @@ def savereport(rpt, **kwargs):
     if ok:
         setup = dlg.get_setup()
         fmt = setup.get('fmt', 'html')
-        filter = {'html': 'HTML (*.html)', 'tex': 'LaTeX source (*.tex)', 'md': 'Markdown (*.md *.txt)', 'docx': 'Word DOCX (*.docx)',
-                  'pdf': 'PDF (*.pdf)', 'odt': 'Open Document Text (*.odt)'}[fmt]
+        filt = {'html': 'HTML (*.html)',
+                'tex': 'LaTeX source (*.tex)',
+                'md': 'Markdown (*.md *.txt)',
+                'docx': 'Word DOCX (*.docx)',
+                'pdf': 'PDF (*.pdf)',
+                'odt': 'Open Document Text (*.odt)'}[fmt]
 
-        fname, _ = QtWidgets.QFileDialog.getSaveFileName(caption='File to Save', filter=filter)
+        fname, _ = QtWidgets.QFileDialog.getSaveFileName(caption='File to Save', filter=filt)
         if fname:
             if fmt == 'md':
-                data = rpt.get_md(mathfmt='latex', figfmt=setup.get('image'), unicode=setup.get('unicode', True), **kargs)
-                with open(fname, 'w') as f:
+                data = rpt.get_md(mathfmt='latex',
+                                  figfmt=setup.get('image'),
+                                  unicode=setup.get('unicode', True),
+                                  **kargs)
+                with open(fname, 'w', encoding='utf-8') as f:
                     f.write(data)
                 err = None
 
@@ -672,7 +667,7 @@ def savereport(rpt, **kwargs):
                 assert False
 
             if err:
-                QtWidgets.QMessageBox.warning(None, 'Error saving report', 'Error saving report:\n\n{}'.format(err))
+                QtWidgets.QMessageBox.warning(None, 'Error saving report', f'Error saving report:\n\n{err}')
 
 
 class SaveReportOptions(QtWidgets.QDialog):
@@ -694,7 +689,7 @@ class SaveReportOptions(QtWidgets.QDialog):
         self.cmbMath.addItems(['Mathjax', 'Matplotlib'])
         self.cmbImage = QtWidgets.QComboBox()
         self.cmbImage.addItems(['SVG', 'PNG'])  # EPS?
-        self.mjurl = QtWidgets.QLineEdit(report._mathjaxurl)
+        self.mjurl = QtWidgets.QLineEdit(report.MATHJAX_URL)
         self.chkUnicode = QtWidgets.QCheckBox('Allow Unicode')
 
         if not report.pandoc_path:
@@ -711,7 +706,8 @@ class SaveReportOptions(QtWidgets.QDialog):
             self.cmbFormat.setItemText(3, 'PDF (requires Pandoc and LaTeX)')
             self.cmbFormat.model().item(3).setEnabled(False)
 
-        self.cmbFormat.setCurrentIndex(['html', 'md', 'tex', 'pdf', 'odt', 'docx'].index(gui_common.settings.getRptFormat()))
+        self.cmbFormat.setCurrentIndex(
+            ['html', 'md', 'tex', 'pdf', 'odt', 'docx'].index(gui_common.settings.getRptFormat()))
         self.cmbImage.setCurrentIndex(['svg', 'png'].index(gui_common.settings.getRptImgFormat()))
         self.cmbMath.setCurrentIndex(['mathjax', 'mpl'].index(gui_common.settings.getRptMath()))
         self.mjurl.setText(gui_common.settings.getRptMJURL())
@@ -782,6 +778,13 @@ class ListSelectWidget(QtWidgets.QListWidget):
     def itemcheck(self, item):
         self.checkChange.emit(self.row(item))
 
+    def getSelectedValues(self):
+        sel = []
+        for row in range(self.count()):
+            if self.item(row).checkState() == QtCore.Qt.Checked:
+                sel.append(self.item(row).text())
+        return sel
+
     def getSelectedIndexes(self):
         sel = []
         for row in range(self.count()):
@@ -821,7 +824,7 @@ class SpinWidget(QtWidgets.QWidget):
         super().__init__()
         self.label = QtWidgets.QLabel(label)
         self.spin = QtWidgets.QSpinBox()
-        self.spin.setRange(0, 1E8)
+        self.spin.setRange(int(0), int(1E8))
         self.spin.valueChanged.connect(self.valueChanged)
         layout = QtWidgets.QHBoxLayout()
         layout.addWidget(self.label)
@@ -836,158 +839,45 @@ class SpinWidget(QtWidgets.QWidget):
         self.spin.setValue(int(value))
 
 
-class CoverageButtons(QtWidgets.QWidget):
-    ''' Widget for showing pushbuttons for selecting coverage interval percentages.
-
-        Parameters
-        ----------
-        levels: list of strings
-            Names for each button. Defaults to 99%, 95%, etc.
-        dflt: list of int
-            List of buttons to set checked by default
-        multiselect: bool
-            Allow selection of multiple coverage levels
-    '''
+class ExpandedConfidenceWidget(QtWidgets.QWidget):
+    ''' Widget for setting expanded uncertainty confidence and type '''
     changed = QtCore.pyqtSignal()
 
-    def __init__(self, levels=None, dflt=None, multiselect=False):
+    def __init__(self, label='GUM:', showshortest=True):
         super().__init__()
-        self.btngroup = QtWidgets.QButtonGroup()
-        self.btngroup.setExclusive(not multiselect)
-
-        if levels is None:
-            levels = ['99%', '95%', '90%', '85%', '68%']
-
-        if dflt is None:
-            dflt = [1]
-
-        layout = QtWidgets.QHBoxLayout()
-        layout.setSpacing(0)
-        layout.addStretch()
-        for idx, p in enumerate(levels):
-            b1 = QtWidgets.QToolButton()
-            b1.setCheckable(True)
-            b1.setText(p)
-            b1.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
-            if idx in dflt:
-                b1.setChecked(True)
-            self.btngroup.addButton(b1)
-            layout.addWidget(b1)
-        layout.addStretch()
+        self.value = QtWidgets.QDoubleSpinBox()
+        self.value.setDecimals(3)
+        self.value.setSingleStep(1)
+        self.value.setRange(1, 99.999)
+        self.value.setValue(95)
+        self.cmbShortest = QtWidgets.QComboBox()
+        self.cmbShortest.addItems(['Symmetric', 'Shortest'])
+        layout = QtWidgets.QFormLayout()
+        layout.addRow('Confidence %:', self.value)
+        if showshortest:
+            layout.addRow('Monte-Carlo Interval:', self.cmbShortest)
         self.setLayout(layout)
-        self.btngroup.buttonClicked.connect(self.changed)
+        self.value.valueChanged.connect(self.changed)
+        self.cmbShortest.currentIndexChanged.connect(self.changed)
+        self.cmbShortest.setVisible(showshortest)
 
-    def get_covlist(self):
-        cov = []
-        for b in self.btngroup.buttons():
-            if b.isChecked():
-                cov.append(b.text())
-        return cov
+    def get_confidence(self):
+        return self.value.value() / 100
 
-
-class GUMExpandedWidget(QtWidgets.QWidget):
-    ''' Widget with controls for changing coverage interval for GUM.
-
-        Parameters
-        ----------
-        label: string
-            Label for the widget
-        multiselect: bool
-            Allow selection of multiple coverage levels
-        dflt: list of int
-            Index(es) of buttons to check by default
-    '''
-    changed = QtCore.pyqtSignal()
-
-    def __init__(self, label='GUM:', multiselect=True, dflt=None):
-        super().__init__()
-        self.usek = False
-        self.GUMtype = QtWidgets.QComboBox()
-        self.GUMtype.addItems(['Student-t', 'Normal/k'])
-        self.covbuttons = CoverageButtons(dflt=dflt, multiselect=multiselect)
-        self.kbuttons = CoverageButtons(['k = 1', 'k = 2', 'k = 3'], dflt=dflt, multiselect=multiselect)
-        self.kbuttons.setVisible(False)
-        layout = QtWidgets.QVBoxLayout()
-        hlayout = QtWidgets.QFormLayout()
-        hlayout.addRow(label, self.GUMtype)
-        layout.addLayout(hlayout)
-        layout.addWidget(self.covbuttons)
-        layout.addWidget(self.kbuttons)
-        self.setLayout(layout)
-        self.GUMtype.currentIndexChanged.connect(self.typechange)
-        self.kbuttons.changed.connect(self.changed)
-        self.covbuttons.changed.connect(self.changed)
-
-    def typechange(self):
-        self.usek = (self.GUMtype.currentIndex() == 1)
-        self.covbuttons.setVisible(not self.usek)
-        self.kbuttons.setVisible(self.usek)
-        self.changed.emit()
-
-    def get_covlist(self):
-        return self.kbuttons.get_covlist() if self.usek else self.covbuttons.get_covlist()
-
-    def set_buttons(self, values):
-        ''' Check buttons with label in values '''
-        if values is None:
-            values = []
-        for b in self.covbuttons.btngroup.buttons():
-            b.setChecked(b.text() in values)
-        for b in self.kbuttons.btngroup.buttons():
-            b.setChecked(b.text() in values)
-
-
-class MCExpandedWidget(QtWidgets.QWidget):
-    ''' Widget with controls for changing coverage interval for Monte-Carlo.
-
-        Parameters
-        ----------
-        label: string
-            Label for the widget
-        multiselect: bool
-            Allow selection of multiple coverage levels
-        dflt: list of int
-            Index(es) of buttons to check by default
-    '''
-    changed = QtCore.pyqtSignal()
-
-    def __init__(self, label='Monte-Carlo:', multiselect=True, dflt=None):
-        super().__init__()
-        self.MCtype = QtWidgets.QComboBox()
-        self.MCtype.addItems(['Symmetric', 'Shortest'])
-        self.MCtype.currentIndexChanged.connect(self.changed)
-        self.covbuttons = CoverageButtons(dflt=dflt, multiselect=multiselect)
-        layout = QtWidgets.QVBoxLayout()
-        hlayout = QtWidgets.QFormLayout()
-        hlayout.addRow(label, self.MCtype)
-        layout.addLayout(hlayout)
-        layout.addWidget(self.covbuttons)
-        layout.addStretch()
-        self.setLayout(layout)
-        self.covbuttons.changed.connect(self.changed)
-
-    def get_covlist(self):
-        return self.covbuttons.get_covlist()
-
-    def set_buttons(self, values):
-        ''' Check buttons with label in values '''
-        if values is None:
-            values = []
-        for b in self.covbuttons.btngroup.buttons():
-            b.setChecked(b.text() in values)
+    def get_shortest(self):
+        return self.cmbShortest.currentText() == 'Shortest'
 
 
 class DistributionEditTable(QtWidgets.QTableWidget):
     ''' Table for editing parameters of an uncertainty distribution
 
-        Parameters
-        ----------
-        initargs: dict
-            Initial arguments for distribution
-        locslider: bool
-            Show slider for median location of distribution
+        Args:
+            initargs (dict): Initial arguments for distribution
+            locslider (bool): Show slider for median location of distribution
     '''
     changed = QtCore.pyqtSignal()
+
+    ROLE_HISTDATA = QtCore.Qt.UserRole + 2    # Original, user-entered data
 
     def __init__(self, initargs=None, locslider=False):
         super().__init__()
@@ -1013,7 +903,7 @@ class DistributionEditTable(QtWidgets.QTableWidget):
         ''' Slider has changed, update loc in table '''
         rng = self.range[1] - self.range[0]
         val = self.locslide.value() / self.locslide.maximum() * rng + self.range[0]
-        self.item(1, 1).setText('{}'.format(val))
+        self.item(1, 1).setText(str(val))
 
     def set_locrange(self, low, high):
         ''' Set range for loc slider '''
@@ -1074,7 +964,7 @@ class DistributionEditTable(QtWidgets.QTableWidget):
                 self.setItem(1, 1, QtWidgets.QTableWidgetItem(str(initargs.get('median', 0))))
                 self.setItem(2, 0, ReadOnlyTableItem('bias'))
                 self.setItem(2, 1, QtWidgets.QTableWidgetItem(str(initargs.get('bias', 0))))
-            self.item(0, 0).setData(ROLE_HISTDATA, stats_dist.distargs)
+            self.item(0, 0).setData(self.ROLE_HISTDATA, stats_dist.distargs)
 
         else:
             for row, arg in enumerate(argnames):
@@ -1132,7 +1022,7 @@ class DistributionEditTable(QtWidgets.QTableWidget):
 
         changed = False
         if distname == 'histogram':
-            distargs = self.item(0, 0).data(ROLE_HISTDATA)
+            distargs = self.item(0, 0).data(self.ROLE_HISTDATA)
             self.statsdist = distributions.get_distribution(distname, **distargs)
             self.distbias = args.pop('bias', 0)
             if 'median' in args or '' in args:
@@ -1164,10 +1054,10 @@ class DistributionEditTable(QtWidgets.QTableWidget):
         menu.addAction(actHelp)
         actHelp.triggered.connect(self.helppopup)
         menu.popup(QtGui.QCursor.pos())
-    
+
     def helppopup(self):
         dlg = PopupHelp(self.statsdist.helpstr())
-        dlg.exec_()        
+        dlg.exec_()
 
 
 class PopupHelp(QtWidgets.QDialog):
@@ -1175,6 +1065,7 @@ class PopupHelp(QtWidgets.QDialog):
     def __init__(self, text):
         super().__init__()
         centerWindow(self, 600, 400)
+        self.setWindowTitle('Distribution Info')
         self.setModal(False)
         self.text = QtWidgets.QTextEdit()
         self.text.setReadOnly(True)
@@ -1311,3 +1202,99 @@ class DateDialog(QtWidgets.QDialog):
         dialog = DateDialog(parent)
         result = dialog.exec_()
         return dialog.date(), result == QtWidgets.QDialog.Accepted
+
+
+class SlidingStackedWidget(QtWidgets.QStackedWidget):
+    ''' Animated Stack Widget
+        adapted from:
+        https://github.com/ThePBone/SlidingStackedWidget
+    '''
+    def __init__(self, parent=None):
+        super(SlidingStackedWidget, self).__init__(parent)
+        self.m_direction = QtCore.Qt.Horizontal
+        self.m_speed = 500
+        self.m_animationType = QtCore.QEasingCurve.InCurve
+        self.m_now = 0
+        self.m_next = 0
+        self.m_wrap = False
+        self.m_pnow = QtCore.QPoint(0, 0)
+        self.m_active = False
+
+    def setDirection(self, direction):
+        self.m_direction = direction
+
+    def setSpeed(self, speed):
+        self.m_speed = speed
+
+    def setAnimation(self, animation_type):
+        self.m_animationType = animation_type
+
+    def setWrap(self, wrap):
+        self.m_wrap = wrap
+
+    def slideInLeft(self, idx):
+        self.slideInWgt(self.widget(idx), 'left')
+
+    def slideInRight(self, idx):
+        self.slideInWgt(self.widget(idx), 'right')
+
+    def slideInWgt(self, new_widget, direction='left'):
+        if self.m_active:
+            return
+
+        self.m_active = True
+
+        _now = self.currentIndex()
+        _next = self.indexOf(new_widget)
+
+        if _now == _next:
+            self.m_active = False
+            return
+
+        offset_X, offset_Y = self.frameRect().width(), self.frameRect().height()
+        self.widget(_next).setGeometry(self.frameRect())
+
+        if not self.m_direction == QtCore.Qt.Horizontal:
+            if direction == 'left':
+                offset_X, offset_Y = 0, -offset_Y
+            else:
+                offset_X = 0
+        else:
+            if direction == 'left':
+                offset_X, offset_Y = -offset_X, 0
+            else:
+                offset_Y = 0
+
+        page_next = self.widget(_next).pos()
+        pnow = self.widget(_now).pos()
+        self.m_pnow = pnow
+
+        offset = QtCore.QPoint(offset_X, offset_Y)
+        self.widget(_next).move(page_next - offset)
+        self.widget(_next).show()
+        self.widget(_next).raise_()
+
+        anim_group = QtCore.QParallelAnimationGroup(self)
+        anim_group.finished.connect(self.animationDoneSlot)
+
+        for index, start, end in zip(
+            (_now, _next), (pnow, page_next - offset), (pnow + offset, page_next)
+        ):
+            animation = QtCore.QPropertyAnimation(self.widget(index), b'pos')
+            animation.setEasingCurve(self.m_animationType)
+            animation.setDuration(self.m_speed)
+            animation.setStartValue(start)
+            animation.setEndValue(end)
+            anim_group.addAnimation(animation)
+
+        self.m_next = _next
+        self.m_now = _now
+        self.m_active = True
+        anim_group.start(QtCore.QAbstractAnimation.DeleteWhenStopped)
+
+    @QtCore.pyqtSlot()
+    def animationDoneSlot(self):
+        self.setCurrentIndex(self.m_next)
+        self.widget(self.m_now).hide()
+        self.widget(self.m_now).move(self.m_pnow)
+        self.m_active = False

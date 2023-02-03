@@ -6,11 +6,15 @@ import numpy as np
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 
-from . import gui_common
+from . import gui_common   # noqa: F401
 from . import gui_widgets
 from . import page_dataimport
-from ..intervals import variables, attributes
-from .. import report
+from ..intervals import datearray
+from ..intervals import BinomialIntervalAssets, TestIntervalAssets
+
+from ..project import (ProjectIntervalTest, ProjectIntervalTestAssets, ProjectIntervalBinom,
+                       ProjectIntervalBinomAssets, ProjectIntervalVariables, ProjectIntervalVariablesAssets)
+from ..common import report
 
 
 def get_colidx(hdr, name):
@@ -27,19 +31,19 @@ def getNewIntervalCalc():
     dlg.exec()
     if dlg.optA3.isChecked():
         if dlg.optAssets.isChecked():
-            item = attributes.TestIntervalAssets()
+            item = ProjectIntervalTestAssets()
         else:
-            item = attributes.TestInterval()
+            item = ProjectIntervalTest()
     elif dlg.optS2.isChecked():
         if dlg.optAssets.isChecked():
-            item = attributes.BinomialIntervalAssets()
+            item = ProjectIntervalBinomAssets()
         else:
-            item = attributes.BinomialInterval()
+            item = ProjectIntervalBinom()
     else:
         if dlg.optAssets.isChecked():
-            item = variables.VariablesIntervalAssets()
+            item = ProjectIntervalVariablesAssets()
         else:
-            item = variables.VariablesInterval()
+            item = ProjectIntervalVariables()
     return item
 
 
@@ -121,12 +125,16 @@ class A3Params(QtWidgets.QGroupBox):
 
         self.I0.setToolTip('Currently assigned interval for the calibrations in the table')
         self.Rt.setToolTip('Desired end-of-period reliability as a percent')
-        self.maxchange.setToolTip('Maximum allowable change in interval, as a fraction of the current interval.\nThe new interval will not be greater than current*maxchange or less than current/maxchange.\nEqual to the "b" parameter of Method A3.')
-        self.mindelta.setToolTip('Minimum number of days required to change the interval.\nSuggested interval will remain the same if calculated interval is within this many days.')
+        self.maxchange.setToolTip('Maximum allowable change in interval, as a fraction of the current interval.\n'
+                                  'The new interval will not be greater than current*maxchange or less than '
+                                  'current/maxchange.\nEqual to the "b" parameter of Method A3.')
+        self.mindelta.setToolTip('Minimum number of days required to change the interval.\nSuggested interval '
+                                 'will remain the same if calculated interval is within this many days.')
         self.minintv.setToolTip('Minimum allowable interval, in days')
         self.maxintv.setToolTip('Maximum allowable interval, in days')
         self.conf.setToolTip('Confidence required before rejecting the current interval in favor of the new interval.')
-        self.tol.setToolTip('Actual calibration interval must be within this many days of the assigned interval to be used in the calculation.')
+        self.tol.setToolTip('Actual calibration interval must be within this many days of the assigned '
+                            'interval to be used in the calculation.')
 
         self.setLayout(layout)
         self.I0.editingFinished.connect(self.changed)
@@ -167,9 +175,9 @@ class S2Params(QtWidgets.QGroupBox):
     ''' Widget for entering parameters for method S2 '''
     changed = QtCore.pyqtSignal()
 
-    def __init__(self, uinterval, showbins=False, parent=None):
+    def __init__(self, projitem, showbins=False, parent=None):
         super().__init__('Binomial Method (S2) Options', parent=parent)
-        self.uinterval = uinterval
+        self.projitem = projitem
         self.binlefts = None
         self.binwidth = None
 
@@ -217,12 +225,12 @@ class S2Params(QtWidgets.QGroupBox):
 
     def setbins(self):
         ''' Set bins manually via dialog '''
-        dlg = BinData(self.uinterval)
+        dlg = BinData(self.projitem)
         ok = dlg.exec_()
         if ok:
             self.binlefts, self.binwidth = dlg.getbins()
-            self.uinterval.binlefts = self.binlefts
-            self.uinterval.binwidth = self.binwidth
+            self.projitem.model.binlefts = self.binlefts
+            self.projitem.model.binwidth = self.binwidth
             self.bins.setEnabled(False)
         else:
             self.bins.setEnabled(True)
@@ -279,8 +287,10 @@ class VarsParams(QtWidgets.QGroupBox):
         self.y0.setToolTip('Measured/As-Left value at beginning of upcoming interval')
         self.m.setToolTip('Order of polynomial fit to deviation vs time curve')
         self.utarget.setToolTip('Maximum allowed projected uncertainty before ending interval')
-        self.rlimL.setToolTip('Lower deviation limit. Interval ends when fit polynomial minus uncertainty (at below confidence level) falls below this limit.')
-        self.rlimU.setToolTip('Upper deviation limit. Interval ends when fit polynomial plus uncertainty (at below confidence level) exceeds this limit.')
+        self.rlimL.setToolTip('Lower deviation limit. Interval ends when fit polynomial minus uncertainty '
+                              '(at below confidence level) falls below this limit.')
+        self.rlimU.setToolTip('Upper deviation limit. Interval ends when fit polynomial plus uncertainty '
+                              '(at below confidence level) exceeds this limit.')
         self.rconf.setToolTip('Confidence level in predicted uncertainty')
 
         self.u0.editingFinished.connect(self.changed)
@@ -439,7 +449,7 @@ class IntervalTable(gui_widgets.FloatTableWidget):
 
         self.clear()
         try:
-            rowcount = max([len(dat[k]) for k in dat.keys() if dat[k] is not None])
+            rowcount = max(len(dat[k]) for k in dat.keys() if dat[k] is not None)
             rowcount = max(rowcount, 1)
         except (ValueError, TypeError):
             rowcount = 1  # No values
@@ -451,7 +461,7 @@ class IntervalTable(gui_widgets.FloatTableWidget):
                 for i, val in enumerate(vals):
                     if date:
                         try:
-                            val = attributes.datearray([val])[0]
+                            val = datearray([val])[0]
                             datestr = mdates.num2date(val).strftime('%d-%b-%Y')   # float ordinal
                             self.setItem(i, colidx, QtWidgets.QTableWidgetItem(datestr))
                         except ValueError:
@@ -478,9 +488,9 @@ class IntervalTable(gui_widgets.FloatTableWidget):
 
 class IntervalWidget(QtWidgets.QWidget):
     ''' Widget for calibration interval calculations '''
-    def __init__(self, item, parent=None):
+    def __init__(self, projitem, parent=None):
         super().__init__(parent)
-        self.uinterval = item
+        self.projitem = projitem
         self.table = IntervalTable()
         self.asset = QtWidgets.QComboBox()
         self.asset.addItems(['A'])
@@ -498,10 +508,10 @@ class IntervalWidget(QtWidgets.QWidget):
         if self.mode in ['intervalvariables', 'intervalvariablesasset']:
             self.params = VarsParams()
         elif self.mode in ['intervaltest', 'intervaltestasset']:
-            self.params = A3Params(showtol=isinstance(item, attributes.TestIntervalAssets))
+            self.params = A3Params(showtol=isinstance(projitem, TestIntervalAssets))
         else:
-            showbins = isinstance(item, attributes.BinomialIntervalAssets)
-            self.params = S2Params(uinterval=self.uinterval, showbins=showbins)
+            showbins = isinstance(projitem, BinomialIntervalAssets)
+            self.params = S2Params(projitem=self.projitem, showbins=showbins)
 
         clayout = QtWidgets.QVBoxLayout()
         if 'asset' in self.mode:
@@ -532,9 +542,18 @@ class IntervalWidget(QtWidgets.QWidget):
         outlayout.addWidget(self.txtOutput)
         outbox.setLayout(outlayout)
         rlayout.addWidget(outbox, stretch=3)
+
+        self.leftwidget = QtWidgets.QWidget()
+        self.leftwidget.setLayout(llayout)
+        self.rightwidget = QtWidgets.QWidget()
+        self.rightwidget.setLayout(rlayout)
+        self.splitter = QtWidgets.QSplitter()
+        self.splitter.addWidget(self.leftwidget)
+        self.splitter.addWidget(self.rightwidget)
+        self.splitter.setCollapsible(0, False)
+        self.splitter.setCollapsible(1, False)
         layout = QtWidgets.QHBoxLayout()
-        layout.addLayout(llayout, stretch=2)
-        layout.addLayout(rlayout, stretch=3)
+        layout.addWidget(self.splitter)
         self.setLayout(layout)
 
         self.actLoadData = QtWidgets.QAction('Insert Data From...', self)
@@ -549,7 +568,7 @@ class IntervalWidget(QtWidgets.QWidget):
         self.menu.addSeparator()
         self.menu.addAction(self.actSaveReport)
 
-        self.txtNotes.setPlainText(self.uinterval.description)
+        self.txtNotes.setPlainText(self.projitem.longdescription)
         self.table.setRowCount(1)
         self.init_data()
         self.chkStartDates.stateChanged.connect(self.setup_table)
@@ -566,19 +585,20 @@ class IntervalWidget(QtWidgets.QWidget):
         self.actLoadData.triggered.connect(self.load_data)
 
     def init_mode(self):
+        ''' Initialize '''
         self.chkFoundLeft.setVisible(False)
         self.chkStartDates.setVisible(False)
-        if isinstance(self.uinterval, attributes.TestInterval):
+        if isinstance(self.projitem, ProjectIntervalTest):
             self.mode = 'intervaltest'
-        elif isinstance(self.uinterval, attributes.BinomialInterval):
+        elif isinstance(self.projitem, ProjectIntervalBinom):
             self.mode = 'intervalbinom'
-        elif isinstance(self.uinterval, attributes.TestIntervalAssets):
+        elif isinstance(self.projitem, ProjectIntervalTestAssets):
             self.mode = 'intervaltestasset'
-        elif isinstance(self.uinterval, attributes.BinomialIntervalAssets):
+        elif isinstance(self.projitem, ProjectIntervalBinomAssets):
             self.mode = 'intervalbinomasset'
-        elif isinstance(self.uinterval, variables.VariablesInterval):
+        elif isinstance(self.projitem, ProjectIntervalVariables):
             self.mode = 'intervalvariables'
-        elif isinstance(self.uinterval, variables.VariablesIntervalAssets):
+        elif isinstance(self.projitem, ProjectIntervalVariablesAssets):
             self.mode = 'intervalvariablesasset'
             self.chkFoundLeft.setVisible(True)
         else:
@@ -589,13 +609,13 @@ class IntervalWidget(QtWidgets.QWidget):
 
     def init_data(self):
         ''' Initialize data with values from saved config '''
-        config = self.uinterval.get_config()
+        config = self.projitem.get_config()
         self.params.set_params(config)
         if 'asset' in self.mode:
             assetdict = config.get('assets', {})
             if len(assetdict) > 0:
-                self.chkFoundLeft.setChecked(any([d.get('asfound', None) is not None for d in assetdict.values()]))
-                self.chkStartDates.setChecked(any([d.get('startdates', None) is not None for d in assetdict.values()]))
+                self.chkFoundLeft.setChecked(any(d.get('asfound', None) is not None for d in assetdict.values()))
+                self.chkStartDates.setChecked(any(d.get('startdates', None) is not None for d in assetdict.values()))
                 self.asset.clear()
                 self.asset.addItems([str(s) for s in assetdict.keys()])
                 dat = assetdict.get(self.asset.currentText(), {})
@@ -634,19 +654,23 @@ class IntervalWidget(QtWidgets.QWidget):
         assetname = self.asset.currentText()
 
         if 'asset' in self.mode:
-            self.uinterval.updateasset(assetname, **dat)
+            self.projitem.model.updateasset(assetname, **dat)
         else:
-            self.uinterval.update(**dat)
+            self.projitem.model.update(**dat)
 
-        self.uinterval.update_params(**params)
-        self.uinterval.description = self.txtNotes.toPlainText()
+        self.projitem.model.update_params(**params)
+        self.projitem.longdescription = self.txtNotes.toPlainText()
+
+    def update_proj_config(self):
+        self.update_data()
 
     def calculate(self):
         ''' Run the calculation '''
         QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
         self.update_data()
+
         try:
-            self.uinterval.calculate()
+            self.projitem.calculate()
         except (TypeError, ValueError, RuntimeError):
             self.txtOutput.setHtml('Error computing interval.')
         else:
@@ -657,8 +681,8 @@ class IntervalWidget(QtWidgets.QWidget):
     def change_asset(self, idx):
         ''' New asset selected in combobox '''
         assetname = self.asset.currentText()
-        if assetname in self.uinterval.assets:
-            dat = self.uinterval.assets[assetname]
+        if assetname in self.projitem.model.assets:
+            dat = self.projitem.model.assets[assetname]
             self.table.filldata(dat)
         else:
             self.table.clear()
@@ -674,12 +698,12 @@ class IntervalWidget(QtWidgets.QWidget):
         ''' Remove current asset from dropdown '''
         if self.asset.count() > 0:
             mbox = QtWidgets.QMessageBox()
-            mbox.setWindowTitle('Uncertainty Calculator')
-            mbox.setText('Remove asset {}?'.format(self.asset.currentText()))
+            mbox.setWindowTitle('Suncal')
+            mbox.setText(f'Remove asset {self.asset.currentText()}?')
             mbox.setStandardButtons(QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
             ok = mbox.exec_()
             if ok == QtWidgets.QMessageBox.Yes:
-                self.uinterval.remasset(self.asset.currentText())
+                self.projitem.model.__ge__remasset(self.asset.currentText())
                 self.asset.removeItem(self.asset.currentIndex())
 
     def load_data(self):
@@ -687,15 +711,13 @@ class IntervalWidget(QtWidgets.QWidget):
         cols = [self.table.horizontalHeaderItem(i).text() for i in range(self.table.columnCount())]
         if 'asset' in self.mode:
             cols = ['Asset'] + cols
-        dlg = page_dataimport.ArraySelectWidget(project=self.uinterval.project,
-                                                colnames=cols)
+        dlg = page_dataimport.ArraySelectWidget(project=self.projitem.project, colnames=cols)
         ok = dlg.exec_()
         if ok:
             dat = dlg.get_array()
             if len(dat) == 0:
                 QtWidgets.QMessageBox.warning(self, 'Data Import', 'No columns selected.')
                 return
-            
             if 'asset' in self.mode:
                 # Group by assets then repopulate entire table
                 keys = list(dat.keys())
@@ -729,22 +751,22 @@ class IntervalWidget(QtWidgets.QWidget):
                     dat.setdefault('startdates', None)
                     dat.setdefault('asfound', None)
                     dat.setdefault('asleft', None)
-                    self.uinterval.updateasset(asset, **dat)
+                    self.projitem.model.updateasset(asset, **dat)
             elif self.mode == 'intervaltest':
                 intol = dat.get('Number In-Tolerance')
                 n = dat.get('Total Calibrations')
                 intol = intol[0] if intol is not None else None
                 n = n[0] if n is not None else None
-                self.uinterval.update(intol, n)
+                self.projitem.model.update(intol, n)
             elif self.mode == 'intervalbinom':
                 ti = dat.get('Interval Length')
                 ri = dat.get('Observed Reliability')
                 ni = dat.get('Total Calibrations')
-                self.uinterval.update(ti, ri, ni)
+                self.projitem.model.update(ti, ri, ni)
             elif self.mode == 'intervalvariables':
                 t = dat.get('Interval Length')
                 delta = dat.get('Deviation from Prior')
-                self.uinterval.update(t, delta)
+                self.projitem.model.update(t, delta)
             self.init_data()
 
     def get_menu(self):
@@ -753,7 +775,7 @@ class IntervalWidget(QtWidgets.QWidget):
 
     def get_report(self):
         ''' Get full report of curve fit, using page settings '''
-        return self.uinterval.out.report_summary()
+        return self.projitem.result.report.summary()
 
     def save_report(self):
         ''' Save full report, asking user for settings/filename '''
@@ -762,12 +784,12 @@ class IntervalWidget(QtWidgets.QWidget):
 
 class BinData(QtWidgets.QDialog):
     ''' Dialog for binning historical pass/fail data for method S2 '''
-    def __init__(self, uinterval, parent=None):
+    def __init__(self, projitem, parent=None):
         super().__init__(parent)
         font = self.font()
         font.setPointSize(10)
         self.setFont(font)
-        self.uinterval = uinterval
+        self.projitem = projitem
         self.selectedbinidx = None
         self.press = None
         self.lastclickedbin = None
@@ -820,22 +842,22 @@ class BinData(QtWidgets.QDialog):
 
     def init_bins(self):
         ''' Initialize bins based on Interval Calc class '''
-        if self.uinterval.binlefts is None:
+        if self.projitem.model.binlefts is None:
             self.nbins.setValue(9)
             self.reset_bins()
         else:
-            self.binlefts = self.uinterval.binlefts
+            self.binlefts = self.projitem.model.binlefts
             self.nbins.setValue(len(self.binlefts))
-            self.binwidth.setValue(self.uinterval.binwidth)
+            self.binwidth.setValue(self.projitem.model.binwidth)
 
     def reset_bins(self, nbins=9):
         ''' Reset bins to default '''
         intmax = 0
-        for asset, val in self.uinterval.assets.items():
+        for val in self.projitem.model.assets.values():
             if val['startdates'] is None:
-                ti = np.diff(attributes.datearray(val['enddates']))
+                ti = np.diff(datearray(val['enddates']))
             else:
-                ti = attributes.datearray(val['enddates']) - attributes.datearray(val['startdates'])
+                ti = datearray(val['enddates']) - datearray(val['startdates'])
             if len(ti) > 0:
                 intmax = max(intmax, max(ti))
         if intmax == 0:
@@ -844,7 +866,7 @@ class BinData(QtWidgets.QDialog):
             self.binwidth.setValue(180)
         else:
             self.binlefts = np.linspace(0, intmax+1, num=nbins+1)[:-1]
-            self.binwidth.setValue(int(self.binlefts[1] - self.binlefts[0]))        
+            self.binwidth.setValue(int(self.binlefts[1] - self.binlefts[0]))
         self.report_reliability()
 
     def init_plot(self):
@@ -852,15 +874,15 @@ class BinData(QtWidgets.QDialog):
         self.ax = self.fig.add_subplot(1, 1, 1)
 
         i = 0
-        for asset in self.uinterval.assets.keys():
-            pf, ti = self.uinterval.get_passfails(asset)
+        for asset in self.projitem.model.assets.keys():
+            pf, ti = self.projitem.model.get_passfails(asset)
             pf = np.asarray(pf)
             ti = np.asarray(ti)
-            if len(ti) > 0:            
+            if len(ti) > 0:
                 passes = np.array(ti, dtype=float)
-                passes[pf==0.] = np.nan
+                passes[pf == 0.] = np.nan
                 fails = np.array(ti, dtype=float)
-                fails[pf==1.] = np.nan
+                fails[pf == 1.] = np.nan
                 self.ax.plot(passes, np.ones_like(pf)*(i+1), marker='o', color='blue', ls='')
                 self.ax.plot(fails, np.ones_like(pf)*(i+1), marker='x', color='red', ls='')
                 i += 1
@@ -881,8 +903,9 @@ class BinData(QtWidgets.QDialog):
             del b
         self.binlines = []
         for i, left in enumerate(self.binlefts):
-            color = 'orange' if i%2 else 'salmon'
-            self.binlines.append(self.ax.axvspan(left, left+self.binwidth.value(), alpha=.3, ls='-', facecolor=color, edgecolor='black'))
+            color = 'orange' if i % 2 else 'salmon'
+            self.binlines.append(self.ax.axvspan(
+                left, left+self.binwidth.value(), alpha=.3, ls='-', facecolor=color, edgecolor='black'))
         self.canvas.draw_idle()
 
     def on_press(self, event):
@@ -901,12 +924,13 @@ class BinData(QtWidgets.QDialog):
     def on_release(self, event):
         ''' Mouse was released. Update rectangle and reliability table '''
         self.selectedbinidx = None
-        
+
         # Left edge of each rectangle
-        self.binlefts = [b.xy[:,0].min() for b in self.binlines]
+        self.binlefts = [b.xy[:, 0].min() for b in self.binlines]
         self.report_reliability()
-    
+
     def on_keypress(self, event):
+        ''' Handle key press event '''
         if self.lastclickedbin is not None and event.key in ['left', 'right']:
             increment = 1 if event.key == 'right' else -1
 
@@ -924,18 +948,18 @@ class BinData(QtWidgets.QDialog):
             self.binlefts[self.lastclickedbin] = newx
             rect = self.binlines[self.lastclickedbin]
             poly = rect.xy
-            poly[:,0] += increment
-            rect.set_xy(poly)            
+            poly[:, 0] += increment
+            rect.set_xy(poly)
             self.canvas.draw()
             self.report_reliability()
 
     def report_reliability(self):
         ''' Update text area with reliability table '''
-        ti, ti0, ri, ni = self.uinterval.get_reliability(self.binlefts, self.binwidth.value())
+        ti, ti0, ri, ni = self.projitem.model.get_reliability(self.binlefts, self.binwidth.value())
         hdr = ['Bin Range', 'Reliability', 'Measurements']
         rows = []
         for t0, t, r, n in zip(ti0, ti, ri, ni):
-            rows.append(['{:.0f} - {:.0f}'.format(t0, t), format(r, '.3f'), format(n, '.0f')])
+            rows.append([f'{t0:.0f} - {t:.0f}', f'{r:.3f}', f'{n:.0f}'])
         rpt = report.Report()
         rpt.table(rows, hdr)
         self.txtOutput.setReport(rpt)
@@ -944,21 +968,23 @@ class BinData(QtWidgets.QDialog):
         ''' Mouse drag of bin. Limit so bins can't overlap '''
         if self.selectedbinidx is not None and event.xdata is not None:
             rect = self.binlines[self.selectedbinidx]
-            poly, (xpress, ypress) = self.press
+            poly, (xpress, _) = self.press
             dx = event.xdata - xpress
             polytest = poly.copy()
-            polytest[:,0] += dx
-            left = polytest[:,0].min()
-            right = polytest[:,0].max()
-            leftlim = -np.inf if self.selectedbinidx==0 else self.binlines[self.selectedbinidx-1].xy[:,0].max()
-            rightlim = np.inf if self.selectedbinidx==len(self.binlines)-1 else self.binlines[self.selectedbinidx+1].xy[:,0].min()
+            polytest[:, 0] += dx
+            left = polytest[:, 0].min()
+            right = polytest[:, 0].max()
+            leftlim = (-np.inf if self.selectedbinidx == 0 else
+                       self.binlines[self.selectedbinidx-1].xy[:, 0].max())
+            rightlim = (np.inf if self.selectedbinidx == len(self.binlines)-1 else
+                        self.binlines[self.selectedbinidx+1].xy[:, 0].min())
             if left < leftlim or right > rightlim:
                 if left < leftlim:
                     dx += (leftlim-left)
                 elif right > rightlim:
                     dx -= (right-rightlim)
                 polytest = poly.copy()
-                polytest[:,0] += dx
+                polytest[:, 0] += dx
             rect.set_xy(polytest)
             self.canvas.draw()
 

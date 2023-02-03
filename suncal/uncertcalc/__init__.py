@@ -1,0 +1,1 @@
+''' Legacy UncertCalc class, kept for backward compatibility woth older code '''

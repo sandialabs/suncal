@@ -3,92 +3,86 @@ import pytest
 
 import numpy as np
 
-import suncal as uc
-from suncal import uncertainty
-from suncal import curvefit
-from suncal import report
-from suncal import uparser
-from suncal import unitmgr
+from suncal import Model
+from suncal.project import ProjectUncert
+from suncal.common import report, uparser, unitmgr
 
 ureg = unitmgr.ureg
 
 
 def test_units():
     # Basic units propagation
-    u = uc.UncertCalc('J*V', units='mW', seed=12345)
-    u.set_input('J', nom=4, unc=.04, k=2, units='V')
-    u.set_input('V', nom=20, units='mA')
-    u.set_uncert('V', name='u(typeA)', std=.1, k=2)
-    u.set_uncert('V', name='u(typeB)', std=.15, k=2)
-    u.calculate()
-    assert str(u.out.gum._units[0]) == 'milliwatt'
-    assert np.isclose(u.out.gum.nom().magnitude, 80)
-    assert str(u.out.mc._units[0]) == 'milliwatt'
-    assert np.isclose(u.out.mc.nom().magnitude, 80)
-    assert str(u.out.mc.nom().units) == 'milliwatt'
-    assert 'mW' in str(u.out.gum.report())
-    assert 'mW' in str(u.out.gum.report_expanded())
-    assert 'mW' in str(u.out.mc.report())
-    assert 'mW' in str(u.out.mc.report_expanded())
+    np.random.seed(12345)
+    u = Model('P = J*V')
+    u.var('J').measure(4, units='V').typeb(unc=.04, k=2, units='V')
+    u.var('V').measure(20, units='mA').typeb(name='u(typeA)', std=.1, k=2).typeb(name='u(typeB)', std=.15, k=2)
+    result = u.calculate().units(P='mW')
+    assert str(result.gum.expected['P'].units) == 'milliwatt'
+    assert np.isclose(result.gum.expected['P'].magnitude, 80)
+    assert str(result.montecarlo.expected['P'].units) == 'milliwatt'
+    assert np.isclose(result.montecarlo.expected['P'].magnitude, 80)
+    assert 'mW' in str(result.report.gum.summary())
+    assert 'mW' in str(result.report.gum.expanded())
+    assert 'mW' in str(result.report.montecarlo.summary())
+    assert 'mW' in str(result.report.montecarlo.expanded())
 
     # Change output to microwatts and recalculate
-    u.model.outunits = ['uW']
-    u.calculate()
-    assert str(u.out.gum._units[0]) == 'microwatt'
-    assert np.isclose(u.out.gum.nom().magnitude, 80000)
-    assert str(u.out.gum.nom().units) == 'microwatt'
-    assert str(u.out.mc._units[0]) == 'microwatt'
-    assert np.isclose(u.out.mc.nom().magnitude, 80000)
-    assert str(u.out.mc.nom().units) == 'microwatt'
+    result = u.calculate().units(P='uW')
+    assert str(result.gum.expected['P'].units) == 'microwatt'
+    assert np.isclose(result.gum.expected['P'].magnitude, 80000, rtol=.001)
+    assert str(result.montecarlo.expected['P'].units) == 'microwatt'
+    assert np.isclose(result.montecarlo.expected['P'].magnitude, 80000, rtol=.001)
 
 
 def test_multifunc():
     ''' Test multiple functions in UncertCalc with different units '''
     # Start without units -- convert all inputs to base units and *1000 to get milliwatt
-    u1 = uc.UncertCalc(['P = J*V*1000', 'R = V/J'], seed=398232)
-    u1.set_input('V', nom=10, std=.5)
-    u1.set_input('J', nom=5)
-    u1.set_uncert('J', name='u_A', std=.05)  # 50 mA
-    u1.set_uncert('J', name='u_B', std=.01)  # 1 mA = 10000 uA
-    u1.calculate()
-    meanP = u1.out.gum.nom('P').magnitude
-    uncertP = u1.out.gum.uncert('P').magnitude
-    meanR = u1.out.gum.nom('R').magnitude
-    uncertR = u1.out.gum.uncert('R').magnitude
+    np.random.seed(398232)
+    u1 = Model('P = J*V*1000', 'R = V/J')
+    u1.var('V').measure(10).typeb(std=.5)
+    u1.var('J').measure(5).typeb(name='u_A', std=.05)  # 50 mA
+    u1.var('J').typeb(name='u_B', std=.01)  # 10 mA = 10000 uA
+    result1 = u1.calculate()
+
+    meanP = result1.gum.expected['P']
+    uncertP = result1.gum.uncertainty['P']
+    meanR = result1.gum.expected['R']
+    uncertR = result1.gum.uncertainty['R']
 
     # Now with units specified instead of converting first
-    u = uc.UncertCalc(['P = J*V', 'R = V/J'], units=['mW', 'ohm'], seed=398232)
-    u.set_input('V', nom=10, std=.5, units='V')
-    u.set_input('J', nom=5, units='ampere')
-    u.set_uncert('J', name='u_A', std=50, units='mA')   # Uncert not same units as variable
-    u.set_uncert('J', name='u_B', std=10000, units='uA')
-    u.calculate()
+    np.random.seed(398232)
+    u = Model('P = J*V', 'R = V/J')
+    u.var('V').measure(10, units='volts').typeb(std=.5, units='volts')
+    u.var('J').measure(5, units='ampere')
+    u.var('J').typeb(name='u_A', std=50, units='mA')    # Uncert not same units as variable
+    u.var('J').typeb(name='u_B', std=10000, units='uA')
+    result2 = u.calculate().units(P='mW', R='ohm')
 
     # And compare.
-    assert np.isclose(u.out.gum.nom('P').magnitude, meanP)
-    assert np.isclose(u.out.gum.uncert('P').magnitude, uncertP)
-    assert str(u.out.gum.nom('P').units) == 'milliwatt'
-    assert np.isclose(u.out.mc.nom('P').magnitude, meanP, rtol=.0001)
-    assert np.isclose(u.out.mc.uncert('P').magnitude, uncertP, rtol=.001)
-    assert str(u.out.mc.nom('P').units) == 'milliwatt'
+    assert np.isclose(result2.gum.expected['P'].magnitude, meanP)
+    assert np.isclose(result2.gum.uncertainty['P'].magnitude, uncertP)
+    assert str(result2.gum.expected['P'].units) == 'milliwatt'
+    assert np.isclose(result2.montecarlo.expected['P'].magnitude, meanP, rtol=.0001)
+    assert np.isclose(result2.montecarlo.uncertainty['P'].magnitude, uncertP, rtol=.001)
+    assert str(result2.montecarlo.expected['P'].units) == 'milliwatt'
 
-    assert np.isclose(u.out.mc.nom('R').magnitude, meanR, rtol=.0001)
-    assert np.isclose(u.out.mc.uncert('R').magnitude, uncertR, rtol=.001)
-    assert str(u.out.mc.nom('R').units) == 'ohm'
-    assert np.isclose(u.out.mc.nom('R').magnitude, meanR, rtol=.0001)
-    assert np.isclose(u.out.mc.uncert('R').magnitude, uncertR, rtol=.001)
-    assert str(u.out.mc.nom('R').units) == 'ohm'
+    assert np.isclose(result2.montecarlo.expected['R'].magnitude, meanR, rtol=.0001)
+    assert np.isclose(result2.montecarlo.uncertainty['R'].magnitude, uncertR, rtol=.001)
+    assert str(result2.montecarlo.expected['R'].units) == 'ohm'
+    assert np.isclose(result2.montecarlo.expected['R'].magnitude, meanR, rtol=.0001)
+    assert np.isclose(result2.montecarlo.uncertainty['R'].magnitude, uncertR, rtol=.001)
+    assert str(result2.montecarlo.expected['R'].units) == 'ohm'
 
 
 def test_load():
     ''' Load end-gauge problem WITH units '''
-    u = uc.UncertCalc.from_configfile('test/ex_endgauge_units.yaml')
-    u.seed = 8888
-    u.calculate()
-    assert np.isclose(u.out.gum.uncert().magnitude, 32, atol=.1)
-    assert str(u.out.gum.uncert().units) == 'nanometer'
-    assert np.isclose(u.out.mc.uncert().magnitude, 34, atol=.2)
-    assert str(u.out.mc.uncert().units) == 'nanometer'
+    proj = ProjectUncert.from_configfile('test/ex_endgauge_units.yaml')
+    np.random.seed(345345)
+    result = proj.calculate()
+    assert np.isclose(result.gum.uncertainty['f_0'].magnitude, 32, atol=.2)
+    assert str(result.gum.uncertainty['f_0'].units) == 'nanometer'
+    assert np.isclose(result.montecarlo.uncertainty['f_0'].magnitude, 34, atol=.4)
+    assert str(result.montecarlo.uncertainty['f_0'].units) == 'nanometer'
 
 
 def test_parse():
@@ -116,24 +110,23 @@ def test_power():
     ''' Test case for powers of dimensionless quantities '''
     # See https://github.com/hgrecco/pint/issues/670
     # Make sure we have a workaround since this inconsistency was closed without a fix
-        #   with x = np.arange(5) * ureg.dimensionless
-        #   np.exp(x) --> returns dimensionless array
-        #   2**x --> raises DimensionalityError
-    u = uc.UncertCalc('f = 2**x')
-    u.seed = 8833293
-    u.set_input('x', nom=4, std=.1)  # No units / dimensionless
-    u.calculate()
-
-    assert u.out.mc.uncert().units == ureg.dimensionless
-    assert np.isclose(u.out.mc.nom().magnitude, 16.0, rtol=.01)
-    assert np.isclose(u.out.mc.uncert().magnitude, u.out.gum.uncert().magnitude, rtol=.02)
+    #   with x = np.arange(5) * ureg.dimensionless
+    #   np.exp(x) --> returns dimensionless array
+    #   2**x --> raises DimensionalityError
+    u = Model('f = 2**x')
+    np.random.seed(8833293)
+    u.var('x').measure(4).typeb(std=.1)  # No units / dimensionless
+    result = u.calculate_gum()
+    resultmc = u.monte_carlo()
+    assert not unitmgr.has_units(result.uncertainty['f'])
+    assert np.isclose(resultmc.expected['f'], 16.0, rtol=.01)
+    assert np.isclose(resultmc.uncertainty['f'], result.uncertainty['f'], rtol=.02)
 
 
 def test_welch():
     ''' Test welch-satterthwaite with units '''
-    u = uc.UncertCalc.from_configfile('test/ex_xrf.yaml')
+    proj = ProjectUncert.from_configfile('test/ex_xrf.yaml')
     # XRF problem with Yu units in nm, others in um
-    u.calculate()
-    assert np.isclose(u.out.gum.degf(), 27.5, atol=.1)
-    assert np.isclose(u.out.gum.expanded().k, 2.05, atol=.01)
-
+    result = proj.calculate()
+    assert np.isclose(result.gum.degf['Y_c'], 27.5, atol=.1)
+    assert np.isclose(result.gum.expanded()['Y_c'].k, 2.05, atol=.01)

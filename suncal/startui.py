@@ -6,13 +6,12 @@ Launch the user interface.
 
 PyInstaller croaks if it calls into gui/gui_main.py directly, so this file was added as a workaround.
 '''
-
+import sys
 from PyQt5 import QtWidgets, QtCore, QtGui
+
 from suncal import gui
 from suncal.gui import gui_common
 from suncal import version
-
-import sys
 
 
 QtWidgets.QApplication.setAttribute(QtCore.Qt.AA_EnableHighDpiScaling)
@@ -27,16 +26,16 @@ Primary Standards Lab
 Sandia National Laboratories
 uncertainty@sandia.gov
 
-Copyright 2019-2022 National Technology & Engineering
+Copyright 2019-2023 National Technology & Engineering
 Solutions of Sandia, LLC (NTESS). Under the terms
 of Contract DE-NA0003525 with NTESS, the U.S.
 Government retains certain rights in this software.
 '''
 
-pixmap = QtGui.QPixmap(480*pxratio, 320*pxratio)
+pixmap = QtGui.QPixmap(int(480*pxratio), int(320*pxratio))
 pixmap.fill(app.palette().color(QtGui.QPalette.Window))
 painter = QtGui.QPainter(pixmap)
-painter.drawPixmap(10*pxratio, 250*pxratio, gui_common.get_snllogo(pixmap=True))
+painter.drawPixmap(int(10*pxratio), int(250*pxratio), gui_common.get_snllogo(pixmap=True))
 pixmap.setDevicePixelRatio(pxratio)
 splash = QtWidgets.QSplashScreen(pixmap, QtCore.Qt.SplashScreen)
 font = splash.font()

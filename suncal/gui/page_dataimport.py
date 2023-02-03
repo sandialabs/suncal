@@ -9,9 +9,9 @@ from PyQt5 import QtWidgets, QtCore
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 
-from .. import plotting
-from .. import distributions
-from .. import dataset
+from ..common import plotting, distributions
+from ..datasets import dataset
+from ..project import ProjectDataSet
 from . import page_csvload
 from . import configmgr
 from . import gui_common
@@ -28,6 +28,11 @@ class ProjectTreeDelegate(QtWidgets.QItemDelegate):
 
 class ProjectTreeDists(QtWidgets.QTreeWidget):
     ''' Tree Widget showing all project items with usable distributions '''
+    # NOTE: ROLE_DDATA item.data stores a tuple (distdictionary,)
+    # because Qt attempts to cast a plain dict to QVariant which
+    # messes up order and makes a new object. It doesn't attempt to cast
+    # the tuple or its contents.
+
     ROLE_DDATA = QtCore.Qt.UserRole
     loaddata = QtCore.pyqtSignal(object)  # Emit the data array or dictionary
 
@@ -45,12 +50,12 @@ class ProjectTreeDists(QtWidgets.QTreeWidget):
             for i in range(self.project.count()):
                 mode = self.project.get_mode(i)
                 if mode in ['uncertainty', 'reverse', 'curvefit', 'data']:
-                    with suppress(AttributeError):
-                        distdict = self.project.items[i].get_output().get_dists()  # Pass no args to get names
+                    with suppress(AttributeError):  # AttributeError if calculation has not run
+                        distdict = self.project.items[i].get_dists()
                         item = QtWidgets.QTreeWidgetItem([names[i]])
                         item.setIcon(0, gui_common.load_icon(gui_common.iconname[mode]))
                         self.addTopLevelItem(item)
-                        item.setData(0, self.ROLE_DDATA, distdict)
+                        item.setData(0, self.ROLE_DDATA, (distdict,))  # tuple containing distdict
 
         item = QtWidgets.QTreeWidgetItem(['Select CSV File...'])
         item.setIcon(0, gui_common.load_icon('table'))
@@ -74,15 +79,14 @@ class ProjectTreeDists(QtWidgets.QTreeWidget):
                 if dlg.exec_():
                     self.csvitems.append(dlg.dataset())
                     # DataSets loaded from CSV in this dialog
-                    datadict = self.csvitems[-1].get_output().get_dists()
+                    datadict = self.csvitems[-1].get_dists()
                     item = QtWidgets.QTreeWidgetItem([f'CSV Data {len(self.csvitems)+1}'])
                     item.setIcon(0, gui_common.load_icon(gui_common.iconname['data']))
-                    item.setData(0, self.ROLE_DDATA, datadict)
+                    item.setData(0, self.ROLE_DDATA, (datadict,))   # tuple containing distdict
                     self.addTopLevelItem(item)
                     self.loaddata.emit(datadict)
-
         else:
-            datadict = item.data(0, self.ROLE_DDATA)
+            datadict, = item.data(0, self.ROLE_DDATA)   # extract tuple containing distdict
             self.loaddata.emit(datadict)
 
 
@@ -113,7 +117,7 @@ class ProjectTreeArrays(QtWidgets.QTreeWidget):
                 mode = self.project.get_mode(i)
                 if mode in ['sweep', 'reversesweep', 'data']:
                     with suppress(AttributeError):
-                        dsets = self.project.items[i].get_output().get_dataset()  # No args to get names
+                        dsets = self.project.items[i].get_dataset()  # No args to get names
                         item = QtWidgets.QTreeWidgetItem([names[i]])
                         item.setIcon(0, gui_common.load_icon(gui_common.iconname[mode]))
                         self.addTopLevelItem(item)
@@ -148,8 +152,8 @@ class ProjectTreeArrays(QtWidgets.QTreeWidget):
                 dlg = page_csvload.SelectCSVData(fname)
                 if dlg.exec_():
                     self.csvitems.append(dlg.dataset())
-                    # DataSets loaded from CSV in this dialog
-                    dists = self.csvitems[-1].get_output().get_dataset()
+                    # ProjectDataSets loaded from CSV in this dialog
+                    dists = self.csvitems[-1].get_dataset()
                     item = QtWidgets.QTreeWidgetItem([f'CSV Data {len(self.csvitems)+1}'])
                     item.setIcon(0, gui_common.load_icon(gui_common.iconname['data']))
                     self.addTopLevelItem(item)
@@ -161,12 +165,12 @@ class ProjectTreeArrays(QtWidgets.QTreeWidget):
                         item.addChild(distitem)
                         item.setExpanded(True)
                     self.setCurrentItem(item)
-                    self.loaddata.emit(self.csvitems[-1])
+                    self.loaddata.emit(self.csvitems[-1].model)
 
         else:
             calc = item.data(0, self.ROLE_CALC)
             with suppress(AttributeError):  # Could be top-level item
-                data = calc.get_output().get_dataset(item.data(0, self.ROLE_NAME))
+                data = calc.get_dataset(item.data(0, self.ROLE_NAME))
                 self.loaddata.emit(data)
 
 
@@ -195,7 +199,8 @@ class DistributionSelectWidget(QtWidgets.QDialog):
         self.dataset = None  # Either DataSet object or a dictionary defining mean/std/df for each column?
 
         dists = settings.getDistributions()
-        dists = ['normal (standard error)', 'normal (with autocorrelation)'] + [d for d in dists if distributions.fittable(d)]
+        dists = ['normal (standard error)',
+                 'normal (with autocorrelation)'] + [d for d in dists if distributions.fittable(d)]
         self.treeSource = ProjectTreeDists(project=project)
         self.fig = Figure()
         self.canvas = FigureCanvas(self.fig)
@@ -216,7 +221,8 @@ class DistributionSelectWidget(QtWidgets.QDialog):
         self.lblX = QtWidgets.QLabel('X Value')
         self.table = QtWidgets.QTableWidget()
         self.table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectColumns)
-        self.lblAssign = QtWidgets.QLabel('<font color="red">Please assign at least one variable before continuing.</font>')
+        self.lblAssign = QtWidgets.QLabel(
+            '<font color="red">Please assign at least one variable before continuing.</font>')
         self.dlgbutton = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel)
 
         if coloptions is not None:
@@ -238,7 +244,7 @@ class DistributionSelectWidget(QtWidgets.QDialog):
         hlayout = QtWidgets.QHBoxLayout()
         hlayout.addWidget(self.lblCol)
         hlayout.addWidget(self.cmbColumn)
-        hlayout.addStretch
+        hlayout.addStretch()
         hlayout.addWidget(self.lblDist)
         hlayout.addWidget(self.cmbDistType)
         hlayout.addWidget(self.lblX)
@@ -280,7 +286,7 @@ class DistributionSelectWidget(QtWidgets.QDialog):
     def get_selcolname(self):
         ''' Get selected column name '''
         col = self.table.currentColumn()
-        if col is not None:
+        if col is not None and col < len(self.colnames):
             col = self.colnames[col]
         return col
 
@@ -303,11 +309,13 @@ class DistributionSelectWidget(QtWidgets.QDialog):
                 samples = data['samples']
                 distname = self.cmbDistType.currentText()
                 if distname == 'normal (standard error)':
-                    params = {'median': np.median(data['samples']), 'std': data['samples'].std(ddof=1)/np.sqrt(len(data['samples']))}
+                    params = {'median': np.median(data['samples']),
+                              'std': data['samples'].std(ddof=1)/np.sqrt(len(data['samples']))}
                     fitdist = distributions.get_distribution('normal', **params)
 
                 elif distname == 'normal (with autocorrelation)':
-                    params = {'median': np.median(data['samples']), 'std': dataset.uncert_autocorrelated(data['samples']).uncert}
+                    params = {'median': np.median(data['samples']),
+                              'std': dataset.uncert_autocorrelated(data['samples']).uncert}
                     fitdist = distributions.get_distribution('normal', **params)
 
                 else:
@@ -344,7 +352,8 @@ class DistributionSelectWidget(QtWidgets.QDialog):
 
     def _get_colassignment(self):
         ''' Get list of variable names for each column '''
-        return [self.table.horizontalHeaderItem(i).text() if self.table.horizontalHeaderItem(i) else '' for i in range(self.table.columnCount())]
+        return [self.table.horizontalHeaderItem(i).text() if self.table.horizontalHeaderItem(i) else ''
+                for i in range(self.table.columnCount())]
 
     def disttypechanged(self):
         ''' Distribution assignment has changed '''
@@ -368,7 +377,7 @@ class DistributionSelectWidget(QtWidgets.QDialog):
 
         if self.singlecol and len(self._get_colassignment()) > 0:
             self.dlgbutton.button(QtWidgets.QDialogButtonBox.Ok).setEnabled(True)
-        elif all([col == 'Not Used' or col == '' for col in self._get_colassignment()]):
+        elif all([col in ('Not Used', '') for col in self._get_colassignment()]):
             self.lblAssign.setVisible(True)
             self.dlgbutton.button(QtWidgets.QDialogButtonBox.Ok).setEnabled(False)
         else:
@@ -376,7 +385,7 @@ class DistributionSelectWidget(QtWidgets.QDialog):
             self.dlgbutton.button(QtWidgets.QDialogButtonBox.Ok).setEnabled(True)
 
         for cidx, colname in enumerate(self._get_colassignment()):
-            if colname != '' and colname != 'Not Used':
+            if colname not in ('', 'Not Used'):
                 colcolor = gui_common.COLOR_SELECTED
             else:
                 colcolor = gui_common.COLOR_OK
@@ -436,16 +445,14 @@ class DistributionSelectWidget(QtWidgets.QDialog):
                 std = params.get('std')
                 df = params.get('df')
                 sem = std / np.sqrt(df+1)
-                self.table.setItem(self.ROW_MEAN, cidx, gui_widgets.ReadOnlyTableItem(format(mean, '.4g')))
-                self.table.setItem(self.ROW_STD, cidx, gui_widgets.ReadOnlyTableItem(format(std, '.4g')))
-                self.table.setItem(self.ROW_SEM, cidx, gui_widgets.ReadOnlyTableItem(format(sem, '.4g')))
-                self.table.setItem(self.ROW_DF, cidx, gui_widgets.ReadOnlyTableItem(format(df, '.0f')))
+                self.table.setItem(self.ROW_MEAN, cidx, gui_widgets.ReadOnlyTableItem(f'{mean:.4g}'))
+                self.table.setItem(self.ROW_STD, cidx, gui_widgets.ReadOnlyTableItem(f'{std:.4g}'))
+                self.table.setItem(self.ROW_SEM, cidx, gui_widgets.ReadOnlyTableItem(f'{sem:.4g}'))
+                self.table.setItem(self.ROW_DF, cidx, gui_widgets.ReadOnlyTableItem(f'{df:.0f}'))
         self.updateplot()
 
     def get_dist(self):
-        ''' Get dictionary of distributions assigned
-
-        '''
+        ''' Get dictionary of distributions assigned '''
         distlist = []
         if self.singlecol:
             colname = self.get_selcolname()
@@ -466,10 +473,12 @@ class DistributionSelectWidget(QtWidgets.QDialog):
             if 'samples' in data:
                 if distname == 'normal (standard error)':
                     distname = 'normal'
-                    params = {'median': np.mean(data['samples']), 'std': data['samples'].std(ddof=1)/np.sqrt(len(data['samples']))}
+                    params = {'median': np.mean(data['samples']),
+                              'std': data['samples'].std(ddof=1)/np.sqrt(len(data['samples']))}
 
                 elif distname == 'normal (with autocorrelation)':
-                    params = {'median': np.mean(data['samples']), 'std': dataset.uncert_autocorrelated(data['samples']).uncert}
+                    params = {'median': np.mean(data['samples']),
+                              'std': dataset.uncert_autocorrelated(data['samples']).uncert}
                     distname = 'normal'
 
                 else:
@@ -490,7 +499,7 @@ class DistributionSelectWidget(QtWidgets.QDialog):
                 else:
                     x = self.xval.value()
                 params = f(x)
-            elif 'sem' in data and distname == 'normal (standard error)':
+            elif 'sem' in data:
                 params = {'dist': 'normal',
                           'median': data.get('median', data.get('mean', 0)),
                           'std': data.get('sem'),
@@ -548,24 +557,18 @@ class DistributionSelectWidget(QtWidgets.QDialog):
                 df = len(data['samples']) - 1
                 sem = std / np.sqrt(df + 1)
                 dist = 'normal (standard error)'
-            elif 'sem' in data:
-                mean = data.get('mean', data.get('median', 0))
-                std = data.get('std', 1)
-                sem = data.get('sem')
-                df = data.get('df', 100)
-                dist = 'normal (standard error)'
             else:
                 mean = data.get('mean', 0)
-                std = data.get('std', 1)
+                std = data.get('std', np.nan)
                 df = data.get('df', 100)
-                sem = std / np.sqrt(df + 1)
+                sem = data.get('sem', std / np.sqrt(df + 1))
                 dist = ''  # Can't change this dist
 
             self.table.setItem(self.ROW_NAME, col, gui_widgets.ReadOnlyTableItem(name))
-            self.table.setItem(self.ROW_MEAN, col, gui_widgets.ReadOnlyTableItem(format(mean, '.2g')))
-            self.table.setItem(self.ROW_STD, col, gui_widgets.ReadOnlyTableItem(format(std, '.2g')))
-            self.table.setItem(self.ROW_SEM, col, gui_widgets.ReadOnlyTableItem(format(sem, '.2g')))
-            self.table.setItem(self.ROW_DF, col, gui_widgets.ReadOnlyTableItem(format(df, '.0f')))
+            self.table.setItem(self.ROW_MEAN, col, gui_widgets.ReadOnlyTableItem(f'{mean:.2g}'))
+            self.table.setItem(self.ROW_STD, col, gui_widgets.ReadOnlyTableItem(f'{std:.2g}'))
+            self.table.setItem(self.ROW_SEM, col, gui_widgets.ReadOnlyTableItem(f'{sem:.2g}'))
+            self.table.setItem(self.ROW_DF, col, gui_widgets.ReadOnlyTableItem(f'{df:.0f}'))
             self.table.setItem(self.ROW_DIST, col, gui_widgets.ReadOnlyTableItem(dist))
             if self.coloptions is not None and name in self.coloptions:
                 hdr.append(name)
@@ -652,12 +655,12 @@ class ArraySelectWidget(QtWidgets.QDialog):
         headerlabels = []
         for cidx in range(self.table.columnCount()):
             if self.colassignments[cidx] and self.dataset.colnames:
-                headerlabels.append('{} → {}'.format(self.dataset.colnames[cidx], self.colassignments[cidx]))
+                headerlabels.append(f'{self.dataset.colnames[cidx]} → {self.colassignments[cidx]}')
             elif self.dataset.colnames:
                 headerlabels.append(self.dataset.colnames[cidx])
             else:
                 headerlabels.append('')
-            
+
             if self.colassignments[cidx]:
                 colcolor = gui_common.COLOR_SELECTED
             else:
@@ -741,10 +744,8 @@ class ArraySelectWidget(QtWidgets.QDialog):
     def load_data(self, dset):
         ''' Fill table with data array
 
-            Parameters
-            ----------
-            dset: DataSet object
-                Data table to display
+            Args:
+                dset: DataSet to display
         '''
         self.table.clear()
         nrows = dset.maxrows()
@@ -768,7 +769,7 @@ class ArraySelectWidget(QtWidgets.QDialog):
             if all(c is None for c in self.colassignments):
                 if 'x' in self.colnames and 'y' in self.colnames and len(self.colassignments) == 2:
                     self.colassignments = ['x', 'y']
-                elif ('x' in self.colnames and 'y' in self.colnames and 
+                elif ('x' in self.colnames and 'y' in self.colnames and
                       'u(y)' in self.colnames and len(self.colassignments) == 3):
                     self.colassignments = ['x', 'y', 'u(y)']
 

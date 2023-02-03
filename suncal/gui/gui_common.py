@@ -11,20 +11,8 @@ import matplotlib as mpl
 from . import configmgr
 from . import icons
 from . import logo
-from .. import report
-from .. import plotting
+from ..common import report, plotting
 
-
-# Characters and colors
-CHR_ENDASH = u'\u2013' # Better minus sign for button
-CHR_ELLIPSIS = u'\u2026'
-CHR_SIGMA = u'\u03C3'
-CHR_MULTIPLY = u'\u00D7'
-CHR_PERCENT = u'\u0025'
-CHR_SQRT = u'\u221A'
-CHR_RARROW = u'\u27A1'
-CHR_X = u'\u2717'
-CHR_X_RED = u'<font color="Red" size=5>\u2717</font>'
 
 COLOR_INVALID = QtGui.QBrush(QtCore.Qt.red)
 COLOR_OK = QtGui.QBrush(QtCore.Qt.white)
@@ -42,7 +30,8 @@ iconname = {'uncertainty': 'target',
             'sweep': 'targetlist',
             'reverse': 'calipers',
             'reversesweep': 'rulersweep',
-            'data': 'boxplot'}
+            'data': 'boxplot',
+            'wizard': 'wizard'}
 
 
 # Breakpoint handler (for Python 3.7+) for breakpoint() function to disable QT problems when breaking
@@ -50,6 +39,8 @@ def _qtbreakpoint(*args, **kwargs):
     from pdb import set_trace
     QtCore.pyqtRemoveInputHook()
     set_trace()
+
+
 sys.breakpointhook = _qtbreakpoint
 
 
@@ -61,10 +52,12 @@ def handle_exception(exc_type, exc_value, exc_traceback):
     msg = ''.join(traceback.format_exception(exc_type, exc_value, exc_traceback))
     print(msg)
     msgbox = QtWidgets.QMessageBox()
-    msgbox.setWindowTitle('Uncertainty Calculator')
+    msgbox.setWindowTitle('Suncal')
     msgbox.setText('The following exception occurred.')
     msgbox.setInformativeText(msg)
     msgbox.exec_()
+
+
 sys.excepthook = handle_exception
 
 
@@ -80,6 +73,7 @@ if latex and os.path.exists(latex):
 class InfValidator(QtGui.QDoubleValidator):
     ''' Double Validator that allows "inf" and "-inf" entry '''
     def validate(self, s, pos):
+        ''' Validate the string '''
         if s.lower() in ['inf', '-inf']:
             return QtGui.QValidator.Acceptable, s, pos
         elif s.lower() in '-inf':
@@ -90,7 +84,11 @@ class InfValidator(QtGui.QDoubleValidator):
 def set_plot_style():
     ''' Configure matplotlib with plot style from saved settings '''
     mpl.rcParams.update(mpl.rcParamsDefault)
-    mpl.style.use(settings.getStyle())
+    try:
+        mpl.style.use(settings.getStyle())
+    except OSError:
+        pass  # Maybe matplotlib version changed and style is not available
+
     for k, v in settings.getCustomStyle().items():
         try:
             mpl.style.use({k: v})  # Override anything in base style
@@ -122,8 +120,7 @@ def get_logo(pixmap=False):
     img.loadFromData(QtCore.QByteArray.fromBase64(logo.logo), format='PNG')
     if pixmap:
         return img
-    else:
-        return QtGui.QIcon(img)
+    return QtGui.QIcon(img)
 
 
 def get_snllogo(pixmap=False):
@@ -132,8 +129,7 @@ def get_snllogo(pixmap=False):
     img.loadFromData(QtCore.QByteArray.fromBase64(logo.logosnl), format='PNG')
     if pixmap:
         return img
-    else:
-        return QtGui.QIcon(img)
+    return QtGui.QIcon(img)
 
 
 def get_rptargs():

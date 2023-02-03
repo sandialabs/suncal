@@ -2,10 +2,11 @@
     Usage: run py.test from root folder.
 '''
 import pytest
-import os
 import numpy
+import sympy
 
-import suncal.uparser as uparser
+from suncal.common import uparser
+
 
 def test_parse_math_ok():
     ''' Test parse_math. These should evaluate ok, no exception raised. '''
@@ -35,7 +36,7 @@ def test_parse_math_fail():
         uparser.parse_math('().__class__')     # Hack to get at base classes
 
     with pytest.raises(ValueError):
-        uparser._parse_math('sin(pi)', fns=None)  # No fn list given, sin not allowed
+        uparser._parse_math('sin(pi)', fns=[])  # No fn list given, sin not allowed
 
     with pytest.raises(ValueError):
         uparser.parse_math('lambda x: x+1')   # Lambdas disabled
@@ -64,27 +65,22 @@ def test_call():
     assert uparser.callf('cos(pi)') == numpy.cos(numpy.pi)
     assert uparser.callf('exp(-1)') == numpy.exp(-1)
     assert uparser.callf('ln(exp(1))') == numpy.log(numpy.exp(1))
-    assert uparser.callf('x + y', {'x':3, 'y':4}) == 7
-
-    #with pytest.raises(TimeoutError):
-    #    uparser.callf('x**x**x**x**x', {'x':9})
+    assert uparser.callf('x + y', {'x': 3, 'y': 4}) == 7
 
 
 def test_callf_sympy():
     ''' Test callf with a sympy expression '''
-    import sympy
     a, b = sympy.symbols('a b')
     f = (a+b)/2
-    assert uparser.callf(f, {'a':10, 'b':6}) == (10+6)/2
+    assert uparser.callf(f, {'a': 10, 'b': 6}) == (10+6)/2
 
 
 def test_callf_callable():
     ''' Test callf with python function '''
 
-    def myfunc(a,b):
+    def myfunc(a, b):
         return (a+b)/2
-    assert uparser.callf(myfunc, {'a':10, 'b':6}) == (10+6)/2
+    assert uparser.callf(myfunc, {'a': 10, 'b': 6}) == (10+6)/2
 
     with pytest.raises(TypeError):
         uparser.callf(numpy)  # Object that won't translate into function
-

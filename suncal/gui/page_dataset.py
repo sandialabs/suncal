@@ -7,15 +7,15 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
 from matplotlib.figure import Figure
 
-from .. import dataset
-from .. import report
-from .. import distributions
+from ..datasets.dataset_model import DataSet, DataSetSummary
+from ..common import report, distributions
 from . import gui_common
 from . import gui_widgets
 from . import page_csvload
 from . import configmgr
 
 settings = configmgr.Settings()
+
 
 class HistCtrlWidget(QtWidgets.QWidget):
     ''' Controls for Histogram output mode '''
@@ -43,6 +43,7 @@ class HistCtrlWidget(QtWidgets.QWidget):
         self.probplot.stateChanged.connect(self.changed)
 
     def update_colnames(self, names):
+        ''' Update column names in the combobox '''
         self.colSelect.blockSignals(True)
         self.colSelect.clear()
         self.colSelect.addItems(names)
@@ -69,6 +70,7 @@ class CorrCtrlWidget(QtWidgets.QWidget):
         self.col2Select.currentIndexChanged.connect(self.changed)
 
     def update_colnames(self, names):
+        ''' Update column names in the comboboxes '''
         self.col1Select.blockSignals(True)
         self.col1Select.clear()
         self.col1Select.addItems(names)
@@ -107,10 +109,12 @@ class ACorrCtrlWidget(QtWidgets.QWidget):
         self.changemode()
 
     def changemode(self):
+        ''' Change page mode from autocorrelation plot to lag plot '''
         self.lag.setVisible(self.mode.currentText() == 'Lag Plot')
         self.laglabel.setVisible(self.mode.currentText() == 'Lag Plot')
 
     def update_colnames(self, names):
+        ''' Update the column names in the combobox '''
         self.colSelect.blockSignals(True)
         self.colSelect.clear()
         self.colSelect.addItems(names)
@@ -120,9 +124,9 @@ class ACorrCtrlWidget(QtWidgets.QWidget):
 
 class DataSetWidget(QtWidgets.QWidget):
     ''' Widget for displaying measured data and ANOVA calculations '''
-    def __init__(self, item, parent=None):
+    def __init__(self, projitem, parent=None):
         super().__init__(parent=parent)
-        self.dataset = item
+        self.projitem = projitem
 
         self.table = gui_widgets.FloatTableWidget(movebyrows=True, headeredit='str')
         self.table.setMinimumWidth(400)
@@ -146,6 +150,7 @@ class DataSetWidget(QtWidgets.QWidget):
 
         self.figure = Figure()
         self.canvas = FigureCanvas(self.figure)
+        self.canvas.setStyleSheet("background-color:transparent;")
         self.toolbar = NavigationToolbar(self.canvas, self, coordinates=True)
         self.txtOutput = gui_widgets.MarkdownTextEdit()
 
@@ -182,24 +187,46 @@ class DataSetWidget(QtWidgets.QWidget):
         hlayout.addStretch()
         hlayout.addWidget(self.btnAddCol)
         hlayout.addWidget(self.btnRemCol)
-        llayout = QtWidgets.QVBoxLayout()
-        llayout.addLayout(hlayout)
-        llayout.addWidget(self.table, stretch=10)
-        llayout.addWidget(QtWidgets.QLabel('Notes:'))
-        llayout.addWidget(self.txtDescription, stretch=3)
-        outlayout = QtWidgets.QVBoxLayout()
+        topleft = QtWidgets.QVBoxLayout()
+        topleft.addLayout(hlayout)
+        topleft.addWidget(self.table)
+        botleft = QtWidgets.QVBoxLayout()
+        botleft.addWidget(QtWidgets.QLabel('Notes:'))
+        botleft.addWidget(self.txtDescription)
         ctrllayout = QtWidgets.QHBoxLayout()
         ctrllayout.addWidget(self.cmbMode)
         ctrllayout.addWidget(self.histctrls)
         ctrllayout.addWidget(self.corrctrls)
         ctrllayout.addWidget(self.acorctrls)
-        outlayout.addLayout(ctrllayout)
-        outlayout.addWidget(self.txtOutput, stretch=5)
-        outlayout.addWidget(self.canvas, stretch=5)
-        outlayout.addWidget(self.toolbar)
-        toplayout = QtWidgets.QHBoxLayout()
-        toplayout.addLayout(llayout, stretch=5)
-        toplayout.addLayout(outlayout, stretch=5)
+        toprght = QtWidgets.QVBoxLayout()
+        toprght.addLayout(ctrllayout)
+        toprght.addWidget(self.txtOutput)
+        botrght = QtWidgets.QVBoxLayout()
+        botrght.addWidget(self.canvas)
+        botrght.addWidget(self.toolbar)
+        self.topleft = QtWidgets.QWidget()
+        self.topleft.setLayout(topleft)
+        self.botleft = QtWidgets.QWidget()
+        self.botleft.setLayout(botleft)
+        self.toprght = QtWidgets.QWidget()
+        self.toprght.setLayout(toprght)
+        self.botrght = QtWidgets.QWidget()
+        self.botrght.setLayout(botrght)
+        self.leftsplitter = QtWidgets.QSplitter(QtCore.Qt.Vertical)
+        self.leftsplitter.addWidget(self.topleft)
+        self.leftsplitter.addWidget(self.botleft)
+        self.leftsplitter.setCollapsible(0, False)  # Leave "Notes" collapsible
+        self.rghtsplitter = QtWidgets.QSplitter(QtCore.Qt.Vertical)
+        self.rghtsplitter.addWidget(self.toprght)
+        self.rghtsplitter.addWidget(self.botrght)
+        self.rghtsplitter.setCollapsible(0, False)
+        self.splitter = QtWidgets.QSplitter()
+        self.splitter.addWidget(self.leftsplitter)
+        self.splitter.addWidget(self.rghtsplitter)
+        self.splitter.setCollapsible(0, False)
+        self.splitter.setCollapsible(1, False)
+        toplayout = QtWidgets.QVBoxLayout()
+        toplayout.addWidget(self.splitter)
         self.setLayout(toplayout)
 
         self.init_data()
@@ -208,20 +235,19 @@ class DataSetWidget(QtWidgets.QWidget):
 
     def calculate(self):
         ''' Run calculation. Dataset is calculated automatically, so this does nothing. '''
-        pass
 
     def init_data(self):
-        ''' Initialize the table using data in self.dataset '''
+        ''' Initialize the table using data in dataset model '''
         self.table.blockSignals(True)
-        self.txtDescription.setPlainText(self.dataset.description)
-        ncols = self.dataset.ncolumns()
-        nrows = self.dataset.maxrows()
+        self.txtDescription.setPlainText(self.projitem.description)
+        ncols = self.projitem.model.ncolumns()
+        nrows = self.projitem.model.maxrows()
 
-        if isinstance(self.dataset, dataset.DataSetSummary) != self.actSummary.isChecked():
+        if self.projitem.issummary() != self.actSummary.isChecked():
             self.actSummary.setChecked(not self.actSummary.isChecked())
-            means = self.dataset._means()
-            stds = self.dataset._stds()
-            counts = self.dataset._nmeas()
+            means = self.projitem.model._means()
+            stds = self.projitem.model._stds()
+            counts = self.projitem.model._nmeas()
             ncols = len(means)
             self.table.setRowCount(3)
             self.table.setColumnCount(ncols)
@@ -239,14 +265,14 @@ class DataSetWidget(QtWidgets.QWidget):
             if ncols > 0:
                 self.table.setColumnCount(ncols)
                 self.table.setRowCount(nrows)
-                self.table.setHorizontalHeaderLabels([str(s) for s in self.dataset.colnames])
+                self.table.setHorizontalHeaderLabels([str(s) for s in self.projitem.model.colnames])
                 for col in range(ncols):
-                    for row in range(len(self.dataset.data[col])):
-                        val = self.dataset.data[col][row]
+                    for row in range(len(self.projitem.model.data[col])):
+                        val = self.projitem.model.data[col][row]
                         if np.isfinite(val):
                             self.table.setItem(row, col, QtWidgets.QTableWidgetItem(str(val)))
                 self.table.resizeColumnsToContents()
-    
+
         self.table.blockSignals(False)
         self.updatecolnames()
         self.refresh_output()
@@ -260,14 +286,14 @@ class DataSetWidget(QtWidgets.QWidget):
         if self.actSummary.isChecked():
             self.table.setRowCount(3)
             self.table.setVerticalHeaderLabels(['Mean', 'Std. Dev.', 'Count'])
-            self.dataset.__class__ = dataset.DataSetSummary
+            self.projitem.model.__class__ = DataSetSummary
             self.cmbMode.blockSignals(True)
             self.cmbMode.clear()
             self.cmbMode.addItems(['Summary', 'Analysis of Variance'])
             self.cmbMode.blockSignals(False)
         else:
             self.table.setVerticalHeaderLabels([str(i) for i in range(self.table.rowCount())])
-            self.dataset.__class__ = dataset.DataSet
+            self.projitem.model.__class__ = DataSet
             self.cmbMode.blockSignals(True)
             self.cmbMode.clear()
             self.cmbMode.addItems(['Summary', 'Histogram', 'Correlation', 'Autocorrelation', 'Analysis of Variance'])
@@ -288,7 +314,7 @@ class DataSetWidget(QtWidgets.QWidget):
             # PAD data to three rows
             data = np.pad(data, ((0, 0), (0, 3-data.shape[1])), mode='constant')
             data = np.nan_to_num(data)
-        self.dataset.data = data
+        self.projitem.model.data = data
 
         colnames = []
         for i in range(self.table.columnCount()):
@@ -299,13 +325,13 @@ class DataSetWidget(QtWidgets.QWidget):
                 colnames.append(str(i+1))
                 self.table.setHorizontalHeaderItem(i, QtWidgets.QTableWidgetItem(str(i+1)))
 
-        self.dataset.colnames = colnames
+        self.projitem.model.colnames = colnames
         self.updatecolnames()
         self.refresh_output()
 
     def updatecolnames(self):
         ''' Update column names in column-select widgets '''
-        names = [str(c) for c in self.dataset.colnames]
+        names = [str(c) for c in self.projitem.model.colnames]
         self.histctrls.update_colnames(names)
         self.corrctrls.update_colnames(names)
         self.acorctrls.update_colnames(names)
@@ -318,13 +344,13 @@ class DataSetWidget(QtWidgets.QWidget):
         mode = self.cmbMode.currentText()
         if mode == 'Summary':
             rpt.hdr('Columns', level=2)
-            rpt.append(self.dataset.out.report())
-            if self.dataset.ncolumns() > 1:
+            rpt.append(self.projitem.result.report.summary())
+            if self.projitem.model.ncolumns() > 1:
                 rpt.hdr('Pooled Statistics', level=3)
-                rpt.append(self.dataset.out.report_pooled())
-                self.dataset.out.plot_groups(plot=self.figure)
+                rpt.append(self.projitem.result.report.pooled())
+                self.projitem.result.report.plot.groups(fig=self.figure)
             else:
-                self.dataset.out.plot_histogram(plot=self.figure)
+                self.projitem.result.report.plot.histogram(fig=self.figure)
 
         elif mode == 'Histogram':
             col = self.histctrls.colSelect.currentText()
@@ -332,31 +358,31 @@ class DataSetWidget(QtWidgets.QWidget):
             fit = None if fit == 'None' else fit
             probplot = self.histctrls.probplot.isChecked()
             rpt.hdr(col, level=2)
-            rpt.append(self.dataset.out.report_column(col))
-            self.dataset.out.plot_histogram(colname=col, plot=self.figure, fit=fit, qqplot=probplot)
+            rpt.append(self.projitem.result.report.column(col))
+            self.projitem.result.report.plot.histogram(colname=col, fig=self.figure, fit=fit, qqplot=probplot)
 
         elif mode == 'Correlation':
             rpt.hdr('Correlation Matrix', level=2)
-            rpt.append(self.dataset.out.report_correlation())
+            rpt.append(self.projitem.result.report.correlation())
             col1 = self.corrctrls.col1Select.currentText()
             col2 = self.corrctrls.col2Select.currentText()
-            self.dataset.out.plot_scatter(col1, col2, plot=self.figure)
+            self.projitem.result.report.plot.scatter(col1, col2, fig=self.figure)
 
         elif mode == 'Autocorrelation':
             rpt.hdr('Autocorrelation', level=2)
             col = self.acorctrls.colSelect.currentText()
             lag = self.acorctrls.lag.value()
-            rpt.append(self.dataset.out.report_autocorrelation())
+            rpt.append(self.projitem.result.report.autocorrelation())
             if self.acorctrls.mode.currentText() == 'Lag Plot':
                 with suppress(ValueError):  # Raises when lag too high
-                    self.dataset.out.plot_lag(col, lag=lag, plot=self.figure)
+                    self.projitem.result.report.plot.lag(col, lag=lag, fig=self.figure)
             else:
-                self.dataset.out.plot_autocorrelation(col, plot=self.figure)
+                self.projitem.result.report.plot.autocorrelation(col, fig=self.figure)
 
         elif mode == 'Analysis of Variance':
             rpt.hdr('Analysis of Variance', level=2)
-            rpt.append(self.dataset.out.report_anova())
-            self.dataset.out.plot_groups(plot=self.figure)
+            rpt.append(self.projitem.result.report.anova())
+            self.projitem.result.report.plot.groups(fig=self.figure)
 
         else:
             raise NotImplementedError
@@ -374,14 +400,15 @@ class DataSetWidget(QtWidgets.QWidget):
         self.table.setItem(0, 0, QtWidgets.QTableWidgetItem(''))
         self.table.setHorizontalHeaderLabels(['1'])
         self.table.blockSignals(False)
-        self.dataset.colnames = []
-        self.dataset.data = np.array([[]])
+        self.projitem.model.colnames = []
+        self.projitem.model.data = np.array([[]])
 
     def addcol(self):
         ''' Add a column to the table '''
         col = self.table.columnCount()
         self.table.setColumnCount(col + 1)
-        self.table.setHorizontalHeaderItem(col, QtWidgets.QTableWidgetItem(str(col+1)))  # Must do this to make it editable for some reason.
+        # Must do this to make it editable for some reason:
+        self.table.setHorizontalHeaderItem(col, QtWidgets.QTableWidgetItem(str(col+1)))
 
     def remcol(self):
         ''' Remove selected column from table '''
@@ -392,7 +419,7 @@ class DataSetWidget(QtWidgets.QWidget):
 
     def update_description(self):
         ''' Description was updated, save it. '''
-        self.dataset.description = self.txtDescription.toPlainText()
+        self.projitem.description = self.txtDescription.toPlainText()
 
     def importcolumn(self):
         ''' Add one column from a CSV file '''
@@ -401,9 +428,9 @@ class DataSetWidget(QtWidgets.QWidget):
             dlg = page_csvload.SelectCSVData(fname)
             if dlg.exec_():
                 self.table.blockSignals(True)
-                dset = dlg.dataset()
-                data = dset.get_column() # ONLY FIRST COLUMN is included when importing a column
-                hdr = dset.colnames[0]   # List of strings
+                dset = dlg.dataset().model
+                data = dset.get_column()  # Only first column is included when importing a column
+                hdr = dset.colnames[0]    # List of strings
                 rowcnt = len(data)
 
                 if self.table.rowCount() > 1 or self.table.columnCount() > 1:
@@ -414,8 +441,8 @@ class DataSetWidget(QtWidgets.QWidget):
                 if len(hdr) > 0:
                     self.table.setHorizontalHeaderItem(col, QtWidgets.QTableWidgetItem(hdr[0]))
 
-                for row in range(len(data)):
-                    self.table.setItem(row, col, QtWidgets.QTableWidgetItem(str(data[row])))
+                for row, item in enumerate(data):
+                    self.table.setItem(row, col, QtWidgets.QTableWidgetItem(str(item)))
                 self.table.blockSignals(False)
                 self.tablechanged()
 
@@ -427,11 +454,11 @@ class DataSetWidget(QtWidgets.QWidget):
             if dlg.exec_():
                 self.table.blockSignals(True)
                 self.table.clear()
-                dset = dlg.dataset()
+                dset = dlg.dataset().model
                 data = dset.data
                 hdr = dset.colnames
                 colcnt = max(len(hdr), len(data))
-                rowcnt = max([len(c) for c in data])
+                rowcnt = max(len(c) for c in data)
 
                 self.table.setRowCount(rowcnt)
                 self.table.setColumnCount(colcnt)
@@ -445,7 +472,7 @@ class DataSetWidget(QtWidgets.QWidget):
 
     def get_report(self):
         ''' Get full report of dataset, using page settings '''
-        return self.dataset.get_output().report_all()
+        return self.projitem.result.report.all()
 
     def save_report(self):
         ''' Save full report, asking user for settings/filename '''

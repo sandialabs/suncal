@@ -7,8 +7,8 @@ echo Generating License Information...
 python suncal/gui/gen_licenses.py
 
 echo Building Standalone Exe
-pyinstaller --windowed --onefile --version-file=winexe_version_info.txt uncertwinonefile.spec
+pyinstaller uncertwinonefile.spec
 
 echo Building Installer
-pyinstaller --windowed  --version-file=winexe_version_info.txt uncertwin.spec
+pyinstaller uncertwin.spec
 "C:\Program Files (x86)\Inno Setup 6\ISCC" /dMyAppVersion="%VER%" installer.iss

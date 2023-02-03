@@ -1,5 +1,22 @@
 # Change History
 
+## Version 1.6
+
+UI changes:
+
+- Implemented guided uncertainty wizard interface
+- Added resizable splitters between sections in the window
+- Updated ANOVA reports to better align with GUM examples
+
+API changes (possibly breaking):
+
+- Refactored API to use Model and ModelCallable classes, and deprecated UncertCalc class.
+- Updated return values into Results objects and Reports objects for consistency across all calculation types.
+- Updated for compatibility with Python 3.10 and 3.11. Minimum required version is 3.9.
+- Makes some imports from subpackages
+- Added API User Manual as Jupyter Notebooks in docs folder
+
+
 ## Version 1.5.7
 
 - Improved plot and equation resolution when using high-DPI displays

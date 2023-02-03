@@ -6,18 +6,19 @@
 '''
 
 import os
-import re
 import sys
 import subprocess
-import pkg_resources
 import json
+import pkg_resources
+
 
 # For pulling version numbers
 from PyQt5.QtCore import QT_VERSION_STR, PYQT_VERSION_STR
-import matplotlib as mpl
 
 
-contributers = 'Collin Delker, Otis Solomon, Ricky Sandoval, Renee Jerome, Nick Haythorn, Katherine Sanchez, Megan McBride, Sam Maldonado, Nevin Martin, Faith Tinnin, Roger Burton, and Meaghan Carpenter'
+CONTRIBUTORS = ('Collin Delker, Otis Solomon, Ricky Sandoval, Renee Jerome, Nick Haythorn, Katherine Sanchez, '
+                'Megan McBride, Sam Maldonado, Nevin Martin, Julia Rima, Faith Tinnin, '
+                'Roger Burton, and Meaghan Carpenter')
 
 
 def formathtml(s):
@@ -32,7 +33,7 @@ def get_python_license():
     # Don't know of a way to get this at runtime, and the license text hard-codes
     # the version number.
     version = sys.version.split()[0]
-    if version != '3.7.9':
+    if version != '3.11.0':
         print('\x1b[31m GEN_LICENSE: UPDATE PSF VERSION NUMBER \x1b[0m')
     return 'Python', formathtml(PSF_LICENSE), version
 
@@ -41,7 +42,7 @@ def get_scipy_licensetext():
     ''' Get license for Scipy from file. Doesn't work in pip-licenses for some reason. '''
     pkg = pkg_resources.require('scipy')[0]
     licfile = os.path.join(pkg.location, pkg.project_name, 'LICENSE.txt')
-    with open(licfile, 'r') as f:
+    with open(licfile, 'r', encoding='utf-8') as f:
         lictext = f.read()
     return lictext
 
@@ -52,9 +53,10 @@ def build_license_html():
 
     # Use pip-licenses to pull info for all installed packages in json format
     try:
-        out = subprocess.check_output(['pip-licenses', '--with-license-file', '--filter-strings', '--filter-code-page=utf-8', '--format=json'])
-    except FileNotFoundError:
-        raise RuntimeError('License generation requires pip-licenses package.')
+        out = subprocess.check_output(['pip-licenses', '--with-license-file',
+                                      '--filter-strings', '--filter-code-page=utf-8', '--format=json'])
+    except FileNotFoundError as exc:
+        raise RuntimeError('License generation requires pip-licenses package.') from exc
 
     # Remove ones we don't explicitly import
     jout = json.loads(out)
@@ -67,7 +69,7 @@ def build_license_html():
 
     # Add other packages using results from pip-licenses
     for lic in jout:
-        lictext = lic['LicenseText']    
+        lictext = lic['LicenseText']
         if lic['LicenseText'] == 'UNKNOWN':
             if lic['Name'].lower() == 'scipy':
                 # scipy has a LICENSE.txt, but pip-licenses doesn't pick it up?
@@ -77,7 +79,7 @@ def build_license_html():
 
         header = template.format(lic['Name'], lic['Version'], lic['License'])
         text = header + formathtml(lictext)
-        lines.append(text)    
+        lines.append(text)
 
     # Qt is not a Python package, but uses generic LGPL
     header = template.format('Qt', QT_VERSION_STR, 'LGPL')
@@ -87,9 +89,10 @@ def build_license_html():
     header = template.format('PyQt', PYQT_VERSION_STR, 'GPL v3')
     lines.append(header + formathtml(GPL))
 
-    preamble = '''<h1>Acknowledgements</h1><br>
-    Thanks to {} for their contributions, ideas, testing, and support.<br>
-    <br>The authors are grateful for the contributions of the open source software community. This program relies on the following bundled third-party software packages.<br>\n'''.format(contributers)
+    preamble = f'''<h1>Acknowledgements</h1><br>
+    Thanks to {CONTRIBUTORS} for their contributions, ideas, testing, and support.<br>
+    <br>The authors are grateful for the contributions of the open source software community.
+    This program relies on the following bundled third-party software packages.<br>\n'''
 
     licensehtml = preamble + '<br><hr>\n'.join(lines)
     return licensehtml
@@ -940,32 +943,32 @@ Public License instead of this License.  But first, please read
 
 PSF_LICENSE = '''1. This LICENSE AGREEMENT is between the Python Software Foundation ("PSF"), and
    the Individual or Organization ("Licensee") accessing and otherwise using Python
-   3.7.9 software in source or binary form and its associated documentation.
+   3.11.0 software in source or binary form and its associated documentation.
 
 2. Subject to the terms and conditions of this License Agreement, PSF hereby
    grants Licensee a nonexclusive, royalty-free, world-wide license to reproduce,
    analyze, test, perform and/or display publicly, prepare derivative works,
-   distribute, and otherwise use Python 3.7.9 alone or in any derivative
+   distribute, and otherwise use Python 3.11.0 alone or in any derivative
    version, provided, however, that PSF's License Agreement and PSF's notice of
-   copyright, i.e., "Copyright (c) 2001-2021 Python Software Foundation; All Rights
-   Reserved" are retained in Python 3.7.9 alone or in any derivative version
+   copyright, i.e., "Copyright © 2001-2022 Python Software Foundation; All Rights
+   Reserved" are retained in Python 3.11.0 alone or in any derivative version
    prepared by Licensee.
 
 3. In the event Licensee prepares a derivative work that is based on or
-   incorporates Python 3.7.9 or any part thereof, and wants to make the
+   incorporates Python 3.11.0 or any part thereof, and wants to make the
    derivative work available to others as provided herein, then Licensee hereby
    agrees to include in any such work a brief summary of the changes made to Python
-   3.7.9.
+   3.11.0.
 
-4. PSF is making Python 3.7.9 available to Licensee on an "AS IS" basis.
+4. PSF is making Python 3.11.0 available to Licensee on an "AS IS" basis.
    PSF MAKES NO REPRESENTATIONS OR WARRANTIES, EXPRESS OR IMPLIED.  BY WAY OF
    EXAMPLE, BUT NOT LIMITATION, PSF MAKES NO AND DISCLAIMS ANY REPRESENTATION OR
    WARRANTY OF MERCHANTABILITY OR FITNESS FOR ANY PARTICULAR PURPOSE OR THAT THE
-   USE OF PYTHON 3.7.9 WILL NOT INFRINGE ANY THIRD PARTY RIGHTS.
+   USE OF PYTHON 3.11.0 WILL NOT INFRINGE ANY THIRD PARTY RIGHTS.
 
-5. PSF SHALL NOT BE LIABLE TO LICENSEE OR ANY OTHER USERS OF PYTHON 3.7.9
+5. PSF SHALL NOT BE LIABLE TO LICENSEE OR ANY OTHER USERS OF PYTHON 3.11.0
    FOR ANY INCIDENTAL, SPECIAL, OR CONSEQUENTIAL DAMAGES OR LOSS AS A RESULT OF
-   MODIFYING, DISTRIBUTING, OR OTHERWISE USING PYTHON 3.7.9, OR ANY DERIVATIVE
+   MODIFYING, DISTRIBUTING, OR OTHERWISE USING PYTHON 3.11.0, OR ANY DERIVATIVE
    THEREOF, EVEN IF ADVISED OF THE POSSIBILITY THEREOF.
 
 6. This License Agreement will automatically terminate upon a material breach of
@@ -977,7 +980,7 @@ PSF_LICENSE = '''1. This LICENSE AGREEMENT is between the Python Software Founda
    trademark sense to endorse or promote products or services of Licensee, or any
    third party.
 
-8. By copying, installing or otherwise using Python 3.7.9, Licensee agrees
+8. By copying, installing or otherwise using Python 3.11.0, Licensee agrees
    to be bound by the terms and conditions of this License Agreement.'''
 
 
@@ -986,4 +989,4 @@ if __name__ == '__main__':
     path = os.path.join(os.path.split(__file__)[0], 'licenses.py')
     with open(path, 'w', encoding='utf-8') as f:
         f.write('# AUTOGENERATED BY GEN_LICENSES.PY. DO NOT MANUALLY MODIFY.\n\n')
-        f.write("licenses = r'''{}'''".format(html))
+        f.write(f"licenses = r'''{html}'''")

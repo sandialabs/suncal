@@ -1,4 +1,4 @@
-from setuptools import setup
+from setuptools import setup, find_packages
 
 version = {}
 with open('suncal/version.py', 'r') as f:
@@ -17,7 +17,7 @@ setup(
     author_email='uncertainty@sandia.gov',
     url='https://sandiapsl.github.io',
     project_urls={'Source': 'https://github.com/SandiaPSL/UncertaintyCalc'},
-    python_requires='>=3.7',
+    python_requires='>=3.9',
     install_requires=[
         'numpy>=1.19',
         'matplotlib>=3.3',
@@ -28,8 +28,7 @@ setup(
         'pyyaml>=5.4',
         ],
     extras_require={'gui': 'pyqt5'},
-    packages=['suncal', 'suncal.gui', 'suncal.intervals', 'psluncert'],
-    package_dir={'suncal': 'suncal', 'suncal.gui': 'suncal/gui', 'suncal.intervals': 'suncal/intervals', 'psluncert': 'suncal'},
+    packages=find_packages(),
     entry_points={
         'console_scripts': ['suncal = suncal.__main__:main_unc',
                             'suncalf = suncal.__main__:main_setup',

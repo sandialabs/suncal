@@ -7,27 +7,27 @@ Settings are saved in an INI file to the location:
 '''
 
 import os
-import scipy.stats as stats
+import logging
+from scipy import stats
 from PyQt5 import QtCore, QtWidgets, QtGui
 import matplotlib as mpl
 
-from . import gui_common
+from . import gui_common  # noqa: F401
 from . import gui_widgets
 from . import colormap
-from .. import report
-from .. import unitmgr
+from ..common import report, unitmgr
 
 # List all distributions in scipy.stats!
 DISTS = [d for d in dir(stats) if isinstance(getattr(stats, d), (stats.rv_continuous, stats.rv_discrete))]
 DISTS = ['normal', 'triangular', 'curvtrap', 'resolution'] + DISTS
 
-dfltcmap = 'viridis'
-dfltstyle = 'bmh'
-assert dfltstyle in mpl.style.available   # In case MPL changes styles or colormaps
-assert hasattr(mpl.cm, dfltcmap)
+DFLTCMAP = 'viridis'
+DFLTSTYLE = 'bmh'
+assert DFLTSTYLE in mpl.style.available   # In case MPL changes styles or colormaps
+assert hasattr(mpl.cm, DFLTCMAP)
 
 
-class Settings(object):
+class Settings:
     ''' Object for reading and writing configuration settings.
 
         In most cases, if an invalid value is provided, a default will be written to the settings file.
@@ -47,7 +47,7 @@ class Settings(object):
         self.settings.setValue('style/name', stylename)
 
     def getStyle(self):
-        return self.settings.value('style/name', dfltstyle, type=str)
+        return self.settings.value('style/name', DFLTSTYLE, type=str)
 
     def setCustomStyle(self, styledict):
         self.settings.remove('rcparam')
@@ -67,7 +67,7 @@ class Settings(object):
 
     def setColorCycle(self, colorlist):
         cyclestr = "cycler('color', ["
-        cyclestr += ','.join(["'{}'".format(c) for c in colorlist])
+        cyclestr += ','.join(f"'{c}'" for c in colorlist)
         cyclestr += "])"
         self.settings.setValue('rcparam/axes.prop_cycle', cyclestr)
 
@@ -80,15 +80,15 @@ class Settings(object):
             # Customized cycle
             colors = cycle[cycle.find('[')+1:cycle.find(']')].split(',')
             return colors[index]
-        else:
-            # Get from color C0, C1, etc.
-            try:
-                return mpl.rcParams['axes.prop_cycle'].by_key()['color'][index]
-            except IndexError:
-                return 'black'
+
+        # Get from color C0, C1, etc.
+        try:
+            return mpl.rcParams['axes.prop_cycle'].by_key()['color'][index]
+        except IndexError:
+            return 'black'
 
     def getColormap(self, key):
-        c = self.settings.value('style/'+key, dfltcmap, type=str)
+        c = self.settings.value('style/'+key, DFLTCMAP, type=str)
         return c
 
     def setColormap(self, key, value):
@@ -127,52 +127,6 @@ class Settings(object):
     def getSamples(self):
         return self.settings.value('montecarlo/samples', 1000000, type=int)
 
-    def setCoverageMC(self, values):
-        self.settings.setValue('coverage/mc/levels', values)
-
-    def setCoverageGUMt(self, values):
-        self.settings.setValue('coverage/gum/levels/t', values)
-
-    def setCoverageGUMk(self, values):
-        values = [(v[-1]) for v in values]  # Strip 'k=' part
-        self.settings.setValue('coverage/gum/levels/k', values)
-
-    def setCoverageTypeGUM(self, value):
-        assert value.lower() in ['t', 'k']
-        self.settings.setValue('coverage/gum/type', value)
-
-    def setCoverageTypeMC(self, value):
-        assert value.lower() in ['symmetric', 'shortest']
-        self.settings.setValue('coverage/mc/type', value)
-
-    def getCoverageMC(self):
-        # Store as strings so percent OR k=2 values can be saved
-        vals = self.settings.value('coverage/mc/levels', ['99%', '95%', '90%', '85%', '68%'])
-        return vals
-
-    def getCoverageGUMt(self):
-        return self.settings.value('coverage/gum/levels/t', ['99%', '95%', '90%', '85%', '68%'])
-
-    def getCoverageGUMk(self):
-        vals = self.settings.value('coverage/gum/levels/k', [2])
-        try:
-            vals = ['k = {}'.format(v) for v in vals]
-        except TypeError:
-            vals = ['k = 2']
-        return vals
-
-    def getCoverageTypeGUM(self):
-        return self.settings.value('coverage/gum/type', 't')  # t or k
-
-    def getCoverageTypeMC(self):
-        return self.settings.value('coverage/mc/type', 'symmetric')  # symmetric or shortest
-
-    def getFunc(self):
-        return self.settings.value('calculator/function', 'f = x', type=str)
-
-    def setFunc(self, value):
-        self.settings.setValue('calculator/function', value)
-
     def getSigfigs(self):
         return self.settings.value('report/sigfigs', 2, type=int)
 
@@ -208,7 +162,8 @@ class Settings(object):
         self.settings.setValue('report/mathmode', value)
 
     def getRptMJURL(self):
-        return self.settings.value('report/mathjaxurl', 'https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.4/MathJax.js', type=str)
+        return self.settings.value(
+            'report/mathjaxurl', report.MATHJAX_URL, type=str)
 
     def setRptMJURL(self, value):
         self.settings.setValue('report/mathjaxurl', value)
@@ -255,31 +210,22 @@ class Settings(object):
         ''' Restore all values to default '''
         self.setStyle('bmh')
         self.settings.remove('rcparam')
-        self.setColormap('cmapscatter', dfltcmap)
-        self.setColormap('cmapcontour', dfltcmap)
+        self.setColormap('cmapscatter', DFLTCMAP)
+        self.setColormap('cmapcontour', DFLTCMAP)
         self.setDistributions(self.dfltdists)
         self.setSamples(1000000)
-        self.setCoverageGUMt(['99%', '95%', '90%', '85%', '68%'])
-        self.setCoverageGUMk(['k=2'])
-        self.setCoverageMC(['99%', '95%', '90%', '85%', '68%'])
-        self.setCoverageTypeGUM('t')
-        self.setCoverageTypeMC('symmetric')
-        self.setFunc('f = x')
         self.setSigfigs(2)
         self.setNumformat('auto')
         self.setRandomSeed(None)
         self.setRptFormat('html')
         self.setRptImgFormat('svg')
         self.setRptMath('mpl')
-        self.setRptMJURL('https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.4/MathJax.js')
+        self.setRptMJURL(report.MATHJAX_URL)
         self.setPandocPath(None)
         self.setLatexPath(None)
         self.sync()
 
 
-#--------------------------------------------------------------------
-# GUI Dialog for changing settings
-#--------------------------------------------------------------------
 class ColorButton(QtWidgets.QPushButton):
     ''' Widget to show a button and choose color '''
     colorChanged = QtCore.pyqtSignal(object)
@@ -305,7 +251,7 @@ class ColorButton(QtWidgets.QPushButton):
             self.color = color
             self.colorChanged.emit(self.color)
         if self.color:
-            self.setStyleSheet('background-color: {}'.format(self.color))
+            self.setStyleSheet(f'background-color: {self.color}')
         else:
             self.setStyleSheet('')
 
@@ -336,7 +282,6 @@ class PgGeneral(QtWidgets.QWidget):
     ''' Page for General Settings '''
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.txtFunc = QtWidgets.QLineEdit()
         self.sigfigs = QtWidgets.QSpinBox()
         self.sigfigs.setMinimum(1)
         self.sigfigs.setMaximum(20)
@@ -344,7 +289,6 @@ class PgGeneral(QtWidgets.QWidget):
         self.nformat.addItems(['Auto', 'Decimal', 'Scientific', 'Engineering', 'SI'])
 
         flayout = QtWidgets.QFormLayout()
-        flayout.addRow('Default Function', self.txtFunc)
         flayout.addRow('Significant Figures', self.sigfigs)
         flayout.addRow('Number format', self.nformat)
         flayout.setHorizontalSpacing(20)
@@ -373,7 +317,9 @@ class PgUnits(QtWidgets.QWidget):
     ''' Page for defining custom measurement units '''
     def __init__(self, parent=None):
         super().__init__(parent)
-        label = QtWidgets.QLabel('Enter custom unit names and abbreviations\nas equations relating to other units. Example:\n\n    banana_dose = 78*nanosieverts = bn\n\nSee Pint documentation for details.')
+        label = QtWidgets.QLabel('Enter custom unit names and abbreviations\nas equations relating to other units. '
+                                 'Example:\n\n    banana_dose = 78*nanosieverts = bn\n\n'
+                                 'See Pint documentation for details.')
         self.unitdefs = QtWidgets.QTextEdit()
         layout = QtWidgets.QVBoxLayout()
         layout.addWidget(label)
@@ -395,34 +341,6 @@ class PgMonteCarlo(QtWidgets.QWidget):
         layout.addLayout(flayout)
         layout.addStretch()
         self.setLayout(layout)
-
-
-class PgExpanded(QtWidgets.QWidget):
-    ''' Page for intervals and type of expanded uncertainty report '''
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.GUMcov = gui_widgets.GUMExpandedWidget()
-        self.MCcov = gui_widgets.MCExpandedWidget()
-
-        layout = QtWidgets.QVBoxLayout()
-        layout.addWidget(QtWidgets.QLabel('Defaults for Expanded Report'))
-        layout.addWidget(self.GUMcov)
-        layout.addWidget(self.MCcov)
-        self.setLayout(layout)
-
-    def setCov(self, covgumt, covgumk, covmc, gumtype, mctype):
-        ''' Set widget values '''
-        self.GUMcov.GUMtype.setCurrentIndex(0 if gumtype == 't' else 1)
-        self.MCcov.MCtype.setCurrentIndex(0 if mctype == 'symmetric' else 1)
-        self.GUMcov.set_buttons(covgumt+covgumk)
-        self.MCcov.set_buttons(covmc)
-
-    def getCov(self):
-        gumtype = 't' if self.GUMcov.GUMtype.currentIndex() == 0 else 'k'
-        mctype = 'symmetric' if self.MCcov.MCtype.currentIndex() == 0 else 'shortest'
-        gumcovt = self.GUMcov.covbuttons.get_covlist()
-        gumcovk = self.GUMcov.kbuttons.get_covlist()
-        return gumcovt, gumcovk, self.MCcov.get_covlist(), gumtype, mctype
 
 
 class PgStyle(QtWidgets.QWidget):
@@ -449,7 +367,8 @@ class PgStyle(QtWidgets.QWidget):
         self.clrHist.pressed.connect(self.colorchange)
         self.clrGum.pressed.connect(self.colorchange)
         self.clrScat.pressed.connect(self.colorchange)
-        [clr.pressed.connect(self.colorchange) for clr in self.clrI]
+        for clr in self.clrI:
+            clr.pressed.connect(self.colorchange)
         self.btnCustom = QtWidgets.QPushButton('Customize Style...')
         self.btnCustom.pressed.connect(self.customize)
 
@@ -463,7 +382,8 @@ class PgStyle(QtWidgets.QWidget):
         flayout.addRow('Scatter Plots', self.clrScat)
         intlayout = QtWidgets.QHBoxLayout()
         intlayout.addWidget(QtWidgets.QLabel('Intervals:'))
-        [intlayout.addWidget(i) for i in self.clrI]
+        for i in self.clrI:
+            intlayout.addWidget(i)
         f2layout = QtWidgets.QFormLayout()
         f2layout.addRow('Contour Colormap', self.cmpGum)
         f2layout.addRow('Discrete Colormap', self.cmpScat)
@@ -497,7 +417,10 @@ class PgStyle(QtWidgets.QWidget):
         self.colorscustomized = True
 
     def get_colorcycle(self):
-        clist = [self.clrHist.color, self.clrGum.color, mpl.rcParams['axes.prop_cycle'].by_key()['color'][2], self.clrScat.color]
+        clist = [self.clrHist.color,
+                 self.clrGum.color,
+                 mpl.rcParams['axes.prop_cycle'].by_key()['color'][2],
+                 self.clrScat.color]
         clist.extend([c.color for c in self.clrI])
         return clist
 
@@ -520,7 +443,7 @@ class PgStyle(QtWidgets.QWidget):
                 if key in list(mpl.rcParams.keys()):
                     self.customrc[key] = val
                 else:
-                    print('Unknown rcParam {}'.format(key))
+                    logging.warning('Unknown rcParam %s', key)
 
 
 class PgReportOpts(QtWidgets.QWidget):
@@ -592,7 +515,7 @@ class PgSettingsDlg(QtWidgets.QDialog):
         self.setFont(font)
 
         self.settings = Settings()
-        self.setWindowTitle('Uncertainty Calculator Settings')
+        self.setWindowTitle('Suncal Settings')
 
         self.pgGeneral = PgGeneral(self)
         self.pgStyle = PgStyle(self)
@@ -600,10 +523,10 @@ class PgSettingsDlg(QtWidgets.QDialog):
         self.pgDist = PgDistribution(self)
         self.pgUnits = PgUnits(self)
         self.pgMC = PgMonteCarlo(self)
-        self.pgExpand = PgExpanded(self)
         self.list = QtWidgets.QListWidget()
         self.list.setMaximumWidth(150)
-        self.list.addItems(['General', 'Plot Style', 'Report Format', 'Units', 'Distributions', 'Monte-Carlo', 'Expanded Unc.'])
+        self.list.addItems(['General', 'Plot Style', 'Report Format', 'Units',
+                            'Distributions', 'Monte-Carlo'])
         self.list.currentRowChanged.connect(self.pagechange)
         self.stack = QtWidgets.QStackedWidget()
         self.stack.addWidget(self.pgGeneral)
@@ -612,8 +535,9 @@ class PgSettingsDlg(QtWidgets.QDialog):
         self.stack.addWidget(self.pgUnits)
         self.stack.addWidget(self.pgDist)
         self.stack.addWidget(self.pgMC)
-        self.stack.addWidget(self.pgExpand)
-        self.button = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel | QtWidgets.QDialogButtonBox.RestoreDefaults)
+        self.button = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok |
+                                                 QtWidgets.QDialogButtonBox.Cancel |
+                                                 QtWidgets.QDialogButtonBox.RestoreDefaults)
         self.button.accepted.connect(self.accept)
         self.button.rejected.connect(self.reject)
         self.button.button(QtWidgets.QDialogButtonBox.RestoreDefaults).clicked.connect(self.defaults)
@@ -629,9 +553,10 @@ class PgSettingsDlg(QtWidgets.QDialog):
     def loadsettings(self):
         ''' Load settings '''
         self.blockSignals(True)
-        self.pgGeneral.txtFunc.setText(self.settings.getFunc())
         self.pgGeneral.sigfigs.setValue(self.settings.getSigfigs())
-        self.pgGeneral.nformat.setCurrentIndex(self.pgGeneral.nformat.findText(self.settings.getNumformat(), flags=QtCore.Qt.MatchExactly | QtCore.Qt.MatchFixedString))  # Not MatchFixedString so not case sensitive
+        self.pgGeneral.nformat.setCurrentIndex(
+            self.pgGeneral.nformat.findText(self.settings.getNumformat(),
+                                            flags=QtCore.Qt.MatchExactly | QtCore.Qt.MatchFixedString))
         self.pgStyle.cmpGum.setCmap(self.settings.getColormap('cmapcontour'))
         self.pgStyle.cmpScat.setCmap(self.settings.getColormap('cmapscatter'))
         self.pgStyle.cmbStyle.setCurrentIndex(self.pgStyle.cmbStyle.findText(self.settings.getStyle()))
@@ -640,19 +565,19 @@ class PgSettingsDlg(QtWidgets.QDialog):
         self.pgStyle.clrGum.setColor(self.settings.getColorFromCycle(1))
         self.pgStyle.clrScat.setColor(self.settings.getColorFromCycle(3))
         self.pgStyle.customrc = self.settings.getCustomStyle()
-        [clr.setColor(self.settings.getColorFromCycle(4+i)) for i, clr in enumerate(self.pgStyle.clrI)]
+        for i, clr in enumerate(self.pgStyle.clrI):
+            clr.setColor(self.settings.getColorFromCycle(4+i))
 
         self.pgMC.txtSamples.setText(str(self.settings.getSamples()))
         self.pgMC.txtSeed.setText(str(self.settings.getRandomSeed()))
-        self.pgExpand.setCov(self.settings.getCoverageGUMt(), self.settings.getCoverageGUMk(),
-                             self.settings.getCoverageMC(), self.settings.getCoverageTypeGUM(),
-                             self.settings.getCoverageTypeMC())
-
         self.pgUnits.unitdefs.setText(self.settings.getUnitDefs())
 
-        self.pgRptOpts.cmbFormat.setCurrentIndex(['html', 'md', 'pdf', 'odt', 'docx'].index(self.settings.getRptFormat()))
-        self.pgRptOpts.cmbMath.setCurrentIndex(['mathjax', 'mpl'].index(self.settings.getRptMath()))
-        self.pgRptOpts.cmbImage.setCurrentIndex(['svg', 'png'].index(self.settings.getRptImgFormat()))
+        self.pgRptOpts.cmbFormat.setCurrentIndex(
+            ['html', 'md', 'pdf', 'odt', 'docx'].index(self.settings.getRptFormat()))
+        self.pgRptOpts.cmbMath.setCurrentIndex(
+            ['mathjax', 'mpl'].index(self.settings.getRptMath()))
+        self.pgRptOpts.cmbImage.setCurrentIndex(
+            ['svg', 'png'].index(self.settings.getRptImgFormat()))
         self.pgRptOpts.mjurl.setText(self.settings.getRptMJURL())
         self.pgRptOpts.chkUnicode.setChecked(self.settings.getRptUnicode())
 
@@ -686,7 +611,6 @@ class PgSettingsDlg(QtWidgets.QDialog):
     def accept(self):
         ''' Save settings and close the dialog. NOTE: NO VALIDATION CHECKING DONE! '''
         # Just write everything every time
-        self.settings.setFunc(self.pgGeneral.txtFunc.text())
         self.settings.setSigfigs(self.pgGeneral.sigfigs.value())
         self.settings.setNumformat(self.pgGeneral.nformat.currentText().lower())
 
@@ -710,12 +634,6 @@ class PgSettingsDlg(QtWidgets.QDialog):
             if item.checkState() == QtCore.Qt.Checked:
                 dlist.append(item.text())
         self.settings.setDistributions(dlist)
-        gumcovt, gumcovk, mccov, gumtype, mctype = self.pgExpand.getCov()
-        self.settings.setCoverageGUMt(gumcovt)
-        self.settings.setCoverageGUMk(gumcovk)
-        self.settings.setCoverageMC(mccov)
-        self.settings.setCoverageTypeGUM(gumtype)
-        self.settings.setCoverageTypeMC(mctype)
 
         self.settings.setRptFormat(['html', 'md', 'pdf', 'odt', 'docx'][self.pgRptOpts.cmbFormat.currentIndex()])
         self.settings.setRptImgFormat(['svg', 'png'][self.pgRptOpts.cmbImage.currentIndex()])
@@ -725,9 +643,10 @@ class PgSettingsDlg(QtWidgets.QDialog):
 
         err = self.settings.setUnitDefs(self.pgUnits.unitdefs.toPlainText())
         if err:
-            QtWidgets.QMessageBox.warning(self, 'Uncertainty Calculator', err)
+            QtWidgets.QMessageBox.warning(self, 'Suncal', err)
 
-        if self.pgRptOpts.pandoc.text() != report.pandoc_path and os.path.exists(self.pgRptOpts.pandoc.text()):  # Only save if customized and pandoc is there
+        if self.pgRptOpts.pandoc.text() != report.pandoc_path and os.path.exists(self.pgRptOpts.pandoc.text()):
+            # Only save if customized and pandoc is there
             self.settings.setPandocPath(self.pgRptOpts.pandoc.text())
             report.pandoc_path = self.pgRptOpts.pandoc.text()
         if self.pgRptOpts.latex.text() != report.latex_path and os.path.exists(self.pgRptOpts.latex.text()):

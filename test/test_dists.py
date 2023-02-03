@@ -1,7 +1,8 @@
 ''' Test custom distributions '''
 import numpy as np
 from scipy import stats
-from suncal import distributions
+from suncal.common import distributions
+
 
 # First cases are wrappers around scipy.stats distributions
 def test_uniform():
@@ -25,43 +26,47 @@ def test_arcsine():
 # Curvilinear trapezoid is a custom subclass of stats.rv_continuous, so do a bit more testing on it.
 def test_curvtrap():
     # Check variance/mean values
-    a = 2; d = .5
+    a = 2
+    d = .5
     u = distributions.get_distribution('curvtrap', a=a, d=d)
     assert np.isclose(u.mean(), 0)
     assert np.isclose(u.var(), (2*a)**2/12 + d**2/9)  # Std Uncertainty of Ctrap (see GUM-S1, 6.4.3.3)
 
-    a = 4; d = 1
-    u = distributions.get_distribution('curvtrap',a=a, d=d)
+    a = 4
+    d = 1
+    u = distributions.get_distribution('curvtrap', a=a, d=d)
     assert np.isclose(u.var(), (2*a)**2/12 + d**2/9)
 
-    u = distributions.get_distribution('curvtrap',a=2, d=3)  # d can't be > a. Should return nan.
+    u = distributions.get_distribution('curvtrap', a=2, d=3)  # d can't be > a. Should return nan.
     assert not np.isfinite(u.mean())
     assert not np.isfinite(u.std())
 
     # PDF should integrate to ~1
-    u = distributions.get_distribution('curvtrap',a=2, d=.5)
-    x = np.linspace(-3,3,1000)
+    u = distributions.get_distribution('curvtrap', a=2, d=.5)
+    x = np.linspace(-3, 3, 1000)
     integ = np.trapz(u.pdf(x), x)
     assert np.isclose(integ, 1)
 
     # Check PDF at a few points - see GUM-S1 6.4.3.2
-    a = 1; d=.1
+    a = 1
+    d = .1
     # w [in gum] = a [in here] because it's symmetric here
     # x [in gum] = 0 (dist has mean=0)
     c = 1/(4*d)
     u = distributions.get_distribution('curvtrap', a=a, d=d)
-    assert u.pdf(-1.5) == 0                                    # Out of range
-    assert np.isclose(u.pdf(-0.95), (c * np.log((a+d)/.95)))   # Curving up
-    assert np.isclose(u.pdf(0),     (c * np.log((a+d)/(a-d)))) # Flat area
-    assert np.isclose(u.pdf(0.95),  (c * np.log((a+d)/.95)))   # Curving down
-    assert u.pdf(1.5) == 0                                     # Out of range
+    assert u.pdf(-1.5) == 0                                     # Out of range
+    assert np.isclose(u.pdf(-0.95), (c * np.log((a+d)/.95)))    # Curving up
+    assert np.isclose(u.pdf(0),     (c * np.log((a+d)/(a-d))))  # Flat area
+    assert np.isclose(u.pdf(0.95),  (c * np.log((a+d)/.95)))    # Curving down
+    assert u.pdf(1.5) == 0                                      # Out of range
 
     # Generate random samples, check range
     np.random.seed(1234)
-    a = 3; d = 2
+    a = 3
+    d = 2
     u = distributions.get_distribution('curvtrap', a=a, d=d)
     samples = u.rvs(size=1000000)
-    assert ((samples<a+d) & (samples>-a-d)).all()
+    assert ((samples < a+d) & (samples > -a-d)).all()
 
     # Compare sample histogram with PDF (roughly)
     y, x = np.histogram(samples, bins=25, density=True)
