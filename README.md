@@ -13,7 +13,7 @@ multi-variable system. Contact uncertainty@sandia.gov.
 
 ## Installation
 
-Installation of the Python package and command line interface requires Python 3.7+ with the following packages:
+Installation of the Python package and command line interface requires Python 3.9+ with the following packages:
 
 - numpy
 - scipy
@@ -36,9 +36,9 @@ From a python terminal, script, or notebook:
 
 ```
 import suncal
-u = suncal.UncertaintyCalc('A*B')
-u.set_input('A', nom=100, unc=0.1)
-u.set_input('B', nom=2, unc=0.01)
+u = suncal.Model('A*B')
+u.var('A').measure(100).typeb(unc=0.1)
+u.var('B').measure(2).typeb(unc=0.01)
 u.calculate()
 ```
 
