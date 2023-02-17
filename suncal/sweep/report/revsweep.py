@@ -58,7 +58,7 @@ class ReportReverseSweepGum:
     def __init__(self, results):
         self._results = results
         self._header, self._header_strs = make_sweepheader(self._results.sweeplist)
-        self._sweepvals = [v['values']*unitmgr.parse_units(v.get('units', '')) for v in self._results.sweeplist]
+        self._sweepvals = [v['values'] for v in self._results.sweeplist]
         self.N = len(self._sweepvals[0])
 
     def _repr_markdown_(self):
@@ -96,7 +96,7 @@ class ReportReverseSweepMc:
     def __init__(self, results):
         self._results = results
         self._header, self._header_strs = make_sweepheader(self._results.sweeplist)
-        self._sweepvals = [v['values']*unitmgr.parse_units(v.get('units', '')) for v in self._results.sweeplist]
+        self._sweepvals = [v['values'] for v in self._results.sweeplist]
         self.N = len(self._sweepvals[0])
 
     def _repr_markdown_(self):
@@ -134,7 +134,7 @@ class ReportReverseSweep:
     def __init__(self, results):
         self._results = results
         self._header, self._header_strs = make_sweepheader(self._results.sweeplist)
-        self._sweepvals = [v['values']*unitmgr.parse_units(v.get('units', '')) for v in self._results.sweeplist]
+        self._sweepvals = [v['values'] for v in self._results.sweeplist]
         self.N = len(self._sweepvals[0])
 
     def summary(self, **kwargs):

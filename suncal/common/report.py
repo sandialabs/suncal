@@ -212,7 +212,7 @@ class Number:
             dimensionless = kargs.get('dimensionless', '')
             unitpad = kargs.get('unitpad', ' ')
             numstr += unitpad
-            numstr += Unit(unit).string(unitfmt=unitfmt, abbr=abbr, dimensionless=dimensionless)
+            numstr += Unit(unit).string(unitfmt=unitfmt, abbr=abbr, dimensionless=dimensionless, escape=False)
         return numstr
 
     @classmethod
@@ -823,7 +823,7 @@ class Report:
         ''' Add a math latex expression to the report
 
             Args:
-                mathstr (string): Math expression, must be sympify-able
+                mathstr (string): Math expression
                 end (string): Characters to print (such as newline) after the expression
         '''
         self._s += self._insert_obj(Math.from_latex(mathstr), end=end)

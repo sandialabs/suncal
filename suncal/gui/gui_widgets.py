@@ -10,7 +10,7 @@ import markdown
 from PyQt5 import QtWidgets, QtCore, QtGui
 
 from . import gui_common
-from ..common import report, distributions
+from ..common import report, distributions, uparser
 from ..common.style import css
 
 
@@ -187,7 +187,8 @@ class LatexDelegate(QtWidgets.QStyledItemDelegate):
             model.setData(index, editor.text(), self.ROLE_ENTERED)    # Save for later
             px = QtGui.QPixmap()
             ratio = QtWidgets.QApplication.instance().devicePixelRatio()
-            px.loadFromData(report.Math(editor.text()).svg_buf(fontsize=16*ratio).read())
+            tex = uparser.parse_math_with_quantities_to_tex(editor.text())
+            px.loadFromData(report.Math.from_latex(tex).svg_buf(fontsize=16*ratio).read())
             px.setDevicePixelRatio(ratio)
             model.blockSignals(False)
             model.setData(index, px, QtCore.Qt.DecorationRole)

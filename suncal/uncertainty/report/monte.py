@@ -45,12 +45,13 @@ class ReportMonteCarlo:
         expanded = self._results.expanded(conf, shortest=False)
 
         for funcname in self._results.functionnames:
+            uncert = self._results.uncertainty[funcname]
             low = expanded[funcname].low
             high = expanded[funcname].high
             row = [report.Math(funcname),
                    f'{conf*100:.2f}%',
-                   report.Number(low, **kwargs),
-                   report.Number(high, **kwargs),
+                   report.Number(low, matchto=uncert, **kwargs),
+                   report.Number(high, matchto=uncert, **kwargs),
                    f'{expanded[funcname].k:.3f}']
             rows.append(row)
         rpt = report.Report(**kwargs)
@@ -349,13 +350,16 @@ class McAxisPlot:
             of output samples.
         '''
         samples = unitmgr.strip_units(self._results.samples[funcname])
-        pdfy, pdfx = np.histogram(samples,
-                                  bins=bins,
-                                  range=(samples.min(), samples.max()),
-                                  density=True)
-        pdfx = pdfx[:-1] + (pdfx[1]-pdfx[0])/2  # Shift to center of bin
-        y = np.interp(x, pdfx, pdfy)
-        return y
+        samples = samples[np.isfinite(samples)]
+        if len(samples):
+            pdfy, pdfx = np.histogram(samples,
+                                      bins=bins,
+                                      range=(samples.min(), samples.max()),
+                                      density=True)
+            pdfx = pdfx[:-1] + (pdfx[1]-pdfx[0])/2  # Shift to center of bin
+            y = np.interp(x, pdfx, pdfy)
+            return y
+        return [np.nan] * x
 
     def hist(self, funcname=None, ax=None, bins=100, interval=None, shortest=False,
              labeldesc=False, **kwargs):
@@ -371,7 +375,9 @@ class McAxisPlot:
         '''
         _, ax = plotting.initplot(ax)
         samples, units = unitmgr.split_units(self._results.samples[funcname])
-        _, _, line = ax.hist(samples, bins=bins, density=True, **kwargs)
+        line = None
+        if np.isfinite(samples).any():
+            _, _, line = ax.hist(samples, bins=bins, density=True, **kwargs)
 
         if interval is not None:
             expand = self._results.expand(funcname, conf=interval, shortest=shortest)

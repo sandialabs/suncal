@@ -32,14 +32,34 @@ class UncertSweep:
         ''' Get variables object '''
         return self.model.variables
 
-    def add_sweep_nom(self, varname, values, units=None):
+    @property
+    def functionnames(self):
+        return self.model.functionnames
+
+    @property
+    def varnames(self):
+        return self.model.varnames
+
+    @property
+    def constants(self):
+        return self.model.constants
+
+    @property
+    def basesympys(self):
+        return self.model.basesympys
+
+    @property
+    def var(self):
+        return self.model.var
+
+    def add_sweep_nom(self, varname, values):
         ''' Add sweep of nominal value.
 
             Args:
                 varname (string): Name of variable to sweep nominal value
                 values (array): Values for sweep
         '''
-        d = {'var': varname, 'comp': 'nom', 'values': values, 'units': units}
+        d = {'var': varname, 'comp': 'nom', 'values': values}
         self.sweeplist.append(d)
 
     def add_sweep_df(self, varname, values, comp=None):
@@ -65,7 +85,7 @@ class UncertSweep:
         d = {'var': 'corr', 'var1': var1, 'var2': var2, 'values': values}
         self.sweeplist.append(d)
 
-    def add_sweep_unc(self, varname, values, comp=None, param='std', units=None):
+    def add_sweep_unc(self, varname, values, comp=None, param='std'):
         ''' Add sweep of uncertainty component parameter.
 
             Args:
@@ -78,7 +98,7 @@ class UncertSweep:
         '''
         if comp is None:
             comp = f'u({varname})'
-        d = {'var': varname, 'comp': comp, 'param': param, 'values': values, 'units': units}
+        d = {'var': varname, 'comp': comp, 'param': param, 'values': values}
         self.sweeplist.append(d)
 
     def _sweep_models(self):
@@ -104,7 +124,8 @@ class UncertSweep:
                     modelcopy.variables.correlate(sweepparams['var1'], sweepparams['var2'], values[sweepidx])
                 elif comp == 'nom':
                     inptvar = modelcopy.var(inptname)
-                    inptvar.measure(values[sweepidx])
+                    units = str(inptvar.units) if inptvar.units else None
+                    inptvar.measure(values[sweepidx], units=units)
                 elif param == 'df':
                     inptvar = modelcopy.var(inptname)
                     inptvar.get_typeb(comp).degf = values[sweepidx]

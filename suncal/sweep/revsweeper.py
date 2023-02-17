@@ -94,6 +94,26 @@ class UncertSweepReverse(UncertSweep):
         ''' Get variables object '''
         return self.model.variables
 
+    @property
+    def functionnames(self):
+        return self.model.functionnames
+
+    @property
+    def varnames(self):
+        return self.model.varnames
+
+    @property
+    def constants(self):
+        return self.model.constants
+
+    @property
+    def basesympys(self):
+        return self.model.basesympys
+
+    @property
+    def var(self):
+        return self.model.var
+
     def _sweep_models(self):
         ''' Iterate one Model instance for each sweep point '''
         if len(self.sweeplist) == 0:
@@ -112,14 +132,12 @@ class UncertSweepReverse(UncertSweep):
                 comp = sweepparams.get('comp', 'nom')
                 param = sweepparams.get('param', None)
                 values = sweepparams.get('values', [])
-                units = sweepparams.get('units', None)
 
                 if inptname == 'corr':
                     modelcopy.model.variables.correlate(sweepparams['var1'], sweepparams['var2'], values[sweepidx])
                 elif comp == 'nom':
                     inptvar = modelcopy.var(inptname)
-                    if units is None and unitmgr.has_units(inptvar.expected):
-                        units = str(unitmgr.split_units(inptvar.expected)[1])
+                    units = str(inptvar.units) if inptvar.units else None
                     inptvar.measure(unitmgr.make_quantity(values[sweepidx], units))
                 elif param == 'df':
                     inptvar = modelcopy.var(inptname)
@@ -127,8 +145,7 @@ class UncertSweepReverse(UncertSweep):
                 else:
                     inptvar = modelcopy.var(inptname)
                     comp = inptvar.get_typeb(comp)
-                    if units is None and unitmgr.has_units(comp.kwargs[param]):
-                        units = str(unitmgr.split_units(comp.kwargs[param])[1])
+                    units = str(inptvar.units) if inptvar.units else None
                     comp.set_kwargs(**{param: unitmgr.make_quantity(values[sweepidx], units)})
 
             yield modelcopy

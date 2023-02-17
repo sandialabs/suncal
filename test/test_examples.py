@@ -129,6 +129,10 @@ def test_NIST10():
         D = 15 * e**4 * .001**4 * (299792458**6) * alpha**8
         return N/D
 
+    # Note: The (299792458**6) term makes numpy return a dtype=object array
+    # for some reason, which can cause issues if model.eval does not cast
+    # back to float.
+
     u = ModelCallable(sigma)
     u.var('h').measure(6.62606957E-34).typeb(std=.00000029E-34)
     u.var('R').measure(8.3144621).typeb(std=.0000075)

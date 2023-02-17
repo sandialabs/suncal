@@ -19,10 +19,11 @@ def _function_rows(model, outunits):
     rows = []
     for funcname in model.functionnames:
         msg = None
-        funccallable = sympy.lambdify(model.varnames, model.basesympys[funcname], 'numpy')
+        varnames = model.varnames + list(model.constants.keys())
+        funccallable = sympy.lambdify(varnames, model.basesympys[funcname], 'numpy')
 
         try:
-            result = funccallable(**model.variables.expected)
+            result = funccallable(**model.variables.expected, **model.constants)
             result = _convert_unit(result, outunits.get(funcname))
         except ZeroDivisionError:
             result = np.inf

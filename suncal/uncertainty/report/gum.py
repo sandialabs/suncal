@@ -49,13 +49,14 @@ class ReportGum:
         expanded = self._results.expanded(conf=conf)
 
         for funcname in self._results.functionnames:
+            uncert = expanded[funcname].uncertainty
             row = [report.Math(funcname),
                    f'{conf*100:.2f}%',
-                   report.Number(self._results.expected[funcname]-expanded[funcname].uncertainty, **kwargs),
-                   report.Number(self._results.expected[funcname]+expanded[funcname].uncertainty, **kwargs),
+                   report.Number(self._results.expected[funcname]-uncert, matchto=uncert, **kwargs),
+                   report.Number(self._results.expected[funcname]+uncert, matchto=uncert, **kwargs),
                    f'{expanded[funcname].k:.3f}',
                    f'{self._results.degf[funcname]:.2f}',
-                   report.Number(expanded[funcname].uncertainty, **kwargs)]
+                   report.Number(uncert, **kwargs)]
             rows.append(row)
         rpt = report.Report(**kwargs)
         rpt.table(rows, hdr=hdr)
@@ -107,7 +108,8 @@ class ReportGum:
         ''' Report the measurement model functions '''
         rpt = report.Report(**kwargs)
         for funcname, expr in zip(self._results.functionnames, self._results.symbolic.functions):
-            rpt.sympy(sympy.Eq(sympy.Symbol(funcname), expr), end='\n\n')
+            expr = sympy.Eq(sympy.Symbol(funcname), expr)
+            rpt.mathtex(self._results.latexify(expr), end='\n\n')
         return rpt
 
     def input_covariance(self, solve=False, **kwargs):
@@ -169,14 +171,13 @@ class ReportGum:
             Cx_numeric = self._results.sensitivity()
             fname = self._results.functionnames[0]
             for varname in self._results.variablenames:
-                latex = sympy.latex(sympy.Eq(sympy.Derivative(fname, sympy.Symbol(varname)), Cx_symbolic[fname][varname]))
+                expr = sympy.Eq(sympy.Derivative(sympy.Symbol(fname), sympy.Symbol(varname)), Cx_symbolic[fname][varname])
+                latex = self._results.latexify(expr)
                 if solve:
                     latex += ' = '
-                    rpt.mathtex(latex, end='  ')
-                    rpt.num(Cx_numeric[fname][varname])
-                else:
-                    rpt.mathtex(latex, end='  ')
-                rpt.newline()
+                    kwargs.update({'unitfmt': 'latex'})
+                    latex += report.Number(Cx_numeric[fname][varname], **kwargs).string()
+                rpt.mathtex(latex, end='\n\n')
             return rpt
 
         # Multiple outputs, return matrix
@@ -187,9 +188,10 @@ class ReportGum:
             row = [report.Math(funcname)]
             for varname in self._results.variablenames:
                 if as_partials:
-                    row.append(report.Math.from_sympy(sympy.Derivative(funcname, sympy.Symbol(varname))))
+                    row.append(report.Math.from_sympy(sympy.Derivative(sympy.Symbol(funcname), sympy.Symbol(varname))))
                 elif not solve:
-                    row.append(report.Math.from_sympy(Cx_symbolic[funcname][varname]))
+                    tex = self._results.latexify(Cx_symbolic[funcname][varname])
+                    row.append(report.Math.from_latex(tex))
                 else:
                     row.append(report.Number(Cx_numeric[funcname][varname]))
             rows.append(row)
@@ -211,11 +213,12 @@ class ReportGum:
             ufname = f'u_{funcname}'
             expr = sympy.Eq(sympy.Symbol(ufname), self._results.symbolic.uncertainty[ufname])
             if not solve:
-                rpt.sympy(expr, end='\n\n')
+                rpt.mathtex(self._results.latexify(expr), end='\n\n')
             else:
-                latex = sympy.latex(expr) + ' = '
-                rpt.mathtex(latex, end='  ')
-                rpt.num(self._results.uncertainty[funcname], end='\n\n')
+                latex = self._results.latexify(expr) + ' = '
+                kwargs.update({'unitfmt': 'latex'})
+                latex += report.Number(self._results.uncertainty[funcname], **kwargs).string()
+                rpt.mathtex(latex, end='\n\n')
         return rpt
 
     def degrees_freedom(self, solve=False, **kwargs):
@@ -227,14 +230,13 @@ class ReportGum:
         rpt = report.Report(**kwargs)
         for funcname in self._results.functionnames:
             degf_name = f'nu_{funcname}'
-            expr = self._results.symbolic.degf[degf_name]
-            latex = sympy.latex(sympy.Eq(sympy.Symbol(degf_name), expr))
+            expr = sympy.Eq(sympy.Symbol(degf_name), self._results.symbolic.degf[degf_name])
+            latex = self._results.latexify(expr)
             if solve:
                 latex += ' = '
-                rpt.mathtex(latex, end='  ')
-                rpt.num(self._results.degf[funcname], end='\n\n')
-            else:
-                rpt.mathtex(latex, end='\n\n')
+                kwargs.update({'unitfmt': 'latex'})
+                latex += report.Number(self._results.degf[funcname], **kwargs).string()
+            rpt.mathtex(latex, end='\n\n')
         return rpt
 
     def derivation(self, solve=False, **kwargs):
@@ -276,6 +278,9 @@ class ReportGum:
             if solve:
                 rpt.hdr('Values:', level=5)
                 rpt.append(self.input_sensitivity(solve=True))
+        else:
+            rpt.hdr('Sensitivity Coefficients', level=3)
+            rpt.append(self.input_sensitivity(solve=solve))
 
         if multiout:
             rpt.hdr('Combined Covariance [Uy]:', level=3)

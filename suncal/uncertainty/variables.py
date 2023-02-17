@@ -87,7 +87,10 @@ class RandomVariable:
     def _typea_variance_ofmean(self):
         ''' Calculate Type A variance of the mean '''
         if self.value.size < 2:
-            return self.value.mean()**2 * 0   # Use mean() to propagate units to the 0
+            units = unitmgr.split_units(self.value)[1]
+            if units:
+                return unitmgr.make_quantity(0, str(units**2))
+            return 0
 
         if len(self.value.shape) == 1:  # 1D, use regular variance
             autocor_factor = 1  # Autocorrelation multiplier
@@ -101,6 +104,11 @@ class RandomVariable:
             return DataSet(self.value).standarderror().standarddeviation**2 / self.num_new_meas
 
         return DataSet(self.value).standarderror().standarderror**2
+
+    @property
+    def units(self):
+        ''' Units of measured value '''
+        return unitmgr.split_units(self.value)[1]
 
     @property
     def expected(self):

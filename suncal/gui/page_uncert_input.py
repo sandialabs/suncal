@@ -54,7 +54,8 @@ class TableItemTex(QtWidgets.QTableWidgetItem):
         # Remove display text, replace with rendered math
         px = QtGui.QPixmap()
         ratio = QtWidgets.QApplication.instance().devicePixelRatio()
-        px.loadFromData(report.Math(expr).svg_buf(fontsize=16*ratio).read())
+        tex = uparser.parse_math_with_quantities_to_tex(expr)
+        px.loadFromData(report.Math.from_latex(tex).svg_buf(fontsize=16*ratio).read())
         px.setDevicePixelRatio(ratio)
         self.setData(QtCore.Qt.DecorationRole, px)
         self.setData(self.ROLE_ENTERED, expr)
@@ -193,8 +194,8 @@ class FunctionTableWidget(QtWidgets.QTableWidget):
 
         # Check Expression
         try:
-            fn = uparser.parse_math(expr, name=name)
-        except ValueError:
+            fn = uparser.parse_math_with_quantities(expr, name=name)
+        except (ValueError, PintError):
             fn = None
         else:
             ok = True
@@ -1296,8 +1297,10 @@ class PageInput(QtWidgets.QWidget):
     def functionchanged(self, config):
         ''' Model functions were changed. Extract variables and update variable table '''
         # config is just function list
-        exprs = [f['expr'] for f in config]
-        exprs = [f for f in exprs if f]
+        exprs = []
+        for f in config:
+            if f['expr'] and f['name']:
+                exprs.append(f"{f['name']}={f['expr']}")
         model = Model(*exprs)
         varnames = model.varnames
         self.meastable.add_variables(varnames)

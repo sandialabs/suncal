@@ -1,8 +1,11 @@
 ''' Results of GUM calculation, with some additional analysis functions '''
 
+import re
 from collections import namedtuple
+import sympy
 
 from ...common import ttable, unitmgr, reporter
+from ...common.style import latexchars
 from ..report.gum import ReportGum
 from ..report.cplx import ReportComplexGum
 
@@ -25,6 +28,7 @@ class GumResults:
             functions (list): The model functions as Sympy expressions
             symbolic (tuple): Symbolic expressions for uncertainty, Uy, Ux, Cx, and degf
             variables (tuple): Information about the input variables and uncertainties
+            constants (dict): Constant quantity names and values, from brackets in model expression
             warns (list): Any warnings generated during the calculation
             descriptions (dict): Descriptions of model functions
             report (Report): Generate formatted reports of the results
@@ -39,7 +43,8 @@ class GumResults:
             covariance: Calculate covariance between model functions
             correlation: Calculation correlation between model functions
     '''
-    def __init__(self, numeric: GumOutputData, symbolic: GumOutputData, variables, descriptions=None, warns=None):
+    def __init__(self, numeric: GumOutputData, symbolic: GumOutputData, variables,
+                 constants, descriptions=None, warns=None):
         self.uncertainty = numeric.uncertainty
         self.expected = numeric.expected
         self.Uy = numeric.Uy
@@ -51,6 +56,7 @@ class GumResults:
         self._numeric = numeric
         self.symbolic = symbolic
         self.variables = variables
+        self.constants = constants
         self.warns = warns
         self.descriptions = {} if descriptions is None else descriptions
         self._units = {}  # user-defined units
@@ -248,6 +254,17 @@ class GumResults:
                 if i < j and self.Ux[i][j] != 0:
                     return True
         return False
+
+    def latexify(self, expr):
+        ''' Convert sympy expression to Latex, substituting back any
+            constant bracket quantities
+        '''
+        tex = sympy.latex(expr)
+        for name, value in self.constants.items():
+            base, num, _ = re.split('([0-9].*)', name, maxsplit=1)
+            tex = tex.replace(f'{base}_{{{num}}}', f'[{value:~P}]')
+        tex = f'${tex}$'  # encode/decode looks for $ or it will add its own
+        return tex.encode('ascii', 'latex').decode().strip('$')
 
 
 @reporter.reporter(ReportComplexGum)

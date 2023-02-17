@@ -1,6 +1,6 @@
 ---
 title: Suncal User's Guide
-date: January 9, 2023
+date: February 17, 2023
 author:
 - Sandia National Laboratories^[Sandia National Laboratories is a multimission laboratory managed and operated by National Technology and Engineering Solutions of Sandia, LLC., a wholly owned subsidiary of Honeywell International, Inc., for the U.S. Department of Energy’s National Nuclear Security Administration under contract DE-NA-0003525.]
 - uncertainty@sandia.gov
@@ -111,7 +111,7 @@ Powers are entered using either the caret (^) symbol or a double asterisk (**) (
 Along with constants "e" and "pi", several common functions are also recognized:
 
 - sin, asin, sinh, asinh
-- cos, acos, cosh, acosh
+- cos, acos, cosh, acosh, coth, acoth
 - tan, atan, atan2 (y, x), tanh, atanh
 - log (base e), ln (base e), log10 (base 10)
 - sqrt
@@ -175,6 +175,14 @@ Many common units and prefixes are recognized either as abbreviations or full na
 For example, "meter", "m", "uF", "m/s^2", "kPa" are all recognized units (corresponding to meter, meter, microfarad, meter-per-second-squared, and kilopascal).
 The full name of the unit can always be spelled out to avoid confusion. For example, use "celsius" rather than "C" which results in Coulombs.
 Capitalization also matters. "K" results in Kelvin, but "k" is converted to Boltzmann's constant.
+
+Some measurement models may contain empirical constants with units.
+These may be entered using a bracket notation "[value units]" in the model expression.
+For example, an empirical formula for the speed of sound in air depending on temperature may be entered using the expression:
+
+        [331.3 m/s] + [0.606 m/s/delta_degC]*T
+
+(Note, however, that this model is an approximation that itself introduces potentially significant uncertainty not accounted for in the calculation!)
 
 To check unit compatibility and dimensionality, use the **Check Units** function from the **Uncertainty** menu.
 The **Units Converter** option in the **Tools** menu provides basic unit name recognition and conversion and can help ensure a unit name is being interpreted correctly.

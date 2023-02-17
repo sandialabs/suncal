@@ -121,10 +121,10 @@ class ProjectUncert(ProjectComponent):
             d['unitdefs'] = customunits
 
         if self.model.functionnames:  # Callable models won't have this
-            for funcname in self.model.functionnames:
+            for i, funcname in enumerate(self.model.functionnames):
                 funcsetup = {
                     'name': funcname,
-                    'expr': str(self.model.basesympys.get(funcname, '')),
+                    'expr': str(self.model.exprs[i]),
                     'desc': self.model.descriptions.get(funcname, ''),
                     'units': str(self.outunits.get(funcname)) if self.outunits.get(funcname) else None}
                 d['functions'].append(funcsetup)

@@ -100,16 +100,15 @@ class ProjectSweep(ProjectComponent):
             var = sweep['var']
             comp = sweep.get('comp', None)
             param = sweep.get('param', None)
-            units = sweep.get('units', None)
             values = sweep['values']
             if var == 'corr':
                 self.model.add_sweep_corr(sweep.get('var1', None), sweep.get('var2', None), values)
             elif comp == 'nom':
-                self.model.add_sweep_nom(var, values, units=units)
+                self.model.add_sweep_nom(var, values)
             elif param == 'df':
                 self.model.add_sweep_df(var, values, comp)
             else:
-                self.model.add_sweep_unc(var, values, comp, param, units=units)
+                self.model.add_sweep_unc(var, values, comp, param)
 
     def get_config(self):
         ''' Get configuration dictionary '''

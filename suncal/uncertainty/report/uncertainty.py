@@ -214,10 +214,13 @@ class ReportUncertainty:
         gumstandard, units = unitmgr.split_units(self._results.gum.uncertainty[funcname])
         units = 1 if units is None else units
 
-        r = int(np.floor(np.log10(np.abs(gumstandard))) - (ndig-1))
-        delta = 0.5 * 10.0**r * units
-        dlow = abs((gumexpected - gumexpanded) - mclow)
-        dhi = abs((gumexpected + gumexpanded) - mchigh)
+        if not np.isfinite(gumstandard):
+            delta = r = dlow = dhi = np.nan
+        else:
+            r = int(np.floor(np.log10(np.abs(gumstandard))) - (ndig-1))
+            delta = 0.5 * 10.0**r * units
+            dlow = abs((gumexpected - gumexpanded) - mclow)
+            dhi = abs((gumexpected + gumexpanded) - mchigh)
 
         if not full:
             return (dlow < delta) & (dhi < delta)

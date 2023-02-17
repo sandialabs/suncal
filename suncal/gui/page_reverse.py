@@ -76,13 +76,18 @@ class TargetSetupWidget(QtWidgets.QTableWidget):
                      self.verticalHeader().length() + self.horizontalHeader().height())
         self.setFixedHeight(height)
 
-    def update_names(self):
+    def update_names(self, fnames=None):
         ''' Function/variable names have changed. Change entries in comboboxes to match. '''
+        if fnames is None:
+            fnames = self.projitem.model.model.functionnames
         current_f = self.cmbFunction.currentText()
         current_v = self.cmbSolveFor.currentText()
         self.cmbFunction.clear()
-        self.cmbFunction.addItems(self.projitem.model.model.functionnames)
-        self.cmbFunction.setCurrentIndex(self.cmbFunction.findText(current_f))
+        self.cmbFunction.addItems(fnames)
+        if current_f in fnames:
+            self.cmbFunction.setCurrentIndex(self.cmbFunction.findText(current_f))
+        else:
+            self.cmbFunction.setCurrentIndex(0)
         self.cmbSolveFor.clear()
         self.cmbSolveFor.addItems(self.projitem.model.model.variables.names)
         self.cmbSolveFor.setCurrentIndex(self.cmbSolveFor.findText(current_v))
@@ -157,8 +162,10 @@ class UncertReverseWidget(page_uncert.UncertPropWidget):
 
     def funcchanged(self, config):
         ''' Function has changed '''
+        fnames = [f['name'] for f in config]
+        self.revsetup.update_names(fnames)  # Change functions in dropdown
         self.update_proj_config()
-        self.revsetup.update_names()
+        self.revsetup.update_names()  # Change variables in dropdown
 
     def calculate(self):
         ''' Run the calculation '''

@@ -24,6 +24,7 @@ class ResultsReverseGum:
     u_fname: str
     f_required: float
     uf_required: float
+    constants: dict
 
 
 @reporter.reporter(ReportReverseMc)
@@ -38,6 +39,7 @@ class ResultsReverseMc:
     uf_required: float
     mcresults: object
     reverse_model: object
+    constants: dict
 
 
 @reporter.reporter(ReportReverse)
@@ -114,11 +116,12 @@ class ModelReverse:
             u_solvefor_expr = u_forward
         else:
             u_solvefor_expr = u_solvefor_expr.subs({solvefor: func_reversed})  # Replace var with func_reversed
-        u_solvefor_value = u_solvefor_expr.subs(self.model.variables.expected)
         inpts = self.model.variables.symbol_values()
         originput = inpts.pop(solvefor)
         inpts.update({funcname: targetnom})
+        inpts.update(self.model.constants)
         solvefor_value = sympy.lambdify(inpts.keys(), func_reversed, 'numpy')(**inpts)
+        u_solvefor_value = u_solvefor_expr.subs(inpts)
 
         # Plug everything in
         inpts.update({str(u_forward): targetunc})
@@ -142,7 +145,8 @@ class ModelReverse:
             sympy.Symbol(funcname),
             sympy.Symbol(f'u_{funcname}'),
             targetnom,
-            targetunc)
+            targetunc,
+            self.model.constants)
 
     def monte_carlo(self, samples=1000000):
         ''' Calculate reverse uncertainty using Monte Carlo method. '''
@@ -173,7 +177,7 @@ class ModelReverse:
         # Correlate variables: see GUM C.3.6 NOTE 3 - Estimate correlation from partials
         gumsensitivity = self.model.calculate_gum().sensitivity(symbolic=True)[funcname]
 
-        inpts = []
+        inpts = {}
         for vname in self.model.variables.names:
             if str(vname) == solvefor:
                 continue
@@ -196,13 +200,14 @@ class ModelReverse:
                     revmodel.variables.correlate(v1, v2, self.model.variables.get_correlation_coeff(v1, v2))
 
         mcresults = revmodel.monte_carlo(samples=samples)
-
-        originput = inpts.pop(solvefor)
         solvefor_value = mcresults.expected[solvefor]
         u_solvefor_value = mcresults.uncertainty[solvefor]
-        if unitmgr.has_units(originput):
-            solvefor_value.ito(originput.units)
-            u_solvefor_value.ito(originput.units)
+
+        if inpts:
+            originput = inpts.pop(solvefor)
+            if unitmgr.has_units(originput):
+                solvefor_value.ito(originput.units)
+                u_solvefor_value.ito(originput.units)
 
         result = ResultsReverseMc(
             solvefor,
@@ -213,7 +218,8 @@ class ModelReverse:
             targetnom,
             targetunc,
             mcresults,
-            revmodel)
+            revmodel,
+            self.model.constants)
 
         mcsamples = unitmgr.strip_units(mcresults.samples[solvefor])
         if np.count_nonzero(np.isfinite(list(mcsamples))) < samples * .95:

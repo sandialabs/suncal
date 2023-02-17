@@ -1,5 +1,14 @@
 # Change History
 
+## Version 1.6.1
+
+- Enabled coth and acoth functions
+- Allow entering constant quantities with units into measurement model
+- Restored sensitivity coefficients in GUM Derivation report
+- Fixed GUI issues, including entering of chained uncertainty models, and reverse function names
+- Fixed some reports when Monte Carlo results contained NaN or Inf values
+
+
 ## Version 1.6
 
 UI changes:

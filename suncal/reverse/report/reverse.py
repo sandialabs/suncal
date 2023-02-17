@@ -1,10 +1,23 @@
 ''' Report results of a reverse uncertainty calculation '''
 
+import re
 import numpy as np
 from scipy import stats
 import sympy
 
 from ...common import unitmgr, report, plotting
+
+
+def latexify(expr, constants):
+    ''' Convert sympy expression to Latex, substituting back any
+        constant bracket quantities
+    '''
+    tex = sympy.latex(expr)
+    for name, value in constants.items():
+        base, num, _ = re.split('([0-9].*)', name, maxsplit=1)
+        tex = tex.replace(f'{base}_{{{num}}}', f'[{value:~P}]')
+    tex = f'${tex}$'  # encode/decode looks for $ or it will add its own
+    return tex.encode('ascii', 'latex').decode().strip('$')
 
 
 class ReportReverseGum:
@@ -22,11 +35,14 @@ class ReportReverseGum:
         solvefor_val = self._results.solvefor_value
 
         rpt.hdr('GUM reverse uncertainty', level=2)
-        rpt.sympy(sympy.Eq(self._results.funcname, self._results.function))
+        expr = sympy.Eq(self._results.funcname, self._results.function)
+        rpt.mathtex(latexify(expr, self._results.constants))
         rpt.txt('\n\n Combined uncertainty:\n\n')
-        rpt.sympy(sympy.Eq(self._results.u_fname, self._results.u_forward_expr))
+        expr = sympy.Eq(self._results.u_fname, self._results.u_forward_expr)
+        rpt.mathtex(latexify(expr, self._results.constants))
         rpt.txt('\n\nsolved for uncertainty of input:\n\n')
-        rpt.sympy(sympy.Eq(self._results.u_solvefor, self._results.u_solvefor_expr))
+        expr = sympy.Eq(self._results.u_solvefor, self._results.u_solvefor_expr)
+        rpt.mathtex(latexify(expr, self._results.constants))
         rpt.add('\n\n For output value of ',
                 report.Number(self._results.f_required, matchto=self._results.uf_required),
                 ' ± ',

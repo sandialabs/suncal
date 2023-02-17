@@ -38,6 +38,8 @@ class McResults:
         self.variables = variables
         self._model = model  # needed to run sensitivity
         self.warns = warns
+
+        self.samples = {name: s[np.isfinite(s)] for name, s in self.samples.items()}  # Strip NANs
         self.expected = {name: np.nanmean(s) for name, s in self.samples.items()}
         self.uncertainty = {name: np.std(s, ddof=1) for name, s in self.samples.items()}
         self.descriptions = {} if descriptions is None else descriptions

@@ -252,8 +252,9 @@ class SweepParamWidget(QtWidgets.QDialog):
         self.buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel)
         self.buttons.rejected.connect(self.reject)
         self.buttons.accepted.connect(self.accept)
-        self.varname.addItems(self.variables.names)
-        self.var2.addItems(self.variables.names)
+        if self.variables:
+            self.varname.addItems(self.variables.names)
+            self.var2.addItems(self.variables.names)
 
         unclayout = QtWidgets.QHBoxLayout()
         unclayout.addWidget(self.lblcomp)
@@ -288,8 +289,9 @@ class SweepParamWidget(QtWidgets.QDialog):
         ''' Variable selection has changed '''
         self.blockSignals(True)
         name = self.varname.currentText()
+        var = self.variables.get(name)
 
-        comps = self.variables.get(name).typeb_names
+        comps = var.typeb_names if var else []
         self.unccomp.clear()
         if len(comps) > 0:
             self.unccomp.addItems(comps)
@@ -302,8 +304,9 @@ class SweepParamWidget(QtWidgets.QDialog):
         self.blockSignals(True)
         varname = self.varname.currentText()
         compname = self.unccomp.currentText()
-        if compname:
-            typeb = self.variables.get(varname).get_typeb(compname)
+        var = self.variables.get(varname)
+        if compname and var:
+            typeb = var.get_typeb(compname)
             if typeb.distname in ['normal', 't']:
                 items = ['unc', 'k']
             else:
@@ -563,12 +566,16 @@ class UncertReverseSweepWidget(page_uncert.UncertPropWidget):
         buttons.plusclicked.connect(self.sweepsetup.addcol)
         buttons.minusclicked.connect(self.sweepsetup.remcol)
         self.pginput.funclist.funcchanged.connect(self.funcchanged)
-        self.pginput.meastable.changed.connect(self.funcchanged)
+        self.pginput.meastable.changed.connect(self.measchanged)
+
+    def measchanged(self, measlist):
+        self.sweepsetup.set_variables(self.projitem.model.model.variables)
 
     def funcchanged(self, funclist):
         ''' Function has changed '''
+        fnames = [f['name'] for f in funclist]
+        self.targetsetup.update_names(fnames)
         self.update_proj_config()
-        self.sweepsetup.set_variables(self.projitem.model.model.variables)
         self.targetsetup.update_names()
         with suppress(AttributeError):
             self.actNewSwp.setEnabled(True)

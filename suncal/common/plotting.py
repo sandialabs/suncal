@@ -161,6 +161,10 @@ def fitdist(y, distname='norm', fig=None, qqplot=False, bins='sqrt', points=None
     fig, _ = initplot(fig)
     fig.clf()
 
+    y = y[np.isfinite(y)]
+    if len(y) == 0:
+        return None
+
     # Takes a long time with all 1E6 points.. thin them out
     if points is not None:
         ythin = y[::len(y)//points]
@@ -172,8 +176,6 @@ def fitdist(y, distname='norm', fig=None, qqplot=False, bins='sqrt', points=None
         fitparams = dist.fit(ythin)
 
     ax = fig.add_subplot(1, qqplot+1, 1)
-    if not np.isfinite(y).any():
-        return None
     y = y[np.isfinite(y)]
 
     ax.hist(y, density=True, bins=bins)

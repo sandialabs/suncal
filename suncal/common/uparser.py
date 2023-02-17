@@ -4,18 +4,21 @@ by analyzing the expression with the ast module.
 '''
 
 import ast
+import re
+from contextlib import suppress
 from tokenize import TokenError
 import numpy as np
 import sympy
 from pint import PintError
 
 from . import unitmgr
+from .style import latexchars
 
 
 # List of sympy functions allowed for converting strings to sympy
 _functions = ['acos', 'asin', 'atan', 'atan2', 'cos', 'sin', 'tan',
               'log', 'cosh', 'sinh', 'tanh', 'atanh', 'acosh', 'asinh',
-              'rad', 'deg', 'sqrt', 'exp', 'root',
+              'rad', 'deg', 'sqrt', 'exp', 'root', 'coth', 'acoth',
               # Include functions we redefine
               'ln', 'log10', 'radian', 'degree', 'arccos', 'arcsin', 'arctan',
               ]
@@ -84,6 +87,82 @@ def parse_math(expr, name=None, allowcomplex=False, raiseonerr=True):
     except (ValueError, AttributeError, TypeError):
         expr = None
     return expr
+
+
+def _replace_constants(expr, nconsts=0, raiseonerr=True):
+    ''' Replace constant quantities in brackets, eg [360 deg],
+        with a sympify-able variable.
+
+        Args:
+            expr (string): Math expression
+            nconsts (int): Number of constants already replaced,
+                eg in multi-output system
+            raiseonerr (bool): Raise an exception if expr cannot be parsed
+
+        Returns:
+            expr (string): Sympify-able string expression
+            consts (dict): Constant values name: Pint Quantities
+    '''
+    CONSTPREFIX = 'suncalconst'
+
+    constants = {}  # name: Quantity value
+    constexprs = re.findall(r'(\[.+?\])', expr)
+    while True:
+        cname = f'{CONSTPREFIX}{len(constants)+nconsts}'
+        newexpr = re.sub(r'(\[.+?\])', cname, expr, count=1)
+        if expr == newexpr:
+            break
+
+        if not raiseonerr:
+            try:
+                constants[cname] = unitmgr.ureg.parse_expression(constexprs[len(constants)])
+            except PintError:
+                return None, constants
+        else:
+            constants[cname] = unitmgr.ureg.parse_expression(constexprs[len(constants)])
+        expr = newexpr
+    return expr.strip(), constants
+
+
+def parse_math_with_quantities(expr, name=None, nconsts=0, raiseonerr=True):
+    ''' Parse math expression which may contain constant Quantites/units
+        in brackets. Checks against allowed function list and for circular
+        references (name as a variable in expr).
+
+        Args:
+            expr (string): Expression to evaluate
+            name (string): Name of function to check that function is not
+                self-recursive (e.g. f = 2*f)
+            nconsts (int): Number of constants already defined in Model
+                for multi-output measurements
+            raiseonerr (bool): Raise exception on parse error. If False, None
+                will be returned on error.
+
+        Returns:
+            expr: Sympy Expression
+            consts (dict): Constant values name: Pint Quantities
+    '''
+    expr, constants = _replace_constants(expr, nconsts=nconsts)
+    expr = parse_math(expr, name=name, raiseonerr=raiseonerr)
+    return expr, constants
+
+
+def parse_math_with_quantities_to_tex(expr):
+    ''' Parse math expression containing constant Quantities, returning Latex.
+        For display only - result is returned regardless of validity of expression.
+     '''
+    expr, constants = _replace_constants(expr)
+    try:
+        symexpr = sympy.sympify(expr, locals=_locals)
+        tex = sympy.latex(symexpr)
+    except (TypeError, sympy.SympifyError):
+        tex = expr
+
+    for name, value in constants.items():
+        base, num, _ = re.split('([0-9].*)', name, maxsplit=1)
+        tex = tex.replace(f'{base}_{{{num}}}', f'[{value:~P}]')
+    tex = f'${tex}$'  # encode/decode looks for $ or it will add its own
+    return tex.encode('ascii', 'latex').decode().strip('$')
 
 
 def _parse_math(expr, fns=None, name=None, allowcomplex=False):

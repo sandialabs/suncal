@@ -1,8 +1,9 @@
 ''' Results of an Uncertainty Sweep '''
 
 from dataclasses import dataclass
+import numpy as np
 
-from ...common import reporter
+from ...common import reporter, unitmgr
 from ...uncertainty.results.uncertainty import UncertaintyResults
 from ..report.sweep import ReportSweepGum, ReportSweepMc, ReportSweep
 
@@ -31,16 +32,22 @@ class GumSweepResults:
         values = [g.expected for g in self.gumresults]
         expected = {}
         for funcname in self.functionnames:
-            expected[funcname] = [v[funcname] for v in values]
+            units = unitmgr.split_units(values[0][funcname])[1]
+            units = str(units) if units else None
+            expected[funcname] = unitmgr.make_quantity(
+                np.asarray([unitmgr.strip_units(v[funcname]) for v in values]), units)
         return expected
 
     def uncertainties(self):
         ''' Get uncertainty values as dict of {funcname: [val1, val2,...] } '''
         values = [g.uncertainty for g in self.gumresults]
-        expected = {}
+        uncertainty = {}
         for funcname in self.functionnames:
-            expected[funcname] = [v[funcname] for v in values]
-        return expected
+            units = unitmgr.split_units(values[0][funcname])[1]
+            units = str(units) if units else None
+            uncertainty[funcname] = unitmgr.make_quantity(
+                np.asarray([unitmgr.strip_units(v[funcname]) for v in values]), units)
+        return uncertainty
 
     def expand(self, conf=0.95):
         ''' Extract expanded uncertainties at each sweep point
@@ -75,7 +82,10 @@ class McSweepResults:
         values = [g.expected for g in self.mcresults]
         expected = {}
         for funcname in self.functionnames:
-            expected[funcname] = [v[funcname] for v in values]
+            units = unitmgr.split_units(values[0][funcname])[1]
+            units = str(units) if units else None
+            expected[funcname] = unitmgr.make_quantity(
+                np.asarray([unitmgr.strip_units(v[funcname]) for v in values]), units)
         return expected
 
     def uncertainties(self):
@@ -83,7 +93,10 @@ class McSweepResults:
         values = [mc.uncertainty for mc in self.mcresults]
         uncertainty = {}
         for funcname in self.functionnames:
-            uncertainty[funcname] = [v[funcname] for v in values]
+            units = unitmgr.split_units(values[0][funcname])[1]
+            units = str(units) if units else None
+            uncertainty[funcname] = unitmgr.make_quantity(
+                np.asarray([unitmgr.strip_units(v[funcname]) for v in values]), units)
         return uncertainty
 
     def expand(self, conf=.95, shortest=False):

@@ -77,6 +77,7 @@ class Model(ModelBase):
         self.exprs = []
         self.sympys = []
         self.functionnames = []
+        self.constants = {}  # Bracketed quantities in expression
         for expr in exprs:
             if isinstance(expr, sympy.Basic):
                 name = f'f{len(self.exprs)+1}'
@@ -89,11 +90,19 @@ class Model(ModelBase):
                     expr = expr.strip()
                 else:
                     name = f'f{len(self.exprs)+1}'
-                self.sympys.append(uparser.parse_math(expr, name=name))
+
+                symexprs, consts = uparser.parse_math_with_quantities(expr, name=name, nconsts=len(self.constants))
+                self.constants.update(consts)
+                self.sympys.append(symexprs)
+
                 self.exprs.append(expr.strip())
             self.functionnames.append(name.strip())
 
         varnames, self.basesympys = self._build_baseexprs()
+
+        for constname in self.constants.keys():
+            varnames.remove(constname)
+
         self.variables = Variables(*varnames)
 
     def _build_baseexprs(self):
@@ -156,11 +165,12 @@ class Model(ModelBase):
         '''
         if values is None:
             values = self.variables.expected
+        values.update(self.constants)
         return matrix.eval_dict(self.basesympys, values)
 
     def expected(self):
         ''' Calculate expected value of all functions in model '''
-        return self.eval(self.variables.expected)
+        return self.eval()
 
     def calculate_symbolic(self):
         ''' Run the calculation, symbolic
@@ -187,6 +197,7 @@ class Model(ModelBase):
         '''
         symbolic = self.calculate_symbolic()
         subvalues = self.variables.symbol_values()
+        subvalues.update(self.constants)
         expected = matrix.eval_dict(symbolic.expected, subvalues)
         uncerts = matrix.eval_dict(symbolic.uncertainty, subvalues)
         subvalues.update(expected)
@@ -206,7 +217,7 @@ class Model(ModelBase):
             warns.append('Overflow in GUM uncertainty calculation')
 
         outnumeric = GumOutputData(uncerts, Uy, Ux, Cx, degf, expected, self.sympys)
-        return GumResults(outnumeric, symbolic, self.variables.info, self.descriptions, warns)
+        return GumResults(outnumeric, symbolic, self.variables.info,  self.constants, self.descriptions, warns)
 
     def monte_carlo(self, samples=1000000, copula='gaussian'):
         ''' Calculate Monte Carlo samples
@@ -219,6 +230,7 @@ class Model(ModelBase):
                 McResults instance
         '''
         samples = self.variables.sample(samples, copula=copula)
+        samples.update(self.constants)
         values = matrix.eval_dict(self.basesympys, samples)
 
         warns = []
@@ -364,6 +376,9 @@ class ModelCallable(Model):
                     samples = dict(zip(self.functionnames, out))
                 else:
                     samples = {self.functionnames[0]: out}
+
+        # Ensure float datatype (some functions may return dtype=object arrays)
+        samples = {name: arr.astype(float, copy=False) for name, arr in samples.items()}
         return samples
 
     def _sensitivity(self):
@@ -424,7 +439,7 @@ class ModelCallable(Model):
             warns.append('Overflow in GUM uncertainty calculation')
 
         outnumeric = GumOutputData(uncerts, Uy, Ux, Cx, degf, expected, None)
-        return GumResults(outnumeric, None, self.variables.info, None)
+        return GumResults(outnumeric, None, self.variables.info, None, None)
 
     def monte_carlo(self, samples=1000000, copula='gaussian'):
         ''' Calculate Monte Carlo samples

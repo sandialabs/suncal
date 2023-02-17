@@ -309,3 +309,28 @@ def test_savesamples(tmpdir):
     assert np.allclose(loadedsamples[:, 2], result.montecarlo.samples['f'].magnitude)
     loadednpz = np.load(nfile)
     assert np.allclose(loadednpz['samples'][:, 2], result.montecarlo.samples['f'].magnitude)
+
+
+def test_bracketqty():
+    ''' Test string models containing bracketed quantities, eg: a * [3 cm] '''
+    # Eratosthenes measurement of Earth circumference
+    # The 360 is a constant with units
+    m = Model('c = d * [360 deg] / alpha')
+    m.var('d').measure(925, units='km').typeb(unc='5%', k=2)
+    m.var('alpha').measure(7.2, units='deg').typeb(unc=0.5)
+    out = m.calculate()
+    assert len(out.variablenames) == 2
+    assert len(out.gum.constants) == 1
+    assert out.gum.expected['c'].units == unitmgr.ureg.km
+    assert '[360 deg]' in str(out.gum.report.model())
+    assert 'const' not in str(out.gum.report.model())
+
+    # Speed of sound in air - empirical formula
+    m = Model('v = [331.3 m/s] + [.606 m/s/delta_degC]*(T-[0 degC])')
+    m.var('T').measure(20, units='degC').typeb(unc=.1, units='delta_degC')
+    out = m.calculate()
+    derv = str(out.gum.report.derivation(solve=True))
+    assert '[331.3 m/s]' in derv
+    assert 'suncalconst' not in derv
+    assert len(out.variablenames) == 1
+    assert len(out.gum.constants) == 3

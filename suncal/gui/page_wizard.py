@@ -261,21 +261,22 @@ class PageMeasModel(Page):
         ''' Update the math displayed '''
         expr = self.txtFunction.text()
         if '=' in expr:
-            _, expr = expr.split('=')
+            _, expr = expr.split('=', maxsplit=1)
             expr = expr.strip()
-        expr = uparser.parse_math(expr, raiseonerr=False)
-        if expr is None:
+        symexpr, consts = uparser.parse_math_with_quantities(expr, raiseonerr=False)
+        if symexpr is None:
             self.validindicator.setPixmap(self.style().standardPixmap(QtWidgets.QStyle.SP_DialogNoButton))
             self.wizard.btnNext.setEnabled(False)
         else:
             self.validindicator.setPixmap(self.style().standardPixmap(QtWidgets.QStyle.SP_DialogYesButton))
             ratio = QtWidgets.QApplication.instance().devicePixelRatio()
             px = QtGui.QPixmap()
-            px.loadFromData(report.Math.from_sympy(expr).svg_buf(fontsize=16*ratio).read())
+            tex = uparser.parse_math_with_quantities_to_tex(expr)
+            px.loadFromData(report.Math.from_latex(tex).svg_buf(fontsize=16*ratio).read())
             px.setDevicePixelRatio(ratio)
             self.eqlabel.setPixmap(px)
 
-            varnames = ', '.join(sorted(sympy.latex(s) for s in expr.free_symbols))
+            varnames = ', '.join(sorted(sympy.latex(s) for s in symexpr.free_symbols if str(s) not in consts))
             px = QtGui.QPixmap()
             px.loadFromData(report.Math.from_latex(varnames).svg_buf(fontsize=16*ratio).read())
             px.setDevicePixelRatio(ratio)
@@ -308,8 +309,10 @@ class PageMeasModel(Page):
         rpt.txt('- May be the name of Greek letters ("theta" = θ, "omega" = ω, "Omega" = Ω)\n')
         rpt.txt('- Some variables are interpreted as constants (e, pi, inf)\n')
         rpt.txt('- Cannot be Python keywords (if, else, def, class, etc.)\n\n')
+        rpt.txt('Constant quantities with units are entered in brackets: [360 degrees]\n\n')
         rpt.txt('Recognized Functions:\n\n - sin, cos, tan\n- asin, acos, atan, atan2\n')
-        rpt.txt('- sinh, cosh, tanh\n- exp, log, log10\n- sqrt, root\n- rad, deg\n\n')
+        rpt.txt('- sinh, cosh, tanh, coth\n- asinh, acosh, atanh, acoth\n')
+        rpt.txt('- exp, log, log10\n- sqrt, root\n- rad, deg\n\n')
         rpt.txt('If the indicator turns red, Suncal cannot interpret the equation.')
         return rpt
 
