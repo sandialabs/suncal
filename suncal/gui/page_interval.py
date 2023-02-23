@@ -209,8 +209,7 @@ class S2Params(QtWidgets.QGroupBox):
 
     def get_params(self):
         ''' Get parameters for S2 method '''
-        p = {'Rt': self.Rt.value()/100,
-             'conf': self.conf.value()/100}
+        p = {'Rt': self.Rt.value()/100}
         if self.showbins:
             p['bins'] = self.bins.value()
             p['binlefts'] = self.binlefts
@@ -262,8 +261,8 @@ class VarsParams(QtWidgets.QGroupBox):
         self.rlimU = gui_widgets.FloatLineEdit()
         self.rlimL.setValue(-1)
         self.rlimU.setValue(1)
-        self.rconf = gui_widgets.FloatLineEdit(low=0, high=99.999)
-        self.rconf.setValue(95)
+        self.conf = gui_widgets.FloatLineEdit(low=0, high=99.999)
+        self.conf.setValue(95)
         flayout = QtWidgets.QFormLayout()
         flayout.addRow('Measurement Uncertainty', self.u0)
         flayout.addRow('Uncertainty k', self.kvalue)
@@ -277,7 +276,7 @@ class VarsParams(QtWidgets.QGroupBox):
         rlayout = QtWidgets.QFormLayout()
         rlayout.addRow('Lower Tolerance Limit', self.rlimL)
         rlayout.addRow('Upper Tolerance Limit', self.rlimU)
-        rlayout.addRow('Confidence %', self.rconf)
+        rlayout.addRow('Confidence %', self.conf)
         self.rtargetbox.setLayout(rlayout)
         layout.addWidget(self.utargetbox)
         layout.addWidget(self.rtargetbox)
@@ -291,7 +290,7 @@ class VarsParams(QtWidgets.QGroupBox):
                               '(at below confidence level) falls below this limit.')
         self.rlimU.setToolTip('Upper deviation limit. Interval ends when fit polynomial plus uncertainty '
                               '(at below confidence level) exceeds this limit.')
-        self.rconf.setToolTip('Confidence level in predicted uncertainty')
+        self.conf.setToolTip('Confidence level in predicted uncertainty')
 
         self.u0.editingFinished.connect(self.changed)
         self.y0.editingFinished.connect(self.changed)
@@ -299,7 +298,7 @@ class VarsParams(QtWidgets.QGroupBox):
         self.utarget.editingFinished.connect(self.changed)
         self.rlimL.editingFinished.connect(self.changed)
         self.rlimU.editingFinished.connect(self.changed)
-        self.rconf.editingFinished.connect(self.changed)
+        self.conf.editingFinished.connect(self.changed)
         self.utargetbox.toggled.connect(self.changed)
         self.rtargetbox.toggled.connect(self.changed)
 
@@ -312,7 +311,7 @@ class VarsParams(QtWidgets.QGroupBox):
              'utarget': self.utarget.value(),
              'rlimitL': self.rlimL.value(),
              'rlimitU': self.rlimU.value(),
-             'rconf': self.rconf.value()/100,
+             'rconf': self.conf.value()/100,
              'calcrel': self.rtargetbox.isChecked(),
              'calcunc': self.utargetbox.isChecked()}
         return p
@@ -327,7 +326,7 @@ class VarsParams(QtWidgets.QGroupBox):
         rlimits = params.get('rlimits', (-1, 1))
         self.rlimL.setValue(rlimits[0])
         self.rlimU.setValue(rlimits[1])
-        self.rconf.setValue(params.get('rconf', .95)*100)
+        self.conf.setValue(params.get('rconf', .95)*100)
         self.rtargetbox.setChecked(params.get('calcrel', True))
         self.utargetbox.setChecked(params.get('calcunc', True))
 
@@ -508,9 +507,9 @@ class IntervalWidget(QtWidgets.QWidget):
         if self.mode in ['intervalvariables', 'intervalvariablesasset']:
             self.params = VarsParams()
         elif self.mode in ['intervaltest', 'intervaltestasset']:
-            self.params = A3Params(showtol=isinstance(projitem, TestIntervalAssets))
+            self.params = A3Params(showtol=isinstance(projitem, ProjectIntervalTestAssets))
         else:
-            showbins = isinstance(projitem, BinomialIntervalAssets)
+            showbins = isinstance(projitem, ProjectIntervalBinomAssets)
             self.params = S2Params(projitem=self.projitem, showbins=showbins)
 
         clayout = QtWidgets.QVBoxLayout()
@@ -775,7 +774,9 @@ class IntervalWidget(QtWidgets.QWidget):
 
     def get_report(self):
         ''' Get full report of curve fit, using page settings '''
-        return self.projitem.result.report.summary()
+        conf = self.params.conf.value()/100
+        conf = min(max(0, conf), .9999)
+        return self.projitem.result.report.summary(conf=conf)
 
     def save_report(self):
         ''' Save full report, asking user for settings/filename '''

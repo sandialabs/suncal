@@ -43,20 +43,28 @@ class ReportIntervalS2:
     '''
     def __init__(self, results):
         self._allresults = results
-        self._results = self._allresults._methodresults
+        self._results = self._allresults.models
         self._best = self._allresults.best
-        self._bestmodel = self._allresults.method(self._best)
+        self._bestmodel = self._allresults.model(self._best)
         self.interval = self._bestmodel.interval
         self.plot = PlotIntervalS2(self._results, self._best)
 
     def _repr_markdown_(self):
         return self.summary().get_md()
 
-    def summary(self, **kwargs):
+    def summary(self, conf=0.95, **kwargs):
         ''' Report the results '''
-        rpt = self.allmodels(**kwargs)
+        rpt = report.Report(**kwargs)
+        rpt.hdr('Best Fit Reliability Model', level=2)
+        rpt.append(self.model(conf=conf))
         with plotting.plot_figure() as fig:
-            fig = self.plot.allmodels(**kwargs)
+            self.plot.model(fig=fig.gca(), **kwargs)
+            rpt.plot(fig)
+
+        rpt.hdr('All Reliability Models', level=2)
+        rpt.append(self.allmodels(**kwargs))
+        with plotting.plot_figure() as fig:
+            self.plot.allmodels(fig=fig, **kwargs)
             rpt.plot(fig)
         rpt.append(self.bins(**kwargs))
         return rpt
@@ -66,10 +74,10 @@ class ReportIntervalS2:
         hdr = ['Range', 'Reliability', 'Number of measurements']
         rows = []
 
-        ti = self._bestmodel.binned.interval
-        ri = self._bestmodel.binned.reliability
-        ni = self._bestmodel.binned.number
-        binleft = self._bestmodel.binned.binleft
+        ti = self._bestmodel.observed.ti
+        ri = self._bestmodel.observed.ri
+        ni = self._bestmodel.observed.ni
+        binleft = self._bestmodel.observed.binleft
         if binleft is None:
             binleft = ti - ti[0]
 
@@ -80,16 +88,18 @@ class ReportIntervalS2:
         rpt.table(rows, hdr)
         return rpt
 
-    def model(self, model, **kwargs):
+    def model(self, model=None, conf=.95, **kwargs):
         ''' Report of one model '''
+        if model is None:
+            model = self._best
         hdr = ['Interval', 'Model', 'Rejection Confidence',
-               f'{self._results[model].conf*100:.1f}% Confidence Interval Range']
+               f'{conf*100:.1f}% Confidence Interval Range']
+        taul, tauu = self._allresults.expanded(name=model, conf=conf)
         rows = [[f'{self._results[model].interval:.1f}',
                  model,
                  f'{self._results[model].C:.1f}%',
-                 '{:.1f} - {:.1f}'.format(*self._results[model].interval_range)]]
+                 '{:.1f} - {:.1f}'.format(taul, tauu)]]
         rpt = report.Report(**kwargs)
-        rpt.hdr('Best Fit Model', level=2)
         rpt.table(rows, hdr)
         return rpt
 
@@ -107,10 +117,6 @@ class ReportIntervalS2:
         rpt.table(rows, hdr)
         return rpt
 
-    def bestmodel(self, **kwargs):
-        ''' Report of best model '''
-        return self.model(self._best)
-
 
 class PlotIntervalS2:
     ''' Plot the S2 reliability model fits '''
@@ -119,16 +125,22 @@ class PlotIntervalS2:
         self._best = best
         self.interval = results[self._best].interval
 
-    def bestmodel(self, ax=None, **kwargs):
-        ''' Plot of best model '''
-        self.model(self._best, ax=ax, **kwargs)
+    def model(self, model=None, ax=None, axlabels=True, **kwargs):
+        ''' Plot individual reliability model
 
-    def model(self, model, ax=None, axlabels=True, **kwargs):
-        ''' Plot individual model '''
+            Args:
+                model (str): Name of model to plot. If None, the best-fit
+                    model is plotted.
+                ax: Matplotlib Axis to plot on
+                axlabels (bool): Show x- and y-axis labels
+        '''
+        if model is None:
+            model = self._best
+
         _, ax = plotting.initplot(ax)
-        ax.plot(self._results[model].arr.x, self._results[model].arr.y*100, ls='', marker='o')
+        ax.plot(self._results[model].observed.ti, self._results[model].observed.ri*100, ls='', marker='o')
         if self._results[model].theta is not None:
-            xx = np.linspace(0, self._results[model].arr.x.max(), num=100)
+            xx = np.linspace(0, self._results[model].observed.ti.max(), num=100)
             yy = s2models.models[model](xx, *self._results[model].theta)
             ax.plot(xx, yy*100, ls='-')
         if self._results[model].interval > 0:
@@ -137,13 +149,13 @@ class PlotIntervalS2:
         if axlabels:
             ax.set_xlabel('Interval Days')
             ax.set_ylabel('Reliability %')
-            ax.set_title(self._best)
+            ax.set_title(model)
 
     def allmodels(self, fig=None, **kwargs):
-        ''' Plot all the models '''
+        ''' Plot all the reliability models '''
         fig, _ = plotting.initplot(fig)
         fig.clf()
-        axs = plotting.axes_grid(len(s2models.models), fig=fig, maxcols=3)
+        axs = plotting.axes_grid(len(self._results), fig=fig, maxcols=3)
         for ax, modelname in zip(axs, self._results.keys()):
             self.model(modelname, ax=ax, axlabels=False, **kwargs)
             ax.set_title(modelname)

@@ -63,72 +63,125 @@ def R_lognorm(t, theta1, theta2):
 
 
 # Functions for determining a reasonable initial guess for curve fit
+def _condition(y):
+    ''' Condition the reliability data to remove exact 1's and 0's that
+        don't play well in some of these models
+    '''
+    y = y.copy()
+    y[y >= 1] = .99999
+    y[y <= 0] = .00001
+    return y
+
+
 def guess_exp(t, y):
-    ''' Generate initial guess for exponential model '''
-    y = np.nan_to_num(-np.log(y))  # Linearize and fit straight line
-    theta1 = curve_fit(lambda x, a: x*a, t, y)[0][0]
-    return theta1
+    ''' Generate initial guess and bounds for exponential model '''
+    y = _condition(y)
+    logy = np.nan_to_num(-np.log(y))  # Linearize and fit straight line
+    try:
+        theta1 = curve_fit(lambda x, a: x*a, t, logy)[0][0]
+    except RuntimeError:
+        theta1 = 0.5
+    return (theta1,), ((1E-6, 10.),)
 
 
 def guess_weibull(t, y):
     ''' Generate initial guess for Weibull model '''
-    y[y == 1] = .99999
-    t = np.nan_to_num(np.log(t))
-    y = np.nan_to_num(np.log(-np.log(y)))  # Linearize
-    coef = np.polyfit(t, y, deg=1)
+    y = _condition(y)
+    logy = np.nan_to_num(np.log(-np.log(y)))  # Linearize
+    logt = np.nan_to_num(np.log(t))
+    coef = np.polyfit(logt, logy, deg=1)
     theta2 = coef[0]
     theta1 = np.exp(coef[1]/theta2)
-    return theta1, theta2
+    try:
+        theta1, theta2 = curve_fit(R_weibull, t, y, p0=(theta1, theta2))[0]
+    except RuntimeError:
+        pass  # Keep original guess
+
+    # theta1 = Constant failure rate. Shouldn't be more than 1
+    # theta2 = Shape parameter related to curvature. Higher = steeper.
+    return (theta1, theta2), ((0, 1.), (0, 100.))
 
 
 def guess_expmixed(t, y):
     ''' Generate initial guess for mixed exponential model '''
     # Use Approximation: (1+x)**r ~= (1+xr)
-    y = 1-y
-    theta1theta2 = curve_fit(lambda x, a: x*a, t, y)[0][0]
-    theta1 = theta1theta2/2
-    theta2 = theta1theta2/theta1
-    return theta1, theta2
+    y = _condition(y)
+    theta1theta2 = curve_fit(lambda x, a: x*a, t, 1-y)[0][0]
+
+    # theta2 should be less than 1
+    theta2 = .5
+    theta1 = theta1theta2/theta2
+    return (theta1, theta2), ((0, 1E4), (0, 1))
 
 
 def guess_walk(t, y):
     ''' Generate initial guess for random walk model '''
+    idx = (y > .001)  # Zeros aren't good. Drop them.
+    y, t = y[idx], t[idx]
     yy = stats.norm.ppf((y+1)/2)**-2    # Invert the cdf
-    theta1 = yy[yy > 0][0]**2
-    theta2 = 1/t[np.argmin(abs(y-(y.max()+y.min())/2))]
-    return theta1, theta2
+    theta2, theta1 = np.polyfit(t, yy, deg=1)
+    return (theta1, theta2), ((-1E6, 1E6), (-1E6, 1E6))
 
 
 def guess_rwalk(t, y):
     ''' Generate initial guess for restricted random walk model '''
-    y = (stats.norm.ppf((y+1)/2))**-2
-    theta1 = np.nanmin(y)   # t->0
-    t1plust2 = y[-1] if np.isfinite(y[-1]) else np.nanmean(y)    # t->inf
+    # Rough approximation
+    y = _condition(y)
+    yy = (stats.norm.ppf((y+1)/2))**-2
+    theta1 = .0513  # ~stats.norm.ppf((.999+1)/2)**-2   # t->0
+    t1plust2 = yy[-1] if np.isfinite(yy[-1]) else np.nanmean(yy)    # t->inf
     theta2 = t1plust2 - theta1
-    theta3 = 1/t.mean()     # ~ decay rate
-    return theta1, theta2, theta3
+    theta3 = 1/t.mean()   # ~ decay rate
+
+    # Fine tune
+    try:
+        theta1, theta2, theta3 = curve_fit(R_restrictedwalk, t, y, p0=(theta1, theta2, theta3))[0]
+    except RuntimeError:
+        pass  # Keep original guess
+    return (theta1, theta2, theta3), ((0, 1E6), (0, 1E6), (0, 1))
 
 
 def guess_gamma(t, y):
     ''' Generate initial guess for modified gamma model '''
-    yy = np.nan_to_num(-np.log(y))   # Ignore the SUM terms...
-    theta1 = curve_fit(lambda x, a: x*a, t, yy)[0][0]
-    return theta1
+    y = _condition(y)
+    logy = np.nan_to_num(-np.log(y))   # Ignore the SUM terms to get a rough guess
+    try:
+        theta1 = curve_fit(lambda x, a: x*a, t, logy)[0][0]
+    except RuntimeError:
+        theta1 = 0.5
+    else:
+        # Then fine tune with full model
+        try:
+            theta1 = curve_fit(R_gamma, t, y, p0=(theta1,))[0][0]
+        except RuntimeError:
+            pass  # Keep original guess
+    return (theta1,), ((0, 1),)
 
 
 def guess_mortality(t, y):
     ''' Generate initial guess for mortality drift model '''
-    yy = np.nan_to_num(np.log(y))  # Quadratic after linearizing
-    theta1, theta2 = curve_fit(lambda x, a, b: b*x**2-a*x, t, yy)[0]
-    return theta1, theta2
+    y = _condition(y)
+    logy = -np.nan_to_num(np.log(y))  # Quadratic after linearizing
+    try:
+        theta1, theta2 = curve_fit(lambda x, a, b: b*x**2+a*x, t, logy)[0]
+    except RuntimeError:
+        theta1, theta2 = 0.5
+    return (theta1, theta2), ((0, 1), (0, 1))
 
 
 def guess_warranty(t, y):
     ''' Generate initial guess for warranty model '''
-    yy = np.nan_to_num(np.log(1/y-1))  # Invert/linearize
-    theta1, theta1theta2 = np.polyfit(t, yy, deg=1)
+    y = _condition(y)
+    ylog = np.log(1/y-1)  # Invert/linearize
+    theta1, theta1theta2 = np.polyfit(t, ylog, deg=1)
     theta2 = -theta1theta2/theta1
-    return theta1, theta2
+
+    # Fine tune
+    try:
+        theta1, theta2 = curve_fit(R_warranty, t, y, p0=(theta1, theta2))[0]
+    except RuntimeError:
+        pass
+    return (theta1, theta2), ((0, 1E5), (0, 1E5))
 
 
 def guess_drift(t, y):
@@ -136,28 +189,35 @@ def guess_drift(t, y):
     t1overt3 = t.mean()  # Inflection point ~= theta1/theta3
     theta1 = theta2 = 2
     theta3 = theta1/t1overt3
-    return theta1, theta2, theta3
+    return (theta1, theta2, theta3), ((0, 1E5), (0, 1E5), (0, 1E5))
 
 
 def guess_lognorm(t, y):
     ''' Generate initial guess for lognormal model '''
+    # Rough approx
     ythresh = (y.max()+y.min())/2
     tthresh = t[np.abs(y-ythresh).argmin()]
     theta1 = 1/tthresh
-    theta2 = 1/(t.max()/2)
-    return theta1, theta2
+    theta2 = 1
+
+    # Fine tune
+    try:
+        theta1, theta2 = curve_fit(R_lognorm, t, y, p0=(theta1, theta2))[0]
+    except RuntimeError:
+        pass
+    return (theta1, theta2), ((0, 1E5), (0, 1E5))
 
 
 models = {'Exponential': R_exp,
-            'Weibull': R_weibull,
-            'Mixed Exponential': R_expmixed,
-            'Random Walk': R_walk,
-            'Restricted Walk': R_restrictedwalk,
-            'Modified Gamma': R_gamma,
-            'Mortality Drift': R_mortality,
-            'Warranty': R_warranty,
-            'Drift': R_drift,
-            'Log Normal': R_lognorm}
+          'Weibull': R_weibull,
+          'Mixed Exponential': R_expmixed,
+          'Random Walk': R_walk,
+          'Restricted Walk': R_restrictedwalk,
+          'Modified Gamma': R_gamma,
+          'Mortality Drift': R_mortality,
+          'Warranty': R_warranty,
+          'Drift': R_drift,
+          'Log Normal': R_lognorm}
 
 guessers = {'Exponential': guess_exp,
             'Weibull': guess_weibull,

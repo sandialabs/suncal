@@ -5,17 +5,16 @@ import logging
 from collections import namedtuple
 import numpy as np
 from scipy import stats
-from scipy.optimize import OptimizeWarning
+from scipy.optimize import OptimizeWarning, minimize, approx_fprime, brentq, curve_fit
+from scipy.special import binom
 from dateutil.parser import parse
 
-from ..curvefit import CurveFit, Array
-from ..common import ttable
 from .report.attributes import ReportIntervalS2
 from . import s2models
 
 
-Binned = namedtuple('Binned', 'interval binleft reliability number')
-S2Result = namedtuple('S2Result', 'interval interval_range conf theta F Fcrit C accept arr target guess binned Ng G')
+Observed = namedtuple('Observed', 'ti ri ni binleft')
+S2Result = namedtuple('S2Result', 'interval theta modelfunction F Fcrit C accept target tr guess observed Ng G')
 
 # Curve fit solver will throw warnings due to poor fits. Filter them out.
 warnings.filterwarnings('ignore', category=RuntimeWarning, module='scipy')
@@ -58,6 +57,44 @@ def _count_groups(x):
     return cnt
 
 
+def neglikelihood(theta, model, ti, ni, gi):
+    ''' Negative of likelihood function (negative D-5 in RP1) '''
+    modelr = model(ti, *theta)
+    prod = 1.
+    for n, g, r in zip(ni, gi, modelr):
+        prod *= (binom(n, g) * r**g * (1-r)**(n-g))
+    return np.nan_to_num(-np.log(prod), posinf=1000)
+
+
+def reliability_variance(tau, theta, model, ni, ti):
+    ''' Compute variance in reliability model (RP-1 eq D-29)
+
+        Args:
+            tau (float): Value of t at which to evaluate variance
+            theta (tuple): Fit parameters for reliability model
+            model (callable): Reliability model
+            ni (array): Number of measurements in the bin
+            ti (array): Observed intervals (right edge of bin)
+
+        Returns:
+            variance (float): Variance in the reliability model
+    '''
+    W = []
+    for n, t in zip(ni, ti):
+        r = model(t, *theta)
+        W.append(n / r / (1-r))
+    W = np.diag(W)
+
+    D = []
+    for t in ti:
+        D.append(approx_fprime(theta, lambda p: model(t, *p)))
+    D = np.asarray(D)
+
+    d = approx_fprime(theta, lambda p: model(tau, *p))
+    var_r = d.T @ np.linalg.inv(D.T @ W @ D) @ d
+    return var_r
+
+
 class ResultsBinomIntervalS2:
     ''' Results from Binomial Interval (S2) Method
 
@@ -66,20 +103,65 @@ class ResultsBinomIntervalS2:
             best: Name of best fit reliability model
 
         Methods:
-            method: Get results from one reliability model
+            model: Get results from one reliability model
     '''
     def __init__(self, methodresults):
-        self._methodresults = {k: methodresults[k] for k in sorted(
-            methodresults, key=lambda x: (methodresults[x].Ng, methodresults[x].G), reverse=True)}
-        self.best = max(self._methodresults, key=lambda x: self._methodresults[x].G)
-        self.interval = self._methodresults[self.best].interval
+        self.models = {k: methodresults[k] for k in sorted(
+            methodresults, key=lambda x: (methodresults[x].G), reverse=True)}
+        self.best = max(self.models, key=lambda x: self.models[x].G)
+        self.interval = self.models[self.best].interval
         self.report = ReportIntervalS2(self)
 
     def _repr_markdown_(self):
         return self.report.summary().get_md()
 
-    def method(self, name):
-        return self._methodresults.get(name)
+    def model(self, name=None):
+        ''' Get results for one reliability model '''
+        if name is None:
+            name = self.best
+        return self.models.get(name)
+
+    def reliability(self, t, name=None):
+        ''' Get Reliability Curve at t '''
+        results = self.model(name)
+        model = results.modelfunction
+        theta = results.theta
+        return model(t, *theta)
+
+    def expanded(self, name=None, conf=.95):
+        ''' Expanded uncertainty range for one reliability model
+
+            Args:
+                name (str): Name of the reliability model
+                conf (float): Confidence level (0-1) for uncertainty
+        '''
+        results = self.model(name)
+        model = results.modelfunction
+        theta = results.theta
+        target = results.target
+        ti = results.observed.ti
+        ni = results.observed.ni
+        kfactor = stats.norm.interval(confidence=conf)[1]
+
+        def tau_f1(tau, model, theta, ni, ti, target):
+            return model(tau, *theta) - kfactor * np.sqrt(reliability_variance(tau, theta, model, ni, ti)) - target
+
+        def tau_f2(tau, model, theta, ni, ti, target):
+            return model(tau, *theta) + kfactor * np.sqrt(reliability_variance(tau, theta, model, ni, ti)) - target
+
+        try:
+            tau_l = brentq(tau_f1, a=0, b=ti.max(), args=(model, theta, ni, ti, target), xtol=.01)
+        except (ValueError, np.linalg.LinAlgError):
+            # Probably no zero crossings
+            tau_l = 0
+
+        try:
+            tau_u = brentq(tau_f2, a=0, b=ti.max(), args=(model, theta, ni, ti, target), xtol=.01)
+        except (ValueError, np.linalg.LinAlgError):
+            # Probably no zero crossings
+            tau_u = np.inf
+
+        return tau_l, tau_u
 
 
 class BinomialInterval:
@@ -100,9 +182,8 @@ class BinomialInterval:
             individual measurement points. If ti0 is None, there will be no gaps
             between bins.
     '''
-    def __init__(self, Rtarget=0.95, ti=None, ti0=None, Ri=None, ni=None, conf=0.95):
+    def __init__(self, Rtarget=0.95, ti=None, ti0=None, Ri=None, ni=None):
         self.Rtarget = Rtarget
-        self.conf = conf
         self.ti0 = np.asarray(ti0).astype(float) if ti0 is not None else np.array([])
         self.ti = np.asarray(ti).astype(float) if ti is not None else np.array([])
         self.Ri = np.asarray(Ri).astype(float) if Ri is not None else np.array([])
@@ -124,6 +205,12 @@ class BinomialInterval:
                   # 'Mixed Exponential': [5, 2],
                   }
 
+        # Override bounds for theta minimization. ((min, max), (min, max)).. for each theta
+        self.bounds = {
+                      # 'Exponential': ((0, 0),),
+                      # ...
+                      }
+
     def update(self, ti, ri, ni, ti0=None):
         ''' Update calibration data. Don't change if None.
 
@@ -138,14 +225,12 @@ class BinomialInterval:
         self.Ri = ri if ri is not None else self.Ri
         self.ni = ni if ni is not None else self.ni
 
-    def update_params(self, Rt, conf):
+    def update_params(self, Rt):
         ''' Update parameters, reliability and confidence
 
             Args:
                 Rtarget (float): Target reliability (0-1)
-                conf (float): Level of confidence
         '''
-        self.conf = conf
         self.Rtarget = Rt
 
     def set_p0(self, model, p0):
@@ -173,9 +258,9 @@ class BinomialInterval:
 
     def calculate(self):
         ''' Calculate intervals using each model '''
-        arr = Array(self.ti, self.Ri)   # Fitting to right edge of each bin
-        k = len(arr)      # Number of intervals/bins
+        k = len(self.ni)  # Number of intervals/bins
         n = sum(self.ni)  # Total number of measurements made
+        gi = (self.ni * self.Ri).astype(int)
 
         if k < 2:
             warnings.warn('Not enough data to compute interval')
@@ -186,7 +271,6 @@ class BinomialInterval:
         for name, model in self.models.items():
             # Defaults if things fail
             interval = 0
-            tau_u = tau_l = 0
             theta = None
             F = np.inf
             Fcrit = 0
@@ -195,64 +279,63 @@ class BinomialInterval:
 
             if name in self.p0:
                 p0 = self.p0[name]
+                bounds = self.bounds.get(name, None)
             elif name in self.guessers:
-                p0 = self.guessers.get(name)(arr.x, arr.y)
+                p0, bounds = self.guessers.get(name)(self.ti, self.Ri)
             else:
-                p0 = None  # Use curve_fit default
+                raise ValueError(f'Need initial guess p0 for model {name}')
 
-            fit = CurveFit(arr, model, p0=p0)
             try:
-                fitresult = fit.calculate_lsq()
+                result = minimize(neglikelihood, p0,
+                                  bounds=bounds,
+                                  args=(model, self.ti, self.ni, gi))
             except (RuntimeError, TypeError):
-                # Fit failed to converge, use defaults
                 logging.warning('%s failed to converge!', name)
+                theta = curve_fit(model, self.ti, self.Ri, p0=p0)[0]  # Fall back on fit to ti, Ri
             else:
-                theta = fitresult.coeffs
-                m = len(theta)  # Number of fit parameters
+                theta = result.x
 
-                # Find intersection of fit and Rtarget numerically
-                # fsolve has problems if y has nans, which may be the case
-                # as t->0. Numerical result is fine as we round to
-                # nearest integer anyway.
-                xx = np.linspace(0, arr.x.max(), num=1000)
-                yy = fitresult.y(xx)
-                yy[~np.isfinite(yy)] = 1E99
-                interval = xx[np.argmin(abs(yy - self.Rtarget))]
+            m = len(theta)  # Number of fit parameters
 
-                kfactor = ttable.k_factor(self.conf, k-m)
-                yunc = kfactor * fitresult.confidence_band(xx)
-                yunc[~np.isfinite(yunc)] = 1E99
-                tau_u = xx[np.argmin(abs(yy+yunc - self.Rtarget))]
-                tau_l = xx[np.argmin(abs(yy-yunc - self.Rtarget))]
+            # Find intersection of fit and Rtarget numerically
+            # fsolve has problems if y has nans, which may be the case
+            # as t->0. Numerical result is fine as we round to
+            # nearest integer anyway.
+            xx = np.linspace(0, self.ti.max()*1.2, num=1000)
+            yy = model(xx, *theta)
+            yy[~np.isfinite(yy)] = 1E99
+            interval = xx[np.argmin(abs(yy - self.Rtarget))]
+            tr = xx[np.argmin(abs(yy - (1-self.Rtarget)))]  # For figure of merit
 
-                if np.isclose(fitresult.y(interval), self.Rtarget, atol=.01):
-                    interval = np.round(interval)
-                    se2 = sum(self.ni * self.Ri * (1 - self.Ri)) / (n-k)                # RP1 eq D-19
-                    sl2 = sum(self.ni * (self.Ri - model(self.ti, *theta))**2) / (k-m)  # RP1 eq D-23
-                    F = sl2/se2
-                    Fcrit = stats.f.ppf(self.conf, dfn=k-m, dfd=n-k)  # Critical F parameter
-                    C = stats.f.cdf(F, dfn=k-m, dfd=n-k) * 100        # Rejection Confidence
-                    accept = F < Fcrit
-                else:
-                    interval = tau_l = tau_u = 0
+            if np.isclose(model(interval, *theta), self.Rtarget, atol=.01):
+                interval = np.round(interval)
+                se2 = sum(self.ni * self.Ri * (1 - self.Ri)) / (n-k)                # RP1 eq D-19
+                sl2 = sum(self.ni * (self.Ri - model(self.ti, *theta))**2) / (k-m)  # RP1 eq D-23
+                F = sl2/se2
+                Fcrit = stats.f.ppf(0.95, dfn=k-m, dfd=n-k)  # Critical F parameter
+                C = stats.f.cdf(F, dfn=k-m, dfd=n-k) * 100   # Rejection Confidence
+                if not np.isfinite(C):
+                    C = 100.
+                accept = F < Fcrit
+            else:
+                interval = 0.
 
             results[name] = {
                 'interval': interval,
-                'interval_range': (tau_l, tau_u),
-                'conf': self.conf,
                 'theta': theta,
+                'modelfunction': model,
                 'F': F,
                 'Fcrit': Fcrit,
                 'C': C,
                 'accept': accept,
-                'arr': arr,
                 'target': self.Rtarget,
+                'tr': tr,  # Eq D-25 in RP1
                 'guess': p0,
-                'binned': Binned(
-                    interval=self.ti,
-                    binleft=self.ti0 if len(self.ti0) else [0] + list(self.ti)[:-1],
-                    reliability=self.Ri,
-                    number=self.ni)
+                'observed': Observed(
+                    ti=self.ti,
+                    ri=self.Ri,
+                    ni=self.ni,
+                    binleft=self.ti0 if len(self.ti0) else [0] + list(self.ti)[:-1])
                 }
 
         # Group them by interval similarity to compute figure of merit
@@ -261,7 +344,7 @@ class BinomialInterval:
 
         for idx, name in enumerate(self.models.keys()):
             results[name]['Ng'] = Ng[idx]
-            results[name]['G'] = Ng[idx] / (results[name]['C']/100) * results[name]['interval'] ** 0.25
+            results[name]['G'] = Ng[idx] / (results[name]['C']/100) * results[name]['tr'] ** 0.25
 
         return ResultsBinomIntervalS2({name: S2Result(**r) for name, r in results.items()})
 
@@ -276,12 +359,11 @@ class BinomialIntervalAssets:
             binlefts (array): Left edge of interval bins
             binwidth (array): Width of interval bins
     '''
-    def __init__(self, Rt=0.9, bins=10, conf=0.95, binlefts=None, binwidth=None):
+    def __init__(self, Rt=0.9, bins=10, binlefts=None, binwidth=None):
         self.Rtarget = Rt
         self.bins = bins
         self.binlefts = binlefts
         self.binwidth = binwidth
-        self.conf = conf
         self.assets = {}
 
     def updateasset(self, assetname, enddates, passfail, startdates=None, **kwargs):
@@ -299,17 +381,15 @@ class BinomialIntervalAssets:
             'enddates': enddates,
             'passfail': passfail}
 
-    def update_params(self, Rt=.9, conf=.95, bins=10, binlefts=None, binwidth=None):
-        ''' Update target, conf, and bins parameters
+    def update_params(self, Rt=.9, bins=10, binlefts=None, binwidth=None, **kwargs):
+        ''' Update target and bins parameters
 
         Args:
             Rt (float): Reliability target
-            conf (float): Level of confidence
             bins (int): Number of bins for converting calibrations into (time, reliability) values
             binlefts (array): Left edge of interval bins
             binwidth (array): Width of interval bins
         '''
-        self.conf = conf
         self.Rtarget = Rt
         self.bins = bins
         self.binlefts = binlefts
@@ -393,7 +473,7 @@ class BinomialIntervalAssets:
     def to_binomialinterval(self):
         ''' Convert assets into BinomialInterval '''
         t, ti0, R, ni = self.get_reliability()
-        return BinomialInterval(self.Rtarget, ti=t, Ri=R, ni=ni, ti0=ti0, conf=self.conf)
+        return BinomialInterval(self.Rtarget, ti=t, Ri=R, ni=ni, ti0=ti0)
 
     def calculate(self):
         ''' Calculate both methods '''

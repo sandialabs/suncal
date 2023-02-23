@@ -133,8 +133,7 @@ class ReportFit:
         k = ttable.k_factor(conf, len(self.t)-len(self.b))
         upred = k*np.sqrt(u_pred(xx, self.b, self.cov, self.syx)**2 + self.u0**2)
 
-        fig, _ = plotting.initplot(fig)
-        ax = fig.add_subplot(1, 1, 1)
+        fig, ax = plotting.initplot(fig)
         ax.plot(xx, fit, color='C1', label='Fit')
         ax.plot(xx, fit+upred, color='C4', ls='--', label=f'{conf*100:.0f}% Uncertainty (k={k:.2f})')
         ax.plot(xx, fit-upred, color='C4', ls='--')

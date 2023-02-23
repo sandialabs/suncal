@@ -55,6 +55,21 @@ def testA3():
     assert np.isclose(result.RU, .8664, atol=.00005)         # Upper reliability conf limit
 
 
+def test_s2():
+    ''' Test S2 Method. Can't find any full published data to compare
+        against, so this just exercises the calculation to make sure
+        it completes.
+    '''
+    # Reliability data from Table D-1 in RP1
+    ti = [4, 7, 10, 13, 21, 28, 40, 48]           # Weeks between calibrations
+    ni = np.array([4, 6, 14, 13, 22, 49, 18, 6])  # Number of calibrations in each interval of ti
+    Ri = [1.0, .83333, .6429, .6154, .5455, .4082, .5000, .3333]    # Observed measurement reliability
+
+    model = BinomialInterval(Rtarget=.75, ti=ti, Ri=Ri, ni=ni)
+    result = model.calculate()
+    result.report.summary()
+
+
 @pytest.mark.filterwarnings('ignore')  # Will generate runtime/optimize warning in minimization loop
 def test_variables():
     ''' Test variables method using data from NASA-HDBK-8739.19-5 '''

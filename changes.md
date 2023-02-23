@@ -1,5 +1,10 @@
 # Change History
 
+## Version 1.6.2
+
+- Improve convergence of S2 Interval Calculation minimization problem
+
+
 ## Version 1.6.1
 
 - Enabled coth and acoth functions

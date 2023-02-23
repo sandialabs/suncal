@@ -137,7 +137,6 @@ class ProjectIntervalBinom(ProjectComponent):
         d['name'] = self.name
         d['desc'] = self.longdescription
         d['Rt'] = self.model.Rtarget
-        d['conf'] = self.model.conf
         d['ti'] = list(self.model.ti)
         d['ri'] = list(self.model.Ri)
         d['ni'] = list(self.model.ni)
@@ -148,7 +147,6 @@ class ProjectIntervalBinom(ProjectComponent):
         self.name = config.get('name', 'interval')
         self.longdescription = config.get('desc', '')
         self.model.Rtarget = config.get('Rt', .95)
-        self.model.conf = config.get('conf', 0.95)
         self.model.Ri = config.get('ri', [])
         self.model.ni = config.get('ni', [])
         self.model.ti = config.get('ti', [])
@@ -182,7 +180,6 @@ class ProjectIntervalBinomAssets(ProjectComponent):
         d['bins'] = self.model.bins
         d['binlefts'] = self.model.binlefts
         d['binwidth'] = self.model.binwidth
-        d['conf'] = self.model.conf
         d['assets'] = {}
         for a, vals in self.model.assets.items():
             d['assets'][a] = {
@@ -199,7 +196,6 @@ class ProjectIntervalBinomAssets(ProjectComponent):
         self.model.bins = config.get('bins', 10)
         self.model.binlefts = config.get('binlefts', None)
         self.model.binwidth = config.get('binwidth', None)
-        self.model.conf = config.get('conf', 0.95)
         self.model.assets = config.get('assets', {})
 
 
