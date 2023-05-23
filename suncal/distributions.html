@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+
+    <title>Suncal - Distribution Explorer</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Raleway&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <link rel="stylesheet" type="text/css" href="style/style.css" />
+    <link rel="stylesheet" href="https://pyscript.net/latest/pyscript.css" />
+    <script defer src="https://pyscript.net/releases/2023.03.1/pyscript.js"></script>
+  </head>
+
+  <body>
+    <py-config>
+      packages = ["src/whl/suncal-1.6.3-py3-none-any.whl"]
+
+      [[fetch]]
+      files = ["distexplore.py"]
+      from = "src"
+      to_folder = "."
+    </py-config>
+
+    <div class="container">
+      <h1>Suncal Web (Beta) - Distribution Explorer</h1>
+    </div>
+
+<div class="dist-container">
+  <div class="dist-grid-child">
+    <div class="dist-controls">
+      <div class="dist-grid-child">
+        <p>Number of distributions <input class="small" type="number" id="number_dists" value="1" min="1" max="4" step="1"
+                                    py-input="distexp.add_dists()" /></p>
+        <p>Samples <input type="number" id="samples" value="5000" min="3" max="100000" step="1"
+                    py-input="distexp.set_samples()" style="width: 100px"/></p>
+        <p>Random Seed <input id="seed" value="None" style="width: 100px"/></p>
+
+      </div>
+      <div class="dist-grid-child" id="distribution1">
+          <p>Name <input type="text" class="name" id="expr1" name="expr1" value="a" py-change="distexp.set_expr(1)"/>
+            <button class="button" id="run1" type="button" py-click="distexp.sample(1)">Sample</button>
+          </p>
+          <div id="distvalues1">
+          <p>
+            <select name="dist1" id="dist1">
+              <option value="norm">Normal</option>
+              <option value="uniform">Uniform</option>
+              <option value="triangular">Triangular</option>
+            </select>
+          Mean <input class="small" type="number" id="mean1" value="0" />
+          a <input class="small" type="number" id="a1" value="1" min="0" />
+          </div></p>
+      </div>
+      <div class="dist-grid-child input-hidden" id="distribution2">
+        <p>Name <input type="text" class="name" id="expr2" name="expr2" value="b" py-change="distexp.set_expr(2)" />
+          <button class="button" id="run2" type="button" py-click="distexp.sample(2)">Sample</button>
+        </p>
+        <div id="distvalues2">
+        <p>
+          <select name="dist2" id="dist2">
+            <option value="norm">Normal</option>
+            <option value="uniform">Uniform</option>
+            <option value="triangular">Triangular</option>
+          </select>
+        Mean <input class="small" type="number" id="mean2" value="0" />
+        a <input class="small" type="number" id="a2" value="1" /></p>
+        </div>
+      </div>
+      <div class="dist-grid-child input-hidden" id="distribution3">
+        <p>Name <input type="text" class="name" id="expr3" name="expr3" value="c" py-change="distexp.set_expr(3)" />
+          <button class="button" id="run3" type="button" py-click="distexp.sample(3)">Sample</button>
+        </p>
+        <div id="distvalues3">
+          <p>
+          <select name="dist3" id="dist3">
+            <option value="norm">Normal</option>
+            <option value="uniform">Uniform</option>
+            <option value="triangular">Triangular</option>
+          </select>
+        Mean <input class="small" type="number" id="mean3" value="0" />
+        a <input class="small" type="number" id="a3" value="1" /></p>
+        </div>
+      </div>
+      <div class="dist-grid-child input-hidden" id="distribution4">
+        <p>Name <input type="text" class="name" id="expr4" name="expr4" value="d" py-change="distexp.set_expr(4)"/>
+          <button class="button" id="run4" type="button" py-click="distexp.sample(4)">Sample</button>
+        </p>
+        <div id="distvalues4">
+        <p>
+          <select name="dist4" id="dist4">
+            <option value="norm">Normal</option>
+            <option value="uniform">Uniform</option>
+            <option value="triangular">Triangular</option>
+          </select>
+        Mean <input class="small" type="number" id="mean4" value="0" />
+        a <input class="small" type="number" id="a4" value="1" /></p>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="dist-grid-child">
+    <div>
+        <input type="checkbox" id="coverage" py-change="distexp.update_plot()"><label for="coverage">95% Coverage</label>
+        <input type="checkbox" id="probplot" py-change="distexp.update_plot()"><label for="probplot">Show Probability Plot</label>
+        <select name="fitdist" id="fitdist" py-change="distexp.update_plot()">
+          <option value="norm">Normal</option>
+          <option value="uniform">Uniform</option>
+          <option value="triangular">Triangular</option>
+        </select>
+    </div>
+    <div id="plot"></div>
+    <div id="stats"></div>
+  </div>
+</div>
+
+
+<br><br>
+<div class="footer">
+  <p><a href="index.html">Suncal-Web Home</a></p>
+</div>
+
+
+<py-script>
+from distexplore import DistExp
+distexp = DistExp()
+</py-script>
+</body>
+</html>
