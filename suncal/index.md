@@ -3,7 +3,7 @@
 The Suncal-Web interface currently provides these tools as a beta-test:
 
 - [Student T Calculator](student.html): Calculate coverage factor, level of confidence, and degrees of freedom
-- [Units COnverter](units.html): Convert between measurement units
+- [Units Converter](units.html): Convert between measurement units
 
 Additional web implementations of features from the full Suncal package are in development.
 
