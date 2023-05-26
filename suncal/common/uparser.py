@@ -5,7 +5,6 @@ by analyzing the expression with the ast module.
 
 import ast
 import re
-from contextlib import suppress
 from tokenize import TokenError
 import numpy as np
 import sympy
@@ -183,9 +182,12 @@ def _parse_math(expr, fns=None, name=None, allowcomplex=False):
     if fns is None:
         fns = _functions
     allowed = (ast.Module, ast.Expr, ast.BinOp,
-               ast.Name, ast.Num, ast.UnaryOp, ast.Load,
+               ast.Name, ast.UnaryOp, ast.Load,
                ast.Add, ast.Mult, ast.Sub, ast.Div, ast.Pow,
                ast.USub, ast.UAdd, ast.Constant)
+
+    if allowcomplex:
+        fns = fns + ['re', 'im']
 
     if not isinstance(expr, str):
         raise ValueError(f'Non string expression {expr}')
@@ -207,7 +209,15 @@ def _parse_math(expr, fns=None, name=None, allowcomplex=False):
             # Other operator. Must be in whitelist.
             raise ValueError(f'Invalid expression: "{expr}"')
 
-    _locals['I'] = sympy.I if allowcomplex else sympy.Symbol('I')
+    if allowcomplex:
+        _locals['I'] = sympy.I
+        _locals['re'] = sympy.re
+        _locals['im'] = sympy.im
+    else:
+        _locals['I'] = sympy.Symbol('I')
+        _locals['re'] = sympy.Symbol('re')
+        _locals['im'] = sympy.Symbol('im')
+
     try:
         fn = sympy.sympify(expr, _locals)
     except (ValueError, TypeError, sympy.SympifyError) as exc:

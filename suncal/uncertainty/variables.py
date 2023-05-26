@@ -331,9 +331,9 @@ class Typeb:
         if unitmgr.has_units(self.nominal) and self.units is None:
             self.units = self.nominal.units
             # Uncertainties always use delta units
-            if str(self.units) in ['degC', 'celsius']:
+            if str(self.units) in ['degC', 'celsius', 'degree_Celsius']:
                 self.units = unitmgr.ureg.delta_degC
-            elif str(self.units) in ['degF', 'fahrenheit']:
+            elif str(self.units) in ['degF', 'fahrenheit', 'degree_Fahrenheit']:
                 self.units = unitmgr.ureg.delta_degF
 
         return newargs
@@ -456,6 +456,18 @@ class Variables:
                     symbols[f'sigma_{name1}{name2}'] = self._correlation[idx1, idx2]
                     symbols[f'sigma_{name2}{name1}'] = self._correlation[idx2, idx1]
         return symbols
+
+    @property
+    def correlation_list(self):
+        ''' Get parseable dictionary of correlation coefficients
+            in the form {(v1, v2): correlation}
+        '''
+        coeffs = {}
+        for idx1, name1 in enumerate(self.names):
+            for idx2, name2 in enumerate(self.names):
+                if name1 < name2:
+                    coeffs[(name1, name2)] = self._correlation[idx1, idx2]
+        return coeffs
 
     @property
     def info(self):

@@ -9,9 +9,8 @@ from PyQt5 import QtWidgets, QtCore
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 
-from ..common import plotting, distributions
+from ..common import plotting, distributions, unitmgr
 from ..datasets import dataset
-from ..project import ProjectDataSet
 from . import page_csvload
 from . import configmgr
 from . import gui_common
@@ -306,16 +305,16 @@ class DistributionSelectWidget(QtWidgets.QDialog):
         colname = self.get_selcolname()
         if data is not None:
             if 'samples' in data:
-                samples = data['samples']
+                samples = unitmgr.strip_units(data['samples'])
                 distname = self.cmbDistType.currentText()
                 if distname == 'normal (standard error)':
-                    params = {'median': np.median(data['samples']),
-                              'std': data['samples'].std(ddof=1)/np.sqrt(len(data['samples']))}
+                    params = {'median': np.median(samples),
+                              'std': samples.std(ddof=1)/np.sqrt(len(samples))}
                     fitdist = distributions.get_distribution('normal', **params)
 
                 elif distname == 'normal (with autocorrelation)':
-                    params = {'median': np.median(data['samples']),
-                              'std': dataset.uncert_autocorrelated(data['samples']).uncert}
+                    params = {'median': np.median(samples),
+                              'std': dataset.uncert_autocorrelated(samples).uncert}
                     fitdist = distributions.get_distribution('normal', **params)
 
                 else:
@@ -471,27 +470,28 @@ class DistributionSelectWidget(QtWidgets.QDialog):
         for newname, colidx, data in distlist:
             distname = self.table.item(self.ROW_DIST, colidx).text()
             if 'samples' in data:
+                samples = unitmgr.strip_units(data['samples'])
                 if distname == 'normal (standard error)':
                     distname = 'normal'
-                    params = {'median': np.mean(data['samples']),
-                              'std': data['samples'].std(ddof=1)/np.sqrt(len(data['samples']))}
+                    params = {'median': np.mean(samples),
+                              'std': samples.std(ddof=1)/np.sqrt(len(samples))}
 
                 elif distname == 'normal (with autocorrelation)':
-                    params = {'median': np.mean(data['samples']),
-                              'std': dataset.uncert_autocorrelated(data['samples']).uncert}
+                    params = {'median': np.mean(samples),
+                              'std': dataset.uncert_autocorrelated(samples).uncert}
                     distname = 'normal'
 
                 else:
                     fitdist = distributions.get_distribution(distname)
-                    params = fitdist.fit(data['samples'])
+                    params = fitdist.fit(samples)
                     if 'expected' in data:
-                        params['expected'] = data['expected']
+                        params['expected'] = unitmgr.strip_units(data['expected'])
                     if 'median' in data:
-                        params.setdefault('median', data['median'])
+                        params.setdefault('median', unitmgr.strip_units(data['median']))
 
                 params['dist'] = distname
                 if 'df' not in params:
-                    params['df'] = len(data['samples'])-1
+                    params['df'] = len(samples)-1
             elif 'function' in data:
                 f = data['function']
                 if self.xval_isdate:
@@ -501,11 +501,11 @@ class DistributionSelectWidget(QtWidgets.QDialog):
                 params = f(x)
             elif 'sem' in data:
                 params = {'dist': 'normal',
-                          'median': data.get('median', data.get('mean', 0)),
-                          'std': data.get('sem'),
+                          'median': unitmgr.strip_units(data.get('median', data.get('mean', 0))),
+                          'std': unitmgr.strip_units(data.get('sem')),
                           'df': data.get('df', np.inf)}
             else:
-                params = data
+                params = {k: unitmgr.strip_units(v) for k, v in data.items()}
                 params.setdefault('dist', 'normal')
             dists[newname] = params
 
@@ -641,12 +641,13 @@ class ArraySelectWidget(QtWidgets.QDialog):
         ''' Column assignment has changed '''
         varname = self.cmbColumn.currentText()
         colid = self.table.currentColumn()
-        if varname in ['Not Used', '']:
-            self.colassignments[colid] = None
-        else:
-            if varname in self.colassignments:
-                self.colassignments[self.colassignments.index(varname)] = None
-            self.colassignments[colid] = varname
+        if self.colassignments:
+            if varname in ['Not Used', '']:
+                self.colassignments[colid] = None
+            else:
+                if varname in self.colassignments:
+                    self.colassignments[self.colassignments.index(varname)] = None
+                self.colassignments[colid] = varname
         self.highlight_columns()
         self.updateplot()
 

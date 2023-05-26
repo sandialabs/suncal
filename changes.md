@@ -1,5 +1,16 @@
 # Change History
 
+## Version 1.6.3
+
+- Added re() and im() functions for ModelComplex calculations
+- Fixed evaluation of constant model functions
+- Corrected possible skew in histogram of Monte Carlo Distribution output plot
+- Fixed issues with offset (eg temperature) unit conversion in uncertainty values
+- Fixed issue when importing a distribution with measurement units
+- Fixed entry of uncertainty level of confidence
+- Replaced setup.py with setup.cfg
+
+
 ## Version 1.6.2
 
 - Improve convergence of S2 Interval Calculation minimization problem

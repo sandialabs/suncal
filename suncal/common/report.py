@@ -32,8 +32,27 @@ if os.name == 'posix':
     if latex_path is None:
         latex_path = '/Library/TeX/texbin/pdflatex' if os.path.exists('/Library/TeX/texbin/pdflatex') else None
 
-# Default mathjax script for embedding in HTML header
-MATHJAX_URL = 'https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.4/MathJax.js'
+# Mathjax script for embedding in HTML header
+MATHJAX_SCRIPT = r'''<script>
+  MathJax = {
+    tex: {
+      inlineMath: [['$', '$'], ['\\(', '\\)']]
+    },
+    svg: {
+      fontCache: 'global',
+      scale: 1.3
+    }
+  };
+  </script>
+  <script type="text/javascript" id="MathJax-script" async
+    src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js">
+</script>'''
+
+
+HTML_HEAD = '<!DOCTYPE html><html lang="en">\n<head>\n'
+HTML_END_HEAD = '</head>\n<body>'
+HTML_FOOTER = '</body>\n</html>'
+REPORT_CSS = css.css
 
 
 # Defaults if kwargs aren't provided
@@ -459,6 +478,9 @@ class Math:
         ''' Markdown representation for Jupyter '''
         return self.latex()
 
+    def _repr_svg_(self):
+        return self.svg_str()
+
     def png_buf(self, color='black', fontsize=16, dpi=120):
         ''' Render math to BytesIO buffer in PNG format using matplotlib
 
@@ -746,6 +768,8 @@ class Report:
             inline (bool): Render Mardkown images inline (True) or as references in footer
             unicode (bool): Allow unicode characters (True) or only ascii (False)
     '''
+    apply_css = True
+
     def __init__(self, **kwargs):
         self._s = ''
         self._plots = []
@@ -760,6 +784,10 @@ class Report:
     def _repr_markdown_(self):
         ''' Markdown representation for Jupyter '''
         return self.get_md()
+
+    def _repr_html_(self):
+        ''' HTML representation '''
+        return self.get_html()
 
     def hdr(self, text, level=1):
         ''' Add a header to the report
@@ -1059,15 +1087,13 @@ class Report:
                 **kwargs: See Report class. Arguments specified at Report
                 instantiation override arguments given here.
         '''
-        CSS = '<style type="text/css">' + css.css + '</style>'
+        css = ''
+        if self.apply_css:
+            css = f'<style type="text/css">\n{REPORT_CSS}\n</style>'
 
-        if kwargs.get('mathfmt', 'latex') == 'latex':
-            # Include Mathjax script
-            # Use Mathjax header that includes $..$, not just default of only $$..$$
-            CSS += (r'''<script type="text/x-mathjax-config"> MathJax.Hub.Config('''
-                    r'''{tex2jax: {inlineMath: [['$','$'], ['\\(','\\)']]}});</script>\n'''
-                    r'''<script type="text/javascript" async src="''' + MATHJAX_URL +
-                    r'''?config=TeX-AMS_CHTML"></script>''')
+            if kwargs.get('mathfmt', 'latex') == 'latex':
+                # Include Mathjax script
+                css += MATHJAX_SCRIPT
 
         # Convert markdown to HTML
         html = markdown.markdown(self.get_md(**kwargs), extensions=['markdown.extensions.tables'])
@@ -1076,7 +1102,10 @@ class Report:
         # Some table styles can't go in CSS, at least as rendered by QTextWidget, so must go in table tags
         html = html.replace('<table>', '<table border="0.5" cellpadding="0" cellspacing="0">')
         html = html.replace('<th>', '<th align="center" bgcolor="lightgray">')
-        return CSS + '\n' + html
+
+        bodyhead = kwargs.get('header', '')
+        bodyfoot = kwargs.get('footer', '')
+        return f'{HTML_HEAD}{css}\n{HTML_END_HEAD}\n{bodyhead}{html}{bodyfoot}\n{HTML_FOOTER}'
 
     def save_html(self, fname, **kwargs):
         ''' Get report in HTML format and save to file.
@@ -1088,7 +1117,8 @@ class Report:
         '''
         if not fname.lower().endswith('.html') or fname.endswith('.htm'):
             fname += '.html'
-        html = self.get_html(**kwargs)
+        footer = '''<br><div>Uncertainty calculated by <a href="https://sandiapsl.github.io">Suncal</a></div>'''
+        html = self.get_html(footer=footer, **kwargs)
         with open(fname, 'w', encoding='utf-8') as f:
             f.write(html)
 

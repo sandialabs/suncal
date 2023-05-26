@@ -73,7 +73,7 @@ class ReportDistExplore:
         for name in self.samples:
             with plotting.plot_figure() as fig:
                 self.plot.hist(name, fig=fig, fitdist=fitdist, qqplot=qqplot, coverage=coverage)
-                fig.suptitle(name)
+                fig.suptitle(f'${name}$')
                 r.plot(fig)
             r.add('\n\n')
             r.append(self.single(name, **kwargs))

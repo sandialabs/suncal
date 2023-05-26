@@ -161,13 +161,6 @@ class Settings:
         assert value in ['mathjax', 'mpl']
         self.settings.setValue('report/mathmode', value)
 
-    def getRptMJURL(self):
-        return self.settings.value(
-            'report/mathjaxurl', report.MATHJAX_URL, type=str)
-
-    def setRptMJURL(self, value):
-        self.settings.setValue('report/mathjaxurl', value)
-
     def getRptUnicode(self):
         return self.settings.value('report/unicode', True, type=bool)
 
@@ -220,7 +213,6 @@ class Settings:
         self.setRptFormat('html')
         self.setRptImgFormat('svg')
         self.setRptMath('mpl')
-        self.setRptMJURL(report.MATHJAX_URL)
         self.setPandocPath(None)
         self.setLatexPath(None)
         self.sync()
@@ -458,7 +450,6 @@ class PgReportOpts(QtWidgets.QWidget):
         self.cmbImage = QtWidgets.QComboBox()
         self.cmbImage.addItems(['SVG', 'PNG'])
         self.chkUnicode = QtWidgets.QCheckBox('Allow Unicode in Markdown')
-        self.mjurl = QtWidgets.QLineEdit()
         self.pandoc = QtWidgets.QLineEdit()
         self.latex = QtWidgets.QLineEdit()
 
@@ -466,7 +457,6 @@ class PgReportOpts(QtWidgets.QWidget):
         glayout.addRow('File Format', self.cmbFormat)
         glayout.addRow('Image Format', self.cmbImage)
         glayout.addRow('Math Renderer', self.cmbMath)
-        glayout.addRow('Mathjax URL', self.mjurl)
         glayout.addRow('', self.chkUnicode)
         playout = QtWidgets.QFormLayout()
         playout.addRow('Pandoc', self.pandoc)
@@ -578,7 +568,6 @@ class PgSettingsDlg(QtWidgets.QDialog):
             ['mathjax', 'mpl'].index(self.settings.getRptMath()))
         self.pgRptOpts.cmbImage.setCurrentIndex(
             ['svg', 'png'].index(self.settings.getRptImgFormat()))
-        self.pgRptOpts.mjurl.setText(self.settings.getRptMJURL())
         self.pgRptOpts.chkUnicode.setChecked(self.settings.getRptUnicode())
 
         pandoc = self.settings.getPandocPath()
@@ -638,7 +627,6 @@ class PgSettingsDlg(QtWidgets.QDialog):
         self.settings.setRptFormat(['html', 'md', 'pdf', 'odt', 'docx'][self.pgRptOpts.cmbFormat.currentIndex()])
         self.settings.setRptImgFormat(['svg', 'png'][self.pgRptOpts.cmbImage.currentIndex()])
         self.settings.setRptMath(['mathjax', 'mpl'][self.pgRptOpts.cmbMath.currentIndex()])
-        self.settings.setRptMJURL(self.pgRptOpts.mjurl.text())
         self.settings.setRptUnicode(self.pgRptOpts.chkUnicode.isChecked())
 
         err = self.settings.setUnitDefs(self.pgUnits.unitdefs.toPlainText())

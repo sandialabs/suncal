@@ -6,7 +6,6 @@
 import pint
 
 ureg = pint.UnitRegistry(autoconvert_offset_to_baseunit=True)
-ureg.define('micro- = 1e-6 = µ-')  # Print micro as mu symbol.
 ureg.define('inch_H2O = inch * water * g_0 = inH2O = inch_water')
 pint.set_application_registry(ureg)  # Allows loading pickles containing pint units
 _uregcustom = []  # List of custom unit definitions
@@ -97,6 +96,9 @@ def convert(value, units):
         return value
 
     if hasattr(value, 'units'):
+        if value._get_delta_units() and value._has_compatible_delta(str(units)):
+            # value.to(unit) loses delta_ on value.units if unit is not delta
+            units = 'delta_' + str(units)
         return value.to(units)
 
     return make_quantity(value, units)
@@ -110,7 +112,7 @@ def convert_dict(values, units):
     newvalues = {}
     for name, value in values.items():
         if has_units(value) and name in units and units[name] is not None:
-            newvalues[name] = value.to(units[name])
+            newvalues[name] = convert(value, units[name])
         else:
             newvalues[name] = value
     return newvalues
@@ -120,4 +122,4 @@ def match_units(value1, value2):
     ''' Return value1 converted to same units as value2 '''
     if not has_units(value1) or not has_units(value2):
         return value1
-    return value1.to(value2.units)
+    return convert(value1, value2.units)

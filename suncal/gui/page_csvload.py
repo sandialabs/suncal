@@ -72,7 +72,14 @@ class SelectCSVData(QtWidgets.QDialog):
             QtWidgets.QMessageBox.warning(None, 'CSV Error', 'Could not determine CSV format.')
             csvfile.close()
             return
-        lines = list(reader)
+
+        try:
+            lines = list(reader)
+        except UnicodeDecodeError:
+            QtWidgets.QMessageBox.warning(None, 'CSV Error', 'Could not decode CSV file.')
+            csvfile.close()
+            return
+
         csvfile.close()
 
         self.table.setRowCount(len(lines))

@@ -111,6 +111,12 @@ def guess_expmixed(t, y):
     # theta2 should be less than 1
     theta2 = .5
     theta1 = theta1theta2/theta2
+
+    # Fine tune
+    try:
+        theta1, theta2 = curve_fit(R_expmixed, t, y, p0=(theta1, theta2))[0]
+    except RuntimeError:
+        pass  # Keep original guess
     return (theta1, theta2), ((0, 1E4), (0, 1))
 
 
@@ -120,7 +126,7 @@ def guess_walk(t, y):
     y, t = y[idx], t[idx]
     yy = stats.norm.ppf((y+1)/2)**-2    # Invert the cdf
     theta2, theta1 = np.polyfit(t, yy, deg=1)
-    return (theta1, theta2), ((-1E6, 1E6), (-1E6, 1E6))
+    return (theta1, theta2), ((0, 100), (0, 100))
 
 
 def guess_rwalk(t, y):
@@ -128,7 +134,7 @@ def guess_rwalk(t, y):
     # Rough approximation
     y = _condition(y)
     yy = (stats.norm.ppf((y+1)/2))**-2
-    theta1 = .0513  # ~stats.norm.ppf((.999+1)/2)**-2   # t->0
+    theta1 = .1  # ~stats.norm.ppf((.999+1)/2)**-2   # t->0
     t1plust2 = yy[-1] if np.isfinite(yy[-1]) else np.nanmean(yy)    # t->inf
     theta2 = t1plust2 - theta1
     theta3 = 1/t.mean()   # ~ decay rate
@@ -163,7 +169,7 @@ def guess_mortality(t, y):
     y = _condition(y)
     logy = -np.nan_to_num(np.log(y))  # Quadratic after linearizing
     try:
-        theta1, theta2 = curve_fit(lambda x, a, b: b*x**2+a*x, t, logy)[0]
+        theta1, theta2 = curve_fit(lambda x, a, b: b*x**2+a*x, t, logy, bounds=((0,0), (1,1)))[0]
     except RuntimeError:
         theta1, theta2 = 0.5
     return (theta1, theta2), ((0, 1), (0, 1))
@@ -195,10 +201,13 @@ def guess_drift(t, y):
 def guess_lognorm(t, y):
     ''' Generate initial guess for lognormal model '''
     # Rough approx
-    ythresh = (y.max()+y.min())/2
-    tthresh = t[np.abs(y-ythresh).argmin()]
-    theta1 = 1/tthresh
+    yprime = _condition(y)
+    yprime = np.exp(stats.norm.ppf(1-yprime))
     theta2 = 1
+    try:
+        theta1 = curve_fit(lambda x, a: x*a, t, yprime)[0][0]
+    except RuntimeError:
+        theta1 = 0.5
 
     # Fine tune
     try:

@@ -690,7 +690,6 @@ class SaveReportOptions(QtWidgets.QDialog):
         self.cmbMath.addItems(['Mathjax', 'Matplotlib'])
         self.cmbImage = QtWidgets.QComboBox()
         self.cmbImage.addItems(['SVG', 'PNG'])  # EPS?
-        self.mjurl = QtWidgets.QLineEdit(report.MATHJAX_URL)
         self.chkUnicode = QtWidgets.QCheckBox('Allow Unicode')
 
         if not report.pandoc_path:
@@ -711,12 +710,10 @@ class SaveReportOptions(QtWidgets.QDialog):
             ['html', 'md', 'tex', 'pdf', 'odt', 'docx'].index(gui_common.settings.getRptFormat()))
         self.cmbImage.setCurrentIndex(['svg', 'png'].index(gui_common.settings.getRptImgFormat()))
         self.cmbMath.setCurrentIndex(['mathjax', 'mpl'].index(gui_common.settings.getRptMath()))
-        self.mjurl.setText(gui_common.settings.getRptMJURL())
         self.chkUnicode.setChecked(gui_common.settings.getRptUnicode())
 
         self.lblMath = QtWidgets.QLabel('Math Renderer')
         self.lblImage = QtWidgets.QLabel('Image Format')
-        self.lblMJ = QtWidgets.QLabel('MathJax URL')
 
         glayout = QtWidgets.QGridLayout()
         glayout.addWidget(QtWidgets.QLabel('File Format'), 0, 0)
@@ -725,8 +722,6 @@ class SaveReportOptions(QtWidgets.QDialog):
         glayout.addWidget(self.cmbImage, 1, 1)
         glayout.addWidget(self.lblMath, 2, 0)
         glayout.addWidget(self.cmbMath, 2, 1)
-        glayout.addWidget(self.lblMJ, 3, 0)
-        glayout.addWidget(self.mjurl, 3, 1)
         glayout.addWidget(self.chkUnicode, 4, 1)
         glayout.setColumnMinimumWidth(1, 350)
         glayout.setColumnStretch(1, 10)
@@ -747,8 +742,6 @@ class SaveReportOptions(QtWidgets.QDialog):
         self.lblMath.setVisible(html)
         self.lblImage.setVisible(html or md)
         self.chkUnicode.setVisible(md)
-        self.mjurl.setVisible(html and self.cmbMath.currentText() == 'Mathjax')
-        self.lblMJ.setVisible(html and self.cmbMath.currentText() == 'Mathjax')
 
     def get_setup(self):
         ''' Get dictionary of report format options '''

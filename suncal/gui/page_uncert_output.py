@@ -4,7 +4,7 @@ from PyQt5 import QtWidgets, QtCore
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
-from pint import PintError, UndefinedUnitError
+from pint import PintError
 
 from . import gui_common
 from . import gui_widgets
@@ -377,6 +377,7 @@ class PageOutput(QtWidgets.QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.outreport = None  # Cached output report
         self.outputSelect = QtWidgets.QComboBox()
         self.outputSelect.addItems(self.allitems)
         self.outputUnits = OutputUnitsWidget()
@@ -493,9 +494,9 @@ class PageOutput(QtWidgets.QWidget):
             rptsetup['outplotparams']['interval'] = self.outputPlot.expandedconf.get_confidence()
             rptsetup['outplotparams']['shortest'] = self.outputPlot.expandedconf.get_shortest()
 
-        self.outputReportSetup.report = self.result.report.all(rptsetup)  # Cache report for displaying/saving
+        self.outreport = self.result.report.all(rptsetup)  # Cache report for displaying/saving
         self.outputupdate()
-        return self.outputReportSetup.report
+        return self.outreport
 
     def show_summary(self):
         r = report.Report()
@@ -504,9 +505,9 @@ class PageOutput(QtWidgets.QWidget):
         self.txtOutput.setReport(r)
 
     def show_fullreport(self):
-        if self.outputReportSetup.report is None:
+        if self.outreport is None:
             self.refresh_fullreport()
-        self.txtOutput.setReport(self.outputReportSetup.report)
+        self.txtOutput.setReport(self.outreport)
 
     def show_expanded(self):
         conf = self.outputExpanded.get_confidence()

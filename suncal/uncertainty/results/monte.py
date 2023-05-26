@@ -41,7 +41,13 @@ class McResults:
 
         self.samples = {name: s[np.isfinite(s)] for name, s in self.samples.items()}  # Strip NANs
         self.expected = {name: np.nanmean(s) for name, s in self.samples.items()}
-        self.uncertainty = {name: np.std(s, ddof=1) for name, s in self.samples.items()}
+
+        # np.std() on offset units is broken in Pint - https://github.com/hgrecco/pint/issues/1640
+        # Workaround by calculating std ourselves.
+        # self.uncertainty = {name: np.std(s, ddof=1) for name, s in self.samples.items()}
+        self.uncertainty = {name: np.sqrt(((s-self.expected[name])**2).sum() / (len(s)-1))
+                            for name, s in self.samples.items()}
+
         self.descriptions = {} if descriptions is None else descriptions
         self._units = {}
 
@@ -54,8 +60,11 @@ class McResults:
         '''
         self._units.update(units)
         self.expected = unitmgr.convert_dict(self.expected, self._units)
-        self.uncertainty = unitmgr.convert_dict(self.uncertainty, self._units)
         self.samples = unitmgr.convert_dict(self.samples, self._units)
+
+        # Recalculate uncertainty from scratch to ensure correct units (ie offset units)
+        self.uncertainty = {name: np.sqrt(((s-self.expected[name])**2).sum() / (len(s)-1))
+                            for name, s in self.samples.items()}
         return self
 
     def getunits(self):
@@ -166,7 +175,14 @@ class McResults:
             samples = variable_nom.copy()              # Start with nominal values for all vars
             samples[varname] = self.varsamples[varname]  # And set this one to its real samples
             outsamples = self._model.eval(samples)    # Run it through the model
-            stds = {name: x.std(ddof=1) for name, x in outsamples.items()}
+
+            # np.std() on offset units is broken in Pint - https://github.com/hgrecco/pint/issues/1640
+            # Workaround by calculating std ourselves.
+            # stds = {name: x.std(ddof=1) for name, x in outsamples.items()}
+            means = {name: x.mean() for name, x in outsamples.items()}
+            stds = {name: np.sqrt(((x-means[name])**2).sum() / (len(x)-1))
+                    for name, x in outsamples.items()}
+
             sens = {name: x/self.variables.uncertainty[varname] for name, x in stds.items()}
             prop = {name: (x/self.uncertainty[name])**2 for name, x in stds.items()}
 
@@ -205,7 +221,8 @@ class McResults:
 class McResultsCplx(McResults):
     ''' Results of Complex-valued GUM calculation '''
     def __init__(self, mcresults):
-        super().__init__(mcresults.samples, mcresults.variables, mcresults.varsamples, mcresults._model, mcresults.warns)
+        super().__init__(mcresults.samples, mcresults.variables, mcresults.varsamples,
+                         mcresults._model, mcresults.warns)
         self._degrees = False
         self._mcresults = mcresults
 

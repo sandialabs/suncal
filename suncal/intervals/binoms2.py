@@ -5,7 +5,7 @@ import logging
 from collections import namedtuple
 import numpy as np
 from scipy import stats
-from scipy.optimize import OptimizeWarning, minimize, approx_fprime, brentq, curve_fit
+from scipy.optimize import OptimizeWarning, minimize, approx_fprime, brentq, curve_fit, fsolve
 from scipy.special import binom
 from dateutil.parser import parse
 
@@ -58,12 +58,10 @@ def _count_groups(x):
 
 
 def neglikelihood(theta, model, ti, ni, gi):
-    ''' Negative of likelihood function (negative D-5 in RP1) '''
+    ''' Negative of likelihood function (negative log D-5 in RP1) '''
     modelr = model(ti, *theta)
-    prod = 1.
-    for n, g, r in zip(ni, gi, modelr):
-        prod *= (binom(n, g) * r**g * (1-r)**(n-g))
-    return np.nan_to_num(-np.log(prod), posinf=1000)
+    prod = np.prod(binom(ni, gi) * modelr**gi * (1-modelr)**(ni-gi))
+    return np.nan_to_num(-np.log(prod), posinf=1000, neginf=-1000)
 
 
 def reliability_variance(tau, theta, model, ni, ti):
@@ -297,15 +295,11 @@ class BinomialInterval:
 
             m = len(theta)  # Number of fit parameters
 
-            # Find intersection of fit and Rtarget numerically
-            # fsolve has problems if y has nans, which may be the case
-            # as t->0. Numerical result is fine as we round to
-            # nearest integer anyway.
-            xx = np.linspace(0, self.ti.max()*1.2, num=1000)
-            yy = model(xx, *theta)
-            yy[~np.isfinite(yy)] = 1E99
-            interval = xx[np.argmin(abs(yy - self.Rtarget))]
-            tr = xx[np.argmin(abs(yy - (1-self.Rtarget)))]  # For figure of merit
+            # Find intersection of fit and Rtarget
+            interval = fsolve(lambda t: model(t, *theta)-self.Rtarget, x0=self.ti[0])[0]
+            tr = fsolve(lambda t: model(t, *theta)-(1-self.Rtarget), x0=self.ti[-1])[0]
+            interval = max(interval, 0)
+            tr = max(tr, 0)
 
             if np.isclose(model(interval, *theta), self.Rtarget, atol=.01):
                 interval = np.round(interval)

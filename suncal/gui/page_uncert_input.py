@@ -738,7 +738,7 @@ class MeasTableWidget(QtWidgets.QTableWidget):
                     self.item(row+1, self.COL_VALUE).setText(f'{ttable.confidence(floatval, degf)*100:.2f}%')
 
             elif paramname == 'Confidence':
-                valid = floatval is not None and 100 < floatval < 0
+                valid = floatval is not None and 0 < floatval < 100
                 if valid:
                     config['conf'] = floatval/100  # Assume confidence in percent
                     config.pop('k', None)

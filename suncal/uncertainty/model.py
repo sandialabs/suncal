@@ -229,16 +229,20 @@ class Model(ModelBase):
             Returns:
                 McResults instance
         '''
-        samples = self.variables.sample(samples, copula=copula)
-        samples.update(self.constants)
-        values = matrix.eval_dict(self.basesympys, samples)
+        samplevalues = self.variables.sample(samples, copula=copula)
+        samplevalues.update(self.constants)
+        values = matrix.eval_dict(self.basesympys, samplevalues)
+
+        # Ensure all values are arrays (in case function itself is a constant)
+        values = {name: np.full(samples, v) if np.isscalar(v) else v for name, v in values.items()}
+        samplevalues = {name: np.full(samples, v) if np.isscalar(v) else v for name, v in samplevalues.items()}
 
         warns = []
         for fname, value in values.items():
             if not all(np.isfinite(np.atleast_1d(np.float64(unitmgr.strip_units(value))))):
                 warns.append(f'Some Monte-Carlo samples in {fname} are NaN. Ignoring in statistics.')
 
-        return McResults(values, self.variables.info, samples, self, self.descriptions, warns)
+        return McResults(values, self.variables.info, samplevalues, self, self.descriptions, warns)
 
     def calculate(self, samples=1000000):
         ''' Run GUM and Monte Carlo calculation and generate a report '''

@@ -207,10 +207,13 @@ class GumResults:
         for i, func1 in enumerate(self.functionnames):
             cor1 = {}
             for j, func2 in enumerate(self.functionnames):
-                cor1[func2] = unitmgr.strip_units(
-                    self.Uy[i][j] /
-                    (self.uncertainty[func1] * self.uncertainty[func2]),
-                    reduce=True)
+                try:
+                    cor1[func2] = unitmgr.strip_units(
+                        self.Uy[i][j] /
+                        (self.uncertainty[func1] * self.uncertainty[func2]),
+                        reduce=True)
+                except ZeroDivisionError:
+                    cor1[func2] = 0.0  # No uncertainty = no correlation
             corr[func1] = cor1
         return corr
 
@@ -240,10 +243,13 @@ class GumResults:
         for i, var1 in enumerate(self.variablenames):
             cor1 = {}
             for j, var2 in enumerate(self.variablenames):
-                cor1[var2] = unitmgr.strip_units(
-                    self.Ux[i][j] /
-                    (self.variables.uncertainty[var1]*self.variables.uncertainty[var2]),
-                    reduce=True)
+                try:
+                    cor1[var2] = unitmgr.strip_units(
+                        self.Ux[i][j] /
+                        (self.variables.uncertainty[var1]*self.variables.uncertainty[var2]),
+                        reduce=True)
+                except ZeroDivisionError:
+                    cor1[var2] = 0.0
             corr[var1] = cor1
         return corr
 

@@ -445,7 +445,7 @@ class McAxisPlot:
         ax.hist(samples, bins=bins, density=True, **kwargs)
         ax.ticklabel_format(style='sci', axis='x', scilimits=(-4, 4), useOffset=False)
         ax.yaxis.set_visible(False)
-        
+
         if labeldesc:
             label = self._results.variables.descriptions.get(varname)
         else:
@@ -474,10 +474,10 @@ class McAxisPlot:
 
         if labeldesc:
             xlabel = self._results.variables.descriptions.get(varname1, '')
-            ylabel = self._results.variables.descriptions.get(varname1, '')
+            ylabel = self._results.variables.descriptions.get(varname2, '')
         else:
             xlabel = report.mathstr_to_latex(varname1) + report.Unit(xunits).latex(bracket=True)
-            ylabel = report.mathstr_to_latex(varname1) + report.Unit(yunits).latex(bracket=True)
+            ylabel = report.mathstr_to_latex(varname2) + report.Unit(yunits).latex(bracket=True)
 
         ax.set_xlabel(xlabel)
         ax.set_ylabel(ylabel)

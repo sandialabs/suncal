@@ -73,6 +73,7 @@ class SimpleRiskWidget(QtWidgets.QWidget):
         self.measured = QtWidgets.QSlider(orientation=1)
         self.measured.setRange(0, 200)  # Slider must be an integer
         self.measured.setValue(100)
+        self.measuredlabel = QtWidgets.QLabel('Test Measurement:')
 
         self.tur.valueChanged.connect(self.editingFinished)
         self.gbfactor.valueChanged.connect(self.editingFinished)
@@ -85,7 +86,7 @@ class SimpleRiskWidget(QtWidgets.QWidget):
         hlayout.addWidget(self.itp)
         layout.addRow('In-tolerance probability:', hlayout)
         layout.addRow('Guardband factor:', self.gbfactor)
-        layout.addRow('Test Measurement:', self.measured)
+        layout.addRow(self.measuredlabel, self.measured)
         self.setLayout(layout)
 
     def get_measured_fraction(self):
@@ -648,6 +649,7 @@ class RiskWidget(QtWidgets.QWidget):
             self.simple.setVisible(simple)
             self.simple.gbfactor.setEnabled(True)
             self.simple.measured.setVisible(False)
+            self.simple.measuredlabel.setVisible(False)
             self.sweepsetup.setVisible(False)
         elif self.calctype.currentText() == 'Guardband sweep':
             self.mode.setEnabled(True)
@@ -658,6 +660,7 @@ class RiskWidget(QtWidgets.QWidget):
             self.simple.setVisible(simple)
             self.simple.gbfactor.setEnabled(False)
             self.simple.measured.setVisible(False)
+            self.simple.measuredlabel.setVisible(False)
             self.sweepsetup.setVisible(False)
         elif self.calctype.currentText() == 'Risk Curves':
             self.mode.setEnabled(False)
@@ -678,6 +681,7 @@ class RiskWidget(QtWidgets.QWidget):
             self.simple.setVisible(simple)
             self.simple.gbfactor.setEnabled(True)
             self.simple.measured.setVisible(True)
+            self.simple.measuredlabel.setVisible(True)
             self.sweepsetup.setVisible(False)
             self.testprocclick()
         self.block(False)

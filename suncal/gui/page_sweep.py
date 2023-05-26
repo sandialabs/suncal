@@ -567,6 +567,7 @@ class UncertReverseSweepWidget(page_uncert.UncertPropWidget):
         buttons.minusclicked.connect(self.sweepsetup.remcol)
         self.pginput.funclist.funcchanged.connect(self.funcchanged)
         self.pginput.meastable.changed.connect(self.measchanged)
+        self.sweepsetup.set_variables(self.projitem.model.model.variables)
 
     def measchanged(self, measlist):
         self.sweepsetup.set_variables(self.projitem.model.model.variables)

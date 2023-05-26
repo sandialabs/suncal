@@ -1,6 +1,6 @@
 ---
 title: Suncal User's Guide
-date: February 17, 2023
+date: May 26, 2023
 author:
 - Sandia National Laboratories^[Sandia National Laboratories is a multimission laboratory managed and operated by National Technology and Engineering Solutions of Sandia, LLC., a wholly owned subsidiary of Honeywell International, Inc., for the U.S. Department of Energy’s National Nuclear Security Administration under contract DE-NA-0003525.]
 - uncertainty@sandia.gov
@@ -69,7 +69,7 @@ Select one of the calculation options, or alternatively load a setup file from d
 The **Project** menu also contains options for adding additional calculations, saving the current setup, or saving a report of all output results.
 The **Window** menu provides options for calculating t-table values and showing a list of all calculations in the project.
 
-![Select Calculation Type page](figs/startup.png){#fig:startup}
+![Select Calculation Type page](figs/Figure_2_1.png){#fig:startup}
 
 Upon selecting a calculation type, an additional menu becomes available.
 This menu changes based on the calculation type and provides options specific to that calculation, such as loading in specific data from a CSV file or saving a report of that calculation's output.
@@ -102,7 +102,7 @@ After calculating, results from the wizard interface are identical to results fr
 The standard uncertainty interface provides a few more options for uncertainty propagation calculations, but does not provide the simple, step-by-step guidance.
 Start by clicking the **Uncertainty Propagation** button from the main screen.
 
-![Uncertainty Propagation Page](figs/uncertprop.png){#fig:uncertpropview}
+![Uncertainty Propagation Page](figs/Figure_2_2.png){#fig:uncertpropview}
 
 To enter an uncertainty propagation problem, start by defining the measurement model.
 Double-click on the name and the expression in the Measurement Model table to edit the values.
@@ -131,7 +131,7 @@ If a variable has more than one uncertainty component (e.g. a type A and type B 
 When multiple components are present, the standard uncertainty of each component is root-sum-squared together to obtain a standard uncertainty for the variable used by the GUM equation, and the degrees of freedom are combined using the W-S formula.
 The Monte Carlo method will separately sample each component before combining.
 
-![Uncertainties table](figs/measuredqty.png){#fig:measuredqty}
+![Uncertainties table](figs/Figure_2_3.png){#fig:measuredqty}
 
 The items in the **Value** column change depending on what distribution is selected.
 Normal and t distributions have values for entering uncertainty with a k value and a confidence percentage.
@@ -154,7 +154,7 @@ as 1% reading + 5% range, when operating on the 100 V range, enter "1% + 5%range
 
 The abbreviations `ppb` and `ppbrange()` can also be used to specify parts per billion, where billion refers to the "short scale" definition, i.e. 1 ppb = 1 part in $10^9$.
 
-![Entering an uncertainty as a percent reading + percent range](figs/percent.png){#id .class width=3in #fig:uncertpercent}
+![Entering an uncertainty as a percent reading + percent range](figs/Figure_2_4.png){#id .class width=3in #fig:uncertpercent}
 
 
 #### Correlated Uncertainties
@@ -163,7 +163,7 @@ If the input variables are correlated, these can be entered on the **Correlation
 Correlation coefficients are entered one pair at a time, and must be a value between -1 and +1.
 Use the plus (+) button or right-click the table to add or remove correlation coefficients.
 
-![Correlation coefficient entry table](figs/correlations.png){#fig:correlation}
+![Correlation coefficient entry table](figs/Figure_2_5.png){#fig:correlation}
 
 
 #### Entering Units
@@ -200,7 +200,7 @@ Use the table and the **Assigned Variable** dropdown to select which columns of 
 Use the **Distribution to Fit** dropdown to select different probability distributions, or use the default of normal distribution, computing standard error of the mean of the column of data.
 After clicking **OK**, the assigned distributions will be loaded into the uncertainty calculation.
 
-![Importing measurement data into uncertainty propagation](figs/dataimporter.png){#fig:importing}
+![Importing measurement data into uncertainty propagation](figs/Figure_2_6.png){#fig:importing}
 
 Finally, the **Notes** section contains a field for entering your own information to save with the calculation, and the **Settings** section allows entry of the number of Monte Carlo samples and the random number generator seed.
 A seed of "None" will be randomized on every run.
@@ -220,14 +220,14 @@ The Summary view summarizes the results of the calculation, including expected m
 Additionally, a plot of the GUM method's probability distribution, along with a histogram of the Monte Carlo output distribution, displays (see {*@fig:outputsummary}).
 If both methods produce a similar distribution, the GUM method is a valid approximation.
 
-![Output summary](figs/outsummary.png){#fig:outputsummary}
+![Output summary](figs/Figure_2_7.png){#fig:outputsummary}
 
 #### Comparison Plots
 
 The Comparison Plots view (see {*@fig:comparisonplot}) shows the same probability distribution plots in an interactive format.
 There are options for switching between single and joint probability (if multiple measurement functions are defined), displaying the Monte Carlo result as a histogram or an approximate PDF, and displaying coverage intervals.
 
-![Comparison plots view in joint PDF mode (magnitude/phase example with correlation)](figs/outmagphase.png){#fig:comparisonplot}
+![Comparison plots view in joint PDF mode (magnitude/phase example with correlation)](figs/Figure_2_8.png){#fig:comparisonplot}
 
 #### Expanded Uncertainties
 
@@ -251,7 +251,7 @@ The GUM Derivation view displays the mathematical derivation used in calculating
 Here, the sensitivity coefficients (partial derivatives) are solved and then combined in the uncertainty formula.
 Right-click on the window and select **Show markdown** to obtain these formulas in LaTeX-compatible math format if desired.
 
-![GUM derivation report](figs/gumderivation.png){#fig:gumderivation}
+![GUM derivation report](figs/Figure_2_9.png){#fig:gumderivation}
 
 #### GUM Validity
 
@@ -318,7 +318,7 @@ When the calculation is run, a summary output window displays. For reverse sweep
 For forward uncertainty sweeps, a summary table displays, and the other output views available in forward uncertainty calculations are also available.
 Each of these outputs present one calculation of the sweep at a time, and have a slider for selecting a specific sweep index to display ({*@fig:sweepslider}).
 
-![Sweep index slider, changing correlation coefficient of magnitude/phase example](figs/outsweepslider.png){#fig:sweepslider}
+![Sweep index slider, changing correlation coefficient of magnitude/phase example](figs/Figure_2_10.png){#fig:sweepslider}
 
 
 ## Data Sets and Analysis of Variance
@@ -335,7 +335,7 @@ As an example, each column (group) in the table could be a different measurement
 or each column could be a day in which multiple measurements (rows) were taken under identical conditions.
 
 
-![Data set loaded from CSV](figs/datasets.png){#fig:datasets}
+![Data set loaded from CSV](figs/Figure_2_11.png){#fig:datasets}
 
 Once the data is entered, summary statistics for each group (column) are provided in the first table, with statistics for the overall data set given in the second table.
 Results of one-way analysis of variance are displayed in the third table.
@@ -413,7 +413,7 @@ Internally, the dates are converted to ordinal time before being applied to the 
 
 ### Fit Curve and Uncertainty
 
-![Output of curve fit calculation](figs/outcurvefit.png){#fig:curvefitoutput}
+![Output of curve fit calculation](figs/Figure_2_12.png){#fig:curvefitoutput}
 
 After the x, y data is entered, click **Calculate** to show the results.
 The Fit Plot view shows the fit line and optionally the confidence and prediction bands, expanded to the desired confidence level.
@@ -461,7 +461,7 @@ This tool has two operating modes: Simple and Full.
 In Simple mode, the risk calculation follows [@deaver] by assuming normal distributions and symmetric acceptance limits.
 Parameters are entered in terms of a test uncertainty ratio (TUR), in-tolerance probability (itp), and guardband factor.
 
-![Simple risk analysis assume both distributions are normal and symmetric.](figs/risksimple.png){#fig:risksimple}
+![Simple risk analysis assume both distributions are normal and symmetric.](figs/Figure_2_13.png){#fig:risksimple}
 
 In Full mode, both process and test distributions, along with absolute acceptance limits and guardband limits, are specified. No assumptions are made about distribution type.
 With only a process distribution and specification limits, the probability of a value on the distribution falling outside the limit is calculated by integrating the probability distribution function outside the limits to give the "process risk".
@@ -472,13 +472,13 @@ The **Risk** menu provides an option for computing a guardband.
 The guardband can be computed using one of several common methods (such as the RSS method $k = \sqrt{1-1/TUR^2}$), or by targeting a specific false accept probability.
 This method uses a numerical minimization technique to solve for the limits on the double integral, and so may not always converge or hit the target exactly.
 
-![Full risk analysis allowing complete specification of process and test distributions](figs/risk.png){#fig:riskanalysis}
+![Full risk analysis allowing complete specification of process and test distributions](figs/Figure_2_14.png){#fig:riskanalysis}
 
 The **Calculation** dropdown allows selection of different calculations on risk.
 Integral mode calculates PFA and PFR by numerically integrating the joint probability distribution.
 A Monte Carlo calculation is also available. This method pulls random samples from the test and process distribution and counts the number of false accepts and false rejects to determine the PFA and PFR probabilities.
 
-![Monte Carlo risk calculation](figs/riskMC.png){#fig:riskMC}
+![Monte Carlo risk calculation](figs/Figure_2_15.png){#fig:riskMC}
 
 The Guardband Sweep mode plots how PFA and PFR change with different guardband factors and can be useful for finding an optimal trade off between false accept and false reject.
 Probability of Conformance mode plots the probability that a given measurement result is a conforming product, useful when no prior information is available on the distribution of possible products.
@@ -489,7 +489,7 @@ The sweep values can then be entered by defining a start value, stop value, and 
 Step values are entered as a comma-separated list of individual values.
 {*@fig:risksweep} shows plots of the familiar PFA vs. itp with TUR from 1.5 to 4.
 
-![Risk Curves mode](figs/risksweep.png){#fig:risksweep}
+![Risk Curves mode](figs/Figure_2_16.png){#fig:risksweep}
 
 
 ## Calibration Intervals
@@ -518,7 +518,7 @@ Pass and fail status may be entered as "pass" or "fail", or as 1 or 0 values. To
 
 When the calibration data has been entered, fill out the options for the interval calculation type and hit **Calculate** to see the results.
 
-![Interval calculation using method A3](figs/intervalA3.png){#fig:intervalA3}
+![Interval calculation using method A3](figs/Figure_2_17.png){#fig:intervalA3}
 
 The A3 method lists the suggested new calibration interval and other statistics. The rejection confidence gives the confidence with which one can reject the current interval in favor of the new interval. Often, if the confidence is higher than 50%, implementing the new interval is a good choice.
 In method S2, several reliability models are fit to the time vs. reliability data. The best fitting model is shown first,
@@ -545,7 +545,7 @@ From the **Window** menu, select **T-Table** for a dialog box that calculates va
 The calculator can solve for the coverage factor k, the confidence level, or the degrees of freedom when given the other two parameters.
 A comparison plot of a normal and a t-distribution with the given degrees of freedom is also shown as a reference.
 
-![T-Table Calculator](figs/ttable.png){#fig:ttable}
+![T-Table Calculator](figs/Figure_2_18.png){#fig:ttable}
 
 # Projects
 
@@ -572,7 +572,7 @@ an **X Value** option will be shown.
 Once the assignments have been made, the distribution can be imported into the calculation.
 Importing data is a one-time event. If the original calculation data changes, the data will need to be re-imported into the second calculation.
 
-![Loading the prediction band distribution of a curve fit into a risk analysis](figs/insertdist.png){#fig:importdistribution}
+![Loading the prediction band distribution of a curve fit into a risk analysis](figs/Figure_3_1.png){#fig:importdistribution}
 
 
 ## Reports
@@ -761,7 +761,7 @@ Enter the measurement model name (`tau`) and expression (`R*(C1+C2)`) as shown i
 The Uncertainties table will fill in with the variable names.
 Enter "ms" in the units column to obtain the resulting time constant and uncertainty in milliseconds.
 
-![Entering the time constant measurement model](figs/rcrisk_model.png){#fig:rcrisktau}
+![Entering the time constant measurement model](figs/Figure_6_1.png){#fig:rcrisktau}
 
 Next, enter the nominal value for each component in the Nominal column.
 Enter units for resistance of "kohm" and for the two capacitors of "uF".
@@ -770,13 +770,13 @@ For each of the variables, click the row in the Uncertainties table, and change 
 The "a" parameter is the half-width of the distribution. In this case, "a" can be entered as a percent ({*@fig:rcriskinput}).
 Optionally, add a description for each variable and the measurement model.
 
-![Setting input variable quantities](figs/rcrisk_input.png){#fig:rcriskinput}
+![Setting input variable quantities](figs/Figure_6_2.png){#fig:rcriskinput}
 
 Now that the model is fully entered, click **Calculate** to find the total uncertainty.
 One can immediately see the GUM method and Monte Carlo method produce similar standard uncertainty values (0.033 ms), yet give very different probability distribution shapes.
 This is because the GUM method is normalizing all the uniform distributions before calculating its solution.
 
-![Time constant uncertainty results](figs/rcrisk_result.png){#fig:rcriskoutput}
+![Time constant uncertainty results](figs/Figure_6_3.png){#fig:rcriskoutput}
 
 
 ### Risk Analysis
@@ -794,7 +794,7 @@ With sampled data results from a Monte Carlo, different distributions can be fit
 To approximate the distribution using a histogram, select **histogram** from the list of distributions to fit, then click **OK**.
 The histogram probability distribution will be loaded into the process distribution in the risk calculator.
 
-![Using uncertainty propagation result in risk calculation](figs/rcrisk_dist.png){#fig:riskprop}
+![Using uncertainty propagation result in risk calculation](figs/Figure_6_4.png){#fig:riskprop}
 
 Enter the lower and upper specification limits of **1.55** and **1.65**.
 In the Process Risk column of the table, the total process risk is calculated as 12.73% (your results may vary slightly due to the random nature of the Monte Carlo simulation).
@@ -806,7 +806,7 @@ Now the Combined Risk column in the table is calculated to give the total risk o
 
 The slider control next to Median in the test measurement can be used to explore results of a specific test measurement. The combined risk calculation integrates the combined distribution over all possible median values.
 
-![Risk of accepting a bad RC circuit part](figs/rcrisk_risk.png){#fig:riskrc}
+![Risk of accepting a bad RC circuit part](figs/Figure_6_5.png){#fig:riskrc}
 
 
 ## Contact Resistance
@@ -838,7 +838,7 @@ Dividing by two to obtain the resistance of a single contact gives
 
 $R_c = 25.5 \pm 17.3 \mathrm{k}\Omega$.
 
-![Determination of contact resistance and unceratinty](figs/contactresistance.png){#fig:contactresistance}
+![Determination of contact resistance and unceratinty](figs/Figure_6_6.png){#fig:contactresistance}
 
 
 ## Selection of calibration provider for density measurement
@@ -847,34 +847,34 @@ The density of a gage ball must be calibrated by measuring the diameter and mass
 
 $$\rho = \frac{6 m}{\pi d^3}$$.
 
-The nominal values of the gage ball are 86.03 g and 22.225 mm, leading to a nominal density of 14.967 $g/cm^3$.
+The nominal values of the gage ball are 86.03 g $\pm$ 10 mg and 22.225 mm $\pm$ 5 $\mu$m, leading to a nominal density of 14.967 $g/cm^3$.
 A calibration provider must be found who can meet a combined density uncertainty of 0.04 $g/cm^3$ (k = 2).
 
 This problem involves using a reverse uncertainty propagation in order to find the input uncertainty to meet an output uncertainty requirement.
-Because there are two free variables (density and mass), there are actually infinite solutions to the problem.
+Because there are two free variables (density and mass), there are infinite solutions to the problem.
 However, one variable can be sweept while solving the reverse uncertainty requirement for the other variable, and any solution falling under the resulting curve will be acceptable to meet the maximum density uncertainty.
 
 To enter this setup into Suncal, add a **Reverse Sweep** to a new Project.
 Enter the measurement model and nominal quantities for mass and diameter.
+Add the mass and diameter uncertainties, including the different units (mg and $\mu$m).
 Next, enter the target uncertianty under the **Target** section.
-The function to solve is **rho**, the target value is **14.967**, and target uncertainty is **0.02**. Note the k = 1 value should be entered here.
+The function to solve is **rho**, the target value is **14.967**, and target uncertainty is **0.02**. Note the k = 1 value should be entered here. The target values assume the same units ($g/cm^3$ in this case) as the model units entered above.
 Solve for the mass variable ({*@fig:densityrevsweep}), and then use the **Sweep** section to set up a sweep of uncertainties on the diameter variable.
 
-![Configuring the density calculation](figs/revswp_model.png){#fig:densityrevsweep}
+![Configuring the density calculation](figs/Figure_6_7.png){#fig:densityrevsweep}
 
 Under the **Sweep** section, press the Plus Sign (**+**) button to add a new sweep column. The Sweep Parameter is **Uncertainty**, variable is **d**.
 Because this diameter is a single standard normal uncertainty, there is only one option for component and parameter.
 After clicking **OK**, a new column is added to the Sweep table. Press the Ellipses (**...**) button to enter a range of values for diameter uncertainty to sweep.
-Set the range from 1 to 9 with count of 9.
-This value takes the same units as the diameter uncertainty component. Use the Uncertainties table to change the diameter uncertainty units to **um** to specify microns.
+Set the range from 1 to 9 with count of 9. The units will match the units entered for the swept variable, in this case, $\mu$m entered for the diameter uncertainty.
 
-![Entering sweep values](figs/revswp_sweep.png){#fig:sweepentry}
+![Entering sweep values](figs/Figure_6_8.png){#fig:sweepentry}
 
 After clicking **Calculate**, nine reverse uncertainty propagations are run for each of the nine values in the Sweep table.
 The results are shown ({*@fig:revsweepoutput}) with a plot of mass uncertainty vs. diameter uncertainty. Any calibration provider falling below this line is acceptable to meet the density uncertainty requirement.
 Note you may want to use the **Preferences** menu to increase the number of significant digits shown. By default, uncertainties are displayed with 2 significant figures (by recommendation of the GUM), so the first few lines of this table may appear identical.
 
-![Reverse sweep calculation output](figs/revswp_output.png){#fig:revsweepoutput}
+![Reverse sweep calculation output](figs/Figure_6_9.png){#fig:revsweepoutput}
 
 
 ## Risk analysis of drifting asset
@@ -889,7 +889,7 @@ From the **Data Set** menu, choose **Load Data from CSV** and select the "pressu
 The data is laid out in rows, where the first column is the calibration date and the remaining colunms are repeated measurements on that date, so check the **Transpose** box.
 The plot now displays a single mean value with uncertainty bars at each date, effectively finding the mean and uncertainty of the five measurements on each date.
 
-![Loading 2-dimensional data](figs/datasets.png){#fig:groupdata}
+![Loading 2-dimensional data](figs/Figure_6_10.png){#fig:groupdata}
 
 To predict the drift over the next year to the calibration due date of July 1, 2019, select **Add Calculation** from the **Project Menu** and select **Curve Fit**.
 Import the data we just loaded into the curve fit by selecting **Insert Data From** from the **Curve Fit** menu.
@@ -908,10 +908,10 @@ Click **OK** to accept this distribution.
 
 There is no Test Measurement in this example, so deselect **Test Measurement**.
 Next, enter the specification limits of **175** and **185**.
-The Process Risk will calculate a 15.7% chance of the gauge being above 185 on this date based on historical drift ({*@fig:driftrisk}).
+The Process Risk will calculate a 17% chance of the gauge being above 185 on this date based on historical drift ({*@fig:driftrisk}).
 This risk may be high enough to warrant an adjustment or repair to the gauge to prevent it from drifting out of specification during the next interval.
 
-![Risk of drifting out of spec](figs/driftrisk_risk.png){#fig:driftrisk}
+![Risk of drifting out of spec](figs/Figure_6_11.png){#fig:driftrisk}
 
 
 # Copyright and License

@@ -165,15 +165,9 @@ def fitdist(y, distname='norm', fig=None, qqplot=False, bins='sqrt', points=None
     if len(y) == 0:
         return None
 
-    # Takes a long time with all 1E6 points.. thin them out
-    if points is not None:
-        ythin = y[::len(y)//points]
-    else:
-        ythin = y
-
     if distname:
         dist = distributions.get_distribution(distname)
-        fitparams = dist.fit(ythin)
+        fitparams = dist.fit(y)
 
     ax = fig.add_subplot(1, qqplot+1, 1)
     y = y[np.isfinite(y)]
@@ -199,6 +193,13 @@ def fitdist(y, distname='norm', fig=None, qqplot=False, bins='sqrt', points=None
             params = fitparams.copy()
             params.pop('loc', 0)     # Omit loc/scale to get quantiles
             params.pop('scale', 0)
+
+            # Takes a long time to draw with all 1E6 points.. thin them out
+            if points is not None:
+                ythin = y[::len(y)//points]
+            else:
+                ythin = y
+
             probplot(ythin, ax2, sparams=params, dist=distname)
         return fitparams
 
