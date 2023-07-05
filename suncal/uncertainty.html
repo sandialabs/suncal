@@ -35,7 +35,7 @@
 
 <div class="container uncert" id="suncal-input">
 <div class="suncal-input-grid">
-  <div class="uncert-grid-child border">
+  <div class="uncert-grid-child">
         <div><h3 style="display: inline;">Measurement Model</h3>
           <span class="infobutton tooltip fade"
             data-title="Enter the model in the form of one or more equations.
@@ -49,7 +49,7 @@
         <div id="model-preview"></div>
   </div>
 
-  <div class="grid-child border input-hidden" id="measured-values">
+  <div class="uncert-grid-child input-hidden" id="measured-values">
     <div><h3 style="display: inline;">Measured Values</h3>
       <span class="infobutton tooltip fade" data-title="The free variables in the Measurement Model were extracted and are shown here. Select each variable from the dropdown to enter its value and uncertainty.">&nbsp;<img src="img/help.svg"></span>
     </div>
@@ -122,7 +122,7 @@
     </div>
   </div>
 
-  <div class="grid-child border input-hidden" id="div-calculate">
+  <div class="uncert-grid-child input-hidden" id="div-calculate">
     <button class="button" id="button-calculate" type="button" py-click="uncert.calculate()">Calculate!</button><br>
   </div>
 </div>

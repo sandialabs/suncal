@@ -60,7 +60,7 @@ def convert():
     fromvalid = tovalid = False
     try:
         qtyfrom = ureg.Quantity(qtyfrom)
-    except (ValueError, DefinitionSyntaxError, UndefinedUnitError, DimensionalityError, TokenError):
+    except (ValueError, DefinitionSyntaxError, UndefinedUnitError, DimensionalityError, TokenError, AssertionError):
         vals = qtyfrom.split(maxsplit=1)
         unit = qtyfrom
         if len(vals) > 1:
@@ -73,7 +73,7 @@ def convert():
 
     try:
         tounit = ureg.Quantity(tounit)
-    except (ValueError, DefinitionSyntaxError, UndefinedUnitError, DimensionalityError):
+    except (ValueError, DefinitionSyntaxError, UndefinedUnitError, DimensionalityError, AssertionError):
         display(f'Unit {tounit} is not defined', target='error', append=True)
     else:
         tovalid = True

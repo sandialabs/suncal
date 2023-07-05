@@ -1,3 +1,4 @@
+''' Pyscript interface to Suncal Uncertainty Propagation '''
 from pyscript import Element, display
 from js import alert, window, Object, console
 from pyodide.ffi import to_js
