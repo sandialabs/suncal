@@ -2,8 +2,6 @@
 
 The Suncal-Web interface currently provides these tools as a beta-test:
 
-- [Uncertainty Propagation](uncertainty.html): GUM and Monte Carlo Risk Propagation
-- [Distribution Explorer](distributions.html): Sample from probability distributions and combine using Monte Carlo (typically for training purposes).
 - [Student T Calculator](student.html): Calculate coverage factor, level of confidence, and degrees of freedom
 - [Units Converter](units.html): Convert between measurement units
 
