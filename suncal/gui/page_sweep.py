@@ -12,6 +12,7 @@ from . import gui_widgets
 from . import page_uncert
 from . import page_reverse
 from . import page_dataimport
+from .help_strings import UncertHelp
 
 
 class StartStopCountWidget(QtWidgets.QDialog):
@@ -447,6 +448,7 @@ class UncertSweepWidget(page_uncert.UncertPropWidget):
         self.sweepsetup.set_variables(self.projitem.model.model.variables)
         self.pginput.funclist.funcchanged.connect(self.funcchanged)
         self.pginput.meastable.changed.connect(self.funcchanged)
+        self.pgoutputsweep.change_help.connect(self.change_help)
 
     def funcchanged(self, funclist):
         ''' Function has changed '''
@@ -519,8 +521,9 @@ class UncertSweepWidget(page_uncert.UncertPropWidget):
 
         self.pgoutputsweep.set_sweepresult(self.projitem.result)
         self.pgoutputsweep.outputupdate()
-        self.stack.setCurrentIndex(self.PG_OUTPUT)
+        self.stack.slideInLeft(self.PG_OUTPUT)
         self.actSaveReport.setEnabled(True)
+        self.change_help.emit()
 
     def update_proj_config(self):
         ''' Save page setup back to project item configuration '''
@@ -538,6 +541,13 @@ class UncertSweepWidget(page_uncert.UncertPropWidget):
     def save_report(self):
         ''' Save full report, asking user for settings/filename '''
         gui_widgets.savereport(self.get_report())
+
+    def help_report(self):
+        ''' Get the help report to display the current widget mode '''
+        if self.stack.m_next == self.PG_INPUT:
+            return UncertHelp.sweep()
+        else:
+            return self.pgoutputsweep.help_report()
 
 
 class UncertReverseSweepWidget(page_uncert.UncertPropWidget):
@@ -620,14 +630,22 @@ class UncertReverseSweepWidget(page_uncert.UncertPropWidget):
 
         try:
             self.projitem.calculate()
+        except OffsetUnitCalculusError as exc:
+            badunit = re.findall(r'\((.+ )', str(exc))[0].split()[0].strip(', ')
+            err_msg(f'Ambiguous unit {badunit}. Try "delta_{badunit}".')
+            return
+        except (TypeError, DimensionalityError, UndefinedUnitError) as exc:
+            err_msg(f'Units Error: {exc}')
+            return
         except (ValueError, RecursionError):
             QtWidgets.QMessageBox.warning(self, 'Suncal', 'Error computing solution!')
             self.actSaveReport.setEnabled(False)
             return
 
         self.pgoutputrevsweep.txtOutput.setReport(self.projitem.result.report.summary_withplots())
-        self.stack.setCurrentIndex(self.PG_OUTPUT)
+        self.stack.slideInLeft(self.PG_OUTPUT)
         self.actSaveReport.setEnabled(True)
+        self.change_help.emit()
 
     def update_proj_config(self):
         ''' Save page setup back to project item configuration '''
@@ -653,3 +671,9 @@ class UncertReverseSweepWidget(page_uncert.UncertPropWidget):
     def save_report(self):
         ''' Save full report, asking user for settings/filename '''
         gui_widgets.savereport(self.get_report())
+
+    def help_report(self):
+        if self.stack.m_next == self.PG_INPUT:
+            return UncertHelp.reversesweep_input()
+        else:
+            return UncertHelp.reverse_output()

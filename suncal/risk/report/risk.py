@@ -4,7 +4,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.ticker import FormatStrFormatter
 
-from .. import risk
+from ..risk import specific_risk
+from ..risk_montecarlo import PFAR_MC
 from .. import risk_sweep
 from ...common import report, plotting, distributions
 
@@ -20,6 +21,7 @@ class RiskReport:
         hdr = []
         cols = []
         cost = None
+        conditional = kwargs.get('conditional', False)
 
         if self.model.procdist is not None:
             cpk, risk_total, risk_lower, risk_upper = self.model.cpk()
@@ -45,10 +47,10 @@ class RiskReport:
 
         if self.model.testdist is not None and self.model.procdist is not None:
             hdr.extend(['Global Risk'])
-            pfa = self.model.PFA()
+            pfa = self.model.PFA(conditional=conditional)
             pfr = self.model.PFR()
             cols.append([
-                ('Total PFA: ', report.Number(pfa*100, fmt='auto'), '%'),
+                (f'Total PFA{" (conditional)" if conditional else ""}: ', report.Number(pfa*100, fmt='auto'), '%'),
                 ('Total PFR: ', report.Number(pfr*100, fmt='auto'), '%'), '-', '-'])
             if self.model.cost_FA is not None and self.model.cost_FR is not None:
                 cost = self.model.cost_FA * pfa + self.model.cost_FR * pfr
@@ -74,7 +76,7 @@ class RiskReport:
         else:
             r = report.Report(**kwargs)
             with plotting.plot_figure() as fig:
-                self.plot.distributions(fig)
+                self.plot.joint(fig)
                 r.plot(fig)
             r.txt('\n\n')
             r.append(self.summary(**kwargs))
@@ -85,7 +87,7 @@ class RiskReport:
         N = kwargs.get('samples', 100000)
         LL, UL = self.model.speclimits
         GB = self.model.gbofsts
-        pfa, pfr, psamples, tsamples = risk.PFAR_MC(
+        pfa, pfr, psamples, tsamples, *_ = PFAR_MC(
             self.model.procdist, self.model.testdist, LL, UL, *GB, N=N, testbias=self.model.testbias)
 
         LLplot = np.nan if not np.isfinite(LL) else LL
@@ -174,21 +176,21 @@ class RiskReport:
                     ax2.set_xlim(1, 0)
                 plt.close(fig)
 
-            rpt = report.Report(**kwargs)
-            rpt.hdr(f'Global Risk vs {xlabel}', level=2)
-            hdr = [xlabel, 'False Accept %', 'False Reject %']
-            gbrange = [report.Number(g) for g in gbrange]
-            pfa = [report.Number(p*100) for p in pfa]
-            pfr = [report.Number(p*100) for p in pfr]
-            rows = list(map(list, zip(gbrange, pfa, pfr)))
-            if simple:
-                rows = list(reversed(rows))
-            rpt.table(rows=rows, hdr=hdr)
-            return rpt
+                rpt = report.Report(**kwargs)
+                rpt.hdr(f'Global Risk vs {xlabel}', level=2)
+                hdr = [xlabel, 'False Accept %', 'False Reject %']
+                gbrange = [report.Number(g) for g in gbrange]
+                pfa = [report.Number(p*100) for p in pfa]
+                pfr = [report.Number(p*100) for p in pfr]
+                rows = list(map(list, zip(gbrange, pfa, pfr)))
+                if simple:
+                    rows = list(reversed(rows))
+                rpt.table(rows=rows, hdr=hdr)
+                return rpt
 
-        rpt = report.Report(**kwargs)
-        rpt.txt('No test distribution')
-        return rpt
+            rpt = report.Report(**kwargs)
+            rpt.txt('No test distribution')
+            return rpt
 
     def probconform(self, fig=None, **kwargs):
         ''' Plot Probability of Conformance plot '''
@@ -214,8 +216,8 @@ class RiskReport:
                     dtest.set_median(loc-bias)
                     kwds = distributions.get_distargs(dtest)
                     dtestswp = dtest.dist(**kwds)  # Pass in rv_continuous, could be faster than Distribution object
-                    fa_lower[i] = risk.specific_risk(dtestswp, LL=LL, UL=np.inf).total
-                    fa_upper[i] = risk.specific_risk(dtestswp, LL=-np.inf, UL=UL).total
+                    fa_lower[i] = specific_risk(dtestswp, LL=LL, UL=np.inf).total
+                    fa_upper[i] = specific_risk(dtestswp, LL=-np.inf, UL=UL).total
                 fa = 1-(fa_lower + fa_upper)
 
                 ax = fig.add_subplot(1, 1, 1)

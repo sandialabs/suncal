@@ -10,6 +10,7 @@ from ..project import ProjectDistExplore
 from ..common import report, distributions, uparser
 from . import gui_common
 from . import gui_widgets
+from .help_strings import DistExploreHelp
 
 
 class DistEntry(QtWidgets.QWidget):
@@ -389,3 +390,7 @@ class DistWidget(QtWidgets.QWidget):
     def save_report(self):
         ''' Save full report, asking user for settings/filename '''
         gui_widgets.savereport(self.get_report())
+
+    def help_report(self):
+        ''' Get the help report to display the current widget mode '''
+        return DistExploreHelp.disthelp()

@@ -12,6 +12,7 @@ from ..common import report, plotting
 from . import gui_common  # noqa: F401
 from . import gui_widgets
 from . import page_dataimport
+from .help_strings import CurveHelp
 
 
 class OrderWidget(QtWidgets.QWidget):
@@ -561,6 +562,8 @@ class PageOutputCurveFit(QtWidgets.QWidget):
                   'markov': 'Markov-Chain Monte Carlo'}
     methodlookup = dict((v, k) for k, v in namelookup.items())
 
+    change_help = QtCore.pyqtSignal()
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.result = None
@@ -749,6 +752,7 @@ class PageOutputCurveFit(QtWidgets.QWidget):
             self.toolbar.setVisible(False)
 
         self.update()
+        self.change_help.emit()
 
     def get_predmode(self):
         return {0: 'Syx', 1: 'sigy', 2: 'sigylast'}.get(self.predictmode.currentIndex(), 'Syx')
@@ -961,6 +965,9 @@ class PageOutputCurveFit(QtWidgets.QWidget):
 
 class CurveFitWidget(QtWidgets.QWidget):
     ''' Main widget for calculating uncertainty in curve fitting '''
+
+    change_help = QtCore.pyqtSignal()
+
     def __init__(self, projitem, parent=None):
         super().__init__(parent)
         self.projitem = projitem
@@ -996,7 +1003,7 @@ class CurveFitWidget(QtWidgets.QWidget):
         self.fill_page()
 
         self.pginput.btnCalculate.clicked.connect(self.calculate)
-        self.pgoutput.btnBack.clicked.connect(lambda x: self.stack.slideInRight(0))
+        self.pgoutput.btnBack.clicked.connect(self.goback)
         self.actEnableUX.triggered.connect(self.pginput.toggle_ux)
         self.actClear.triggered.connect(self.pginput.clear_table)
         self.actLoadData.triggered.connect(self.load_data)
@@ -1004,6 +1011,12 @@ class CurveFitWidget(QtWidgets.QWidget):
         self.actSaveReport.triggered.connect(self.save_report)
         self.actFillUx.triggered.connect(self.fillux)
         self.actFillUy.triggered.connect(self.filluy)
+        self.pgoutput.change_help.connect(self.change_help)
+
+    def goback(self):
+        ''' Go back to inputs page '''
+        self.stack.slideInRight(0)
+        self.change_help.emit()
 
     def fill_page(self):
         ''' Fill the page using values stored in CurveFit object '''
@@ -1159,6 +1172,7 @@ class CurveFitWidget(QtWidgets.QWidget):
             self.pgoutput.set_output(output)
             self.stack.slideInLeft(1)
         self.actSaveReport.setEnabled(True)
+        self.change_help.emit()
 
     def update_proj_config(self):
         self.pginput.model.update_model()
@@ -1170,3 +1184,23 @@ class CurveFitWidget(QtWidgets.QWidget):
     def save_report(self):
         ''' Save full report of curve fit, asking user for settings/filename '''
         gui_widgets.savereport(self.get_report())
+
+    def help_report(self):
+        ''' Get the help report to display the current widget mode '''
+        if self.stack.m_next == 0:
+            return CurveHelp.inputs()
+        else:
+            if self.pgoutput.outSelect.currentText() == 'Fit Plot':
+                return CurveHelp.fit()
+            elif self.pgoutput.outSelect.currentText() == 'Prediction':
+                return CurveHelp.prediction()
+            elif self.pgoutput.outSelect.currentText() == 'Interval':
+                return CurveHelp.interval()
+            elif self.pgoutput.outSelect.currentText() == 'Residuals':
+                return CurveHelp.residuals()
+            elif self.pgoutput.outSelect.currentText() == 'Correlations':
+                return CurveHelp.correlations()
+            elif self.pgoutput.outSelect.currentText() == 'Monte Carlo':
+                return CurveHelp.montecarlo()
+            else:
+                return CurveHelp.nohelp()

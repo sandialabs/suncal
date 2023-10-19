@@ -528,6 +528,9 @@ class DGamma(Distribution):
         a = self.kwds.get('alpha', 1.0)
         b = self.kwds.get('beta', 1.0)
         self.distargs = {'a': a, 'scale': 1/b}
+        loc = self.kwds.get('median', 0) + self.kwds.get('loc', 0)
+        if loc:
+            self.distargs['shift'] = loc
 
     def fit(self, x):
         ''' Find best fitting parameters for the distribution to the sampled x data. '''

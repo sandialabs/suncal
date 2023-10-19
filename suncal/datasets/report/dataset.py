@@ -42,20 +42,21 @@ class ReportDataSet:
         ''' Stats for one column/group '''
         st = self.model.column_stats(column_name)
         dat = self.model.get_column(column_name)
-        q025, q25, q75, q975 = np.quantile(dat, (.025, .25, .75, .975))
-        rows = [['Mean', report.Number(st.mean, fmin=0)],
-                ['Standard Deviation', report.Number(st.standarddev, fmin=3)],
-                ['Std. Error of the Mean', report.Number(st.standarderr, fmin=3)],
-                ['Deg. Freedom', f'{st.degf:.2f}'],
-                ['Minimum',  report.Number(dat.min(), fmin=3)],
-                ['First Quartile', report.Number(q25, fmin=3)],
-                ['Median', report.Number(np.median(dat), fmin=3)],
-                ['Third Quartile', report.Number(q75, fmin=3)],
-                ['Maximum', report.Number(dat.max(), fmin=3)],
-                ['95% Coverage Interval', f'{report.Number(q025, fmin=3)}, {report.Number(q975, fmin=3)}']
-                ]
         rpt = report.Report(**kwargs)
-        rpt.table(rows, hdr=['Parameter', 'Value'])
+        if len(dat) > 0:
+            q025, q25, q75, q975 = np.quantile(dat, (.025, .25, .75, .975))
+            rows = [['Mean', report.Number(st.mean, fmin=0)],
+                    ['Standard Deviation', report.Number(st.standarddev, fmin=3)],
+                    ['Std. Error of the Mean', report.Number(st.standarderr, fmin=3)],
+                    ['Deg. Freedom', f'{st.degf:.2f}'],
+                    ['Minimum',  report.Number(dat.min(), fmin=3)],
+                    ['First Quartile', report.Number(q25, fmin=3)],
+                    ['Median', report.Number(np.median(dat), fmin=3)],
+                    ['Third Quartile', report.Number(q75, fmin=3)],
+                    ['Maximum', report.Number(dat.max(), fmin=3)],
+                    ['95% Coverage Interval', f'{report.Number(q025, fmin=3)}, {report.Number(q975, fmin=3)}']
+                    ]
+            rpt.table(rows, hdr=['Parameter', 'Value'])
         return rpt
 
     def pooled(self, **kwargs):

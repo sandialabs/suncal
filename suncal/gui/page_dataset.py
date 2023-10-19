@@ -13,6 +13,7 @@ from . import gui_common
 from . import gui_widgets
 from . import page_csvload
 from . import configmgr
+from .help_strings import AnovaHelp
 
 settings = configmgr.Settings()
 
@@ -124,6 +125,9 @@ class ACorrCtrlWidget(QtWidgets.QWidget):
 
 class DataSetWidget(QtWidgets.QWidget):
     ''' Widget for displaying measured data and ANOVA calculations '''
+
+    change_help = QtCore.pyqtSignal()
+
     def __init__(self, projitem, parent=None):
         super().__init__(parent=parent)
         self.projitem = projitem
@@ -306,6 +310,7 @@ class DataSetWidget(QtWidgets.QWidget):
         self.corrctrls.setVisible(mode == 'Correlation')
         self.acorctrls.setVisible(mode == 'Autocorrelation')
         self.refresh_output()
+        self.change_help.emit()
 
     def tablechanged(self):
         ''' Table data has changed, update the model '''
@@ -470,6 +475,10 @@ class DataSetWidget(QtWidgets.QWidget):
                 self.table.blockSignals(False)
                 self.tablechanged()
 
+    def update_proj_config(self):
+        ''' Save page setup back to project item configuration '''
+        pass  # GUI updates model in real time
+
     def get_report(self):
         ''' Get full report of dataset, using page settings '''
         return self.projitem.result.report.all()
@@ -477,3 +486,19 @@ class DataSetWidget(QtWidgets.QWidget):
     def save_report(self):
         ''' Save full report, asking user for settings/filename '''
         gui_widgets.savereport(self.get_report())
+
+    def help_report(self):
+        ''' Get the help report to display the current widget mode '''
+        mode = self.cmbMode.currentText()
+        if mode == 'Summary':
+            return AnovaHelp.summary()
+        elif mode == 'Histogram':
+            return AnovaHelp.histogram()
+        elif mode == 'Correlation':
+            return AnovaHelp.correlation()
+        elif mode == 'Autocorrelation':
+            return AnovaHelp.autocorrelation()
+        elif mode == 'Analysis of Variance':
+            return AnovaHelp.anova()
+        else:
+            return AnovaHelp.nohelp()

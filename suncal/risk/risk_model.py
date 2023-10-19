@@ -1,10 +1,13 @@
 ''' Risk calculation model consisting of process and test distributions and specification limits '''
 
 from collections import namedtuple
+import warnings
 from scipy import stats
 
 from ..common import distributions
 from . import risk
+from . import guardband
+from . import guardband_tur
 from .report.risk import RiskReport
 
 
@@ -153,66 +156,114 @@ class RiskModel:
         '''
         return risk.specific_risk(self.procdist, *self.speclimits)
 
-    def PFA(self, approx=True):
+    def PFA(self, conditional=False):
         ''' Calculate probability of false acceptance (consumer risk).
-
-            Args:
-                approx (bool): Use trapezoidal integration approximation for speed
 
             Returns:
                 PFA (float): Probability of false accept (0-1)
         '''
+        if conditional:
+            return risk.PFA_conditional(self.procdist, self.testdist, *self.speclimits,
+                        *self.gbofsts, self.testbias)
         return risk.PFA(self.procdist, self.testdist, *self.speclimits,
-                        *self.gbofsts, self.testbias, approx)
+                        *self.gbofsts, self.testbias)
 
-    def PFR(self, approx=True):
+    def PFR(self):
         ''' Calculate probability of false reject (producer risk).
-
-            Args:
-                approx (bool): Use trapezoidal integration approximation for speed
 
             Returns:
                 PFR (float): Probability of false reject (0-1)
         '''
         return risk.PFR(self.procdist, self.testdist, *self.speclimits,
-                        *self.gbofsts, self.testbias, approx)
+                        *self.gbofsts, self.testbias)
 
-    def calc_guardband(self, method, pfa=None):
-        ''' Set guardband using a predefined method
+    def guardband_pfa(self, pfa=0.08, conditional=False,
+                      optimizepfr=False, allow_negative=False):
+        ''' Guardband to hit the desired PFA.
 
-        Args:
+            Args:
+                pfa: Target PFA (for PFA and specific methods.)
+                conditional (bool): Guardband for conditional PFA
+                optimizepfr (bool): Find possibly asymmetric guardbands that minimize PFR.
+                    Applies to pfa and cpfa methods.
+                allow_negative (bool): Allow negative guardbands (accepting OOT DUTs)
+                    Applies to pfa and cpfa methods.
+        '''
+        if optimizepfr:
+            gbl, gbu = guardband.optimize(self.procdist, self.testdist,
+                                          *self.speclimits, target=pfa,
+                                          allow_negative=allow_negative,
+                                          conditional=conditional)
+            self.gbofsts = gbl, gbu
+
+        elif not conditional:
+            gb = guardband.target(self.procdist, self.testdist,
+                                    *self.speclimits, target_PFA=pfa,
+                                    testbias=self.testbias)
+            self.gbofsts = gb, gb
+
+        else:
+            gb = guardband.target_conditional(self.procdist, self.testdist,
+                                              *self.speclimits, target_PFA=pfa,
+                                              testbias=self.testbias)
+            self.gbofsts = (gb, gb)
+
+    def guardband_tur(self, method):
+        ''' Apply TUR-based guardband
+                Args:
             method: Guardband method to apply. One of: 'dobbert', 'rss',
-              'rp10', 'test', '4:1', 'pfa', 'minimax', 'mincost', 'specific'.
-            pfa: Target PFA (for method 'pfa' and 'specific'. Defaults to 0.008)
+              'rp10', 'test', '4:1', 'pfa', 'cpfa', 'minimax', 'mincost', 'specific'.
 
         Notes:
             Dobbert's method maintains <2% PFA for ANY itp at the TUR.
             RSS method: GB = sqrt(1-1/TUR**2)
             test method: GB = 1 - 1/TUR  (subtract the 95% test uncertainty)
             rp10 method: GB = 1.25 - 1/TUR (similar to test, but less conservative)
-            pfa method: Solve for GB to produce desired PFA
             4:1 method: Solve for GB that results in same PFA as 4:1 at this itp
-            mincost method: Minimize the total expected cost due to false decisions (Ref Easterling 1991)
-            minimax method: Minimize the maximum expected cost due to false decisions (Ref Easterling 1991)
         '''
-        CcCp = None
-        if method in ['minimax', 'mincost']:
-            if (self.cost_FA is None or self.cost_FR is None):
-                raise ValueError('Minimax and Mincost methods must set costs of false accept/reject using `set_costs`.')
-            CcCp = self.cost_FA/self.cost_FR
+        tur = self.get_tur()
+        if not self.is_simple():
+            warnings.warn('Using TUR-based guardband when TUR assumptions may not apply. '
+                            'Results may not acheive desired PFA.')
 
-        if method == 'specific':
-            gbl, gbu = risk.guardband_specific(self.testdist, *self.speclimits, pfa)
-            self.gbofsts = (gbl, gbu)
-        elif self.is_simple() or method != 'pfa':
-            itp = self.get_itp() if self.procdist is not None else None
-            gbf = risk.guardband_norm(method, self.get_tur(), pfa=pfa, itp=itp, CcCp=CcCp)
-            self.set_gbf(gbf)
-        else:
-            gb = risk.guardband(self.procdist, self.testdist,
-                                *self.speclimits, pfa,
-                                self.testbias, approx=True)
-            self.gbofsts = (gb, gb)   # Returns guardband as offset
+        if method == 'rss':
+            gbf = guardband_tur.rss(tur)
+        elif method == 'dobbert':
+            gbf = guardband_tur.dobbert(tur)
+        elif method == 'rp10':
+            gbf = guardband_tur.rp10(tur)
+        elif method == 'test':
+            gbf = guardband_tur.test95(tur)
+        elif method == '4:1':
+            gbf = guardband_tur.four_to_1(tur, itp=self.get_itp())
+        self.set_gbf(gbf)
+
+    def guardband_cost(self, method='mincost', costfa=100, costfr=10):
+        ''' Guardband using cost-based method
+
+            Notes:
+                mincost method: Minimize the total expected cost due to false decisions (Ref Easterling 1991)
+                minimax method: Minimize the maximum expected cost due to false decisions (Ref Easterling 1991)
+        '''
+        tur = self.get_tur()
+        if not self.is_simple():
+            warnings.warn('Using TUR-based guardband when TUR assumptions may not apply. '
+                            'Results may not acheive desired PFA.')
+
+        cc_over_cp = costfa/costfr
+        if method == 'minimax':
+            gbf = guardband_tur.minimax(tur, cc_over_cp=cc_over_cp)
+        else: # method == 'mincost':
+            itp = self.get_itp()
+            gbf = guardband_tur.mincost(tur, itp=itp, cc_over_cp=cc_over_cp)
+        self.set_gbf(gbf)
+        self.cost_FA = costfa   # Save these for reporting
+        self.cost_FR = costfr
+
+    def guardband_specific(self, pfa):
+        ''' Guardband for worst-case specific risk '''
+        gbl, gbu = guardband.specific(self.testdist, *self.speclimits, pfa)
+        self.gbofsts = (gbl, gbu)
 
     def set_itp(self, itp):
         ''' Set in-tolerance probability by adjusting process distribution
@@ -244,11 +295,6 @@ class RiskModel:
         '''
         sigma = self.testdist.std()
         self.testdist = distributions.get_distribution('normal', loc=median, std=sigma)
-
-    def set_costs(self, FA, FR):
-        ''' Set cost of false accept and reject for cost-minimization techniques '''
-        self.cost_FA = FA
-        self.cost_FR = FR
 
     def get_procdist_args(self):
         ''' Get dictionary of arguments for process distribution '''

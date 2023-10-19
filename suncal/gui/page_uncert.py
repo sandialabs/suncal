@@ -9,12 +9,14 @@ from . import gui_common
 from . import gui_widgets
 from . import page_uncert_input, page_uncert_output
 from . import page_dataimport
+from .help_strings import UncertHelp
 
 
 class UncertPropWidget(QtWidgets.QWidget):
     ''' Uncertainty propagation widget '''
     openconfigfolder = QtCore.QStandardPaths.standardLocations(QtCore.QStandardPaths.HomeLocation)[0]
     newtype = QtCore.pyqtSignal(dict, str)
+    change_help = QtCore.pyqtSignal()
 
     PG_INPUT = 0
     PG_OUTPUT = 1
@@ -70,6 +72,7 @@ class UncertPropWidget(QtWidgets.QWidget):
 
         self.pginput.calculate.connect(self.calculate)
         self.pgoutput.back.connect(self.backbutton)
+        self.pgoutput.change_help.connect(self.change_help)
         gui_common.set_plot_style()
 
     def get_menu(self):
@@ -88,6 +91,7 @@ class UncertPropWidget(QtWidgets.QWidget):
         self.stack.slideInRight(self.PG_INPUT)
         self.actSaveReport.setEnabled(False)
         self.mnuSaveSamples.setEnabled(False)
+        self.change_help.emit()
 
     def clearinput(self):
         ''' Clear all the input/output values '''
@@ -209,6 +213,7 @@ class UncertPropWidget(QtWidgets.QWidget):
         self.pgoutput.outputupdate()
         self.actSaveReport.setEnabled(True)
         self.mnuSaveSamples.setEnabled(True)
+        self.change_help.emit()
 
     def get_report(self):
         ''' Get full report of curve fit, using page settings '''
@@ -238,3 +243,10 @@ class UncertPropWidget(QtWidgets.QWidget):
             caption='Select file to save', directory=self.openconfigfolder, filter='Numpy NPZ (*.npz)')
         if fname:
             self.projitem.save_samples_npz(fname)
+
+    def help_report(self):
+        ''' Get the help report to display the current widget mode '''
+        if self.stack.m_next == self.PG_INPUT:
+            return UncertHelp.inputs()
+        else:
+            return self.pgoutput.help_report()

@@ -8,8 +8,11 @@ from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as Navigatio
 
 from ..project import ProjectRisk
 from ..common import distributions
+from ..risk import risk
 from . import gui_common
 from . import gui_widgets
+from .page_guardband import GuardBandFinderWidget
+from .help_strings import RiskHelp
 from . import page_dataimport
 
 
@@ -286,125 +289,11 @@ class SweepWidget(QtWidgets.QGroupBox):
         return SweepSetup(xvar, zvar, xvals, zvals, itpval, turval, gbfval, sig0, pbias, tbias, threed, y, logy)
 
 
-class GuardBandFinderWidget(QtWidgets.QDialog):
-    ''' Widget providing options for calculating a guardband '''
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        font = self.font()
-        font.setPointSize(10)
-        self.setFont(font)
-        self.setWindowTitle('Calculate Guardband')
-        self.pfa = QtWidgets.QRadioButton('Target PFA %')
-        self.pfaval = QtWidgets.QDoubleSpinBox()
-        self.pfaval.setValue(0.8)  # in percent
-        self.pfaval.setRange(.01, 99.99)
-        self.pfaval.setDecimals(2)
-        self.pfaval.setSingleStep(0.1)
-        self.dobbert = QtWidgets.QRadioButton('Dobbert Managed 2% PFA')
-        self.rss = QtWidgets.QRadioButton('RDS')
-        self.rp10 = QtWidgets.QRadioButton('NCSL RP10')
-        self.test = QtWidgets.QRadioButton('95% Test Uncertainty')
-        self.fourtoone = QtWidgets.QRadioButton('Same as 4:1')
-        self.mincost = QtWidgets.QRadioButton('Minimum Cost')
-        self.minimax = QtWidgets.QRadioButton('Minimax Cost')
-        self.maxspecific = QtWidgets.QRadioButton('Minimum Prob. Conformance')
-        self.spval = QtWidgets.QDoubleSpinBox()
-        self.spval.setValue(90)  # in percent
-        self.spval.setRange(.01, 99.99)
-        self.spval.setDecimals(2)
-        self.spval.setSingleStep(0.1)
-        self.buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel)
-        self.pfa.setChecked(True)
-        self.buttons.accepted.connect(self.accept)
-        self.buttons.rejected.connect(self.reject)
-        self.pfaval.valueChanged.connect(lambda x: self.pfa.setChecked(True))
-        self.spval.valueChanged.connect(lambda x: self.maxspecific.setChecked(True))
-
-        layout = QtWidgets.QGridLayout()
-        layout.addWidget(QtWidgets.QLabel('Select Guardband Method'), 0, 0, 1, 2)
-        layout.addWidget(self.pfa, 1, 0)
-        layout.addWidget(self.pfaval, 1, 1)
-        layout.addWidget(self.dobbert, 2, 0)
-        layout.addWidget(QtWidgets.QLabel('<b>k = 1 - M<sub>2%</sub>/TUR</b>'), 2, 1)
-        layout.addWidget(self.rss, 3, 0)
-        layout.addWidget(QtWidgets.QLabel('<b>k = √(1-1/TUR<sup>2</sup>)</b>'), 3, 1)
-        layout.addWidget(self.rp10, 4, 0)
-        layout.addWidget(QtWidgets.QLabel('<b>k = 1.25 - 1/TUR</b>'), 4, 1)
-        layout.addWidget(self.test, 5, 0)
-        layout.addWidget(QtWidgets.QLabel('<b>k = 1 - 1/TUR</b>'), 5, 1)
-        layout.addWidget(self.fourtoone, 6, 0)
-        layout.addWidget(self.mincost, 7, 0)
-        layout.addWidget(self.minimax, 8, 0)
-        layout.addWidget(self.maxspecific, 9, 0)
-        layout.addWidget(self.spval, 9, 1)
-
-        mainlayout = QtWidgets.QVBoxLayout()
-        mainlayout.addLayout(layout)
-        mainlayout.addWidget(self.buttons)
-        self.setLayout(mainlayout)
-
-    def get_method(self):
-        ''' Get selected guardband method, as dictionary of arguments for risk.get_guardband() '''
-        kargs = {}
-        if self.pfa.isChecked():
-            kargs['method'] = 'pfa'
-            kargs['pfa'] = self.pfaval.value() / 100
-        elif self.dobbert.isChecked():
-            kargs['method'] = 'dobbert'
-        elif self.rss.isChecked():
-            kargs['method'] = 'rss'
-        elif self.rp10.isChecked():
-            kargs['method'] = 'rp10'
-        elif self.test.isChecked():
-            kargs['method'] = 'test'
-        elif self.fourtoone.isChecked():
-            kargs['method'] = '4:1'
-        elif self.mincost.isChecked():
-            kargs['method'] = 'mincost'
-        elif self.minimax.isChecked():
-            kargs['method'] = 'minimax'
-        elif self.maxspecific.isChecked():
-            kargs['method'] = 'specific'
-            kargs['pfa'] = 1 - self.spval.value() / 100
-        return kargs
-
-
-class CostEntryWidget(QtWidgets.QDialog):
-    ''' Widget for entering cost of FA and FR '''
-    def __init__(self, costFA=None, costFR=None, parent=None):
-        super().__init__(parent)
-        font = self.font()
-        font.setPointSize(10)
-        self.setFont(font)
-        self.setWindowTitle('Expected costs')
-        self.costfa = QtWidgets.QDoubleSpinBox()
-        self.costfr = QtWidgets.QDoubleSpinBox()
-        self.costfa.setRange(0, 1000000000)
-        self.costfr.setRange(0, 1000000000)
-        self.costfa.setValue(100)
-        self.costfr.setValue(1)
-        self.buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel)
-        self.buttons.accepted.connect(self.accept)
-        self.buttons.rejected.connect(self.reject)
-        flayout = QtWidgets.QFormLayout()
-        flayout.addRow('Cost of False Accept', self.costfa)
-        flayout.addRow('Cost of False Reject', self.costfr)
-        layout = QtWidgets.QVBoxLayout()
-        layout.addLayout(flayout)
-        layout.addWidget(self.buttons)
-        self.setLayout(layout)
-        if costFA is not None:
-            self.costfa.setValue(costFA)
-        if costFR is not None:
-            self.costfr.setValue(costFR)
-
-    def getCost(self):
-        ''' Get costs entered into widget '''
-        return self.costfa.value(), self.costfr.value()
-
-
 class RiskWidget(QtWidgets.QWidget):
     ''' Widget for risk calculations '''
+
+    change_help = QtCore.pyqtSignal()  # Tell main window to refresh help display
+
     def __init__(self, projitem, parent=None):
         super().__init__(parent)
         assert isinstance(projitem, ProjectRisk)
@@ -421,6 +310,7 @@ class RiskWidget(QtWidgets.QWidget):
         self.limits = DoubleLineEdit(-2, 2, 'Lower Specification Limit:', 'Upper Specification Limit:')
         self.sweepsetup = SweepWidget()
         self.chkProc = QtWidgets.QCheckBox('Process Distribution:')
+        self.btnSetItp = QtWidgets.QPushButton('Set ITP')
         self.chkTest = QtWidgets.QCheckBox('Test Measurement:')
         self.guardband = DoubleLineEdit(0, 0, 'Lower Guardband (relative):', 'Upper Guardband (relative):')
         self.chkGB = QtWidgets.QCheckBox('Guardband')
@@ -428,6 +318,7 @@ class RiskWidget(QtWidgets.QWidget):
         self.limits.setVisible(False)
         self.sweepsetup.setVisible(False)
         self.chkProc.setVisible(False)
+        self.btnSetItp.setVisible(False)
         self.chkTest.setVisible(False)
         self.guardband.setVisible(False)
         self.chkGB.setVisible(False)
@@ -503,7 +394,11 @@ class RiskWidget(QtWidgets.QWidget):
         vlayout.addLayout(flayout)
         vlayout.addWidget(self.simple)
         vlayout.addWidget(self.limits)
-        vlayout.addWidget(self.chkProc)
+        proclayout = QtWidgets.QHBoxLayout()
+        proclayout.addWidget(self.chkProc)
+        proclayout.addStretch()
+        proclayout.addWidget(self.btnSetItp)
+        vlayout.addLayout(proclayout)
         vlayout.addWidget(self.dproc_table)
         vlayout.addWidget(self.chkTest)
         vlayout.addWidget(self.dtest_table)
@@ -537,6 +432,7 @@ class RiskWidget(QtWidgets.QWidget):
         self.simple.editingFinished.connect(self.entry_changed)
         self.chkTest.stateChanged.connect(self.testprocclick)
         self.chkProc.stateChanged.connect(self.testprocclick)
+        self.btnSetItp.clicked.connect(self.setprocitp)
         self.chkGB.stateChanged.connect(self.gbclick)
         self.dproc_table.changed.connect(self.entry_changed)
         self.dtest_table.changed.connect(self.entry_changed)
@@ -547,18 +443,22 @@ class RiskWidget(QtWidgets.QWidget):
         self.sweepsetup.btnrefresh.clicked.connect(self.replot)
 
         self.menu = QtWidgets.QMenu('Risk')
-        self.actShowJointPDF = QtWidgets.QAction('Plot Joint PDFs', self, )
+        self.actConditionalPFA = QtWidgets.QAction('Conditional PFA', self)
+        self.actConditionalPFA.setCheckable(True)
+        self.actShowJointPDF = QtWidgets.QAction('Plot Joint PDFs', self)
         self.actShowJointPDF.setCheckable(True)
         self.actShowJointPDF.setChecked(True)
         self.actImportDist = QtWidgets.QAction('Import distribution...', self)
         self.actCalcGB = QtWidgets.QAction('Calculate guardband...', self)
         self.actSaveReport = QtWidgets.QAction('Save Report...', self)
+        self.menu.addAction(self.actConditionalPFA)
         self.menu.addAction(self.actShowJointPDF)
         self.menu.addSeparator()
         self.menu.addAction(self.actImportDist)
         self.menu.addAction(self.actCalcGB)
         self.menu.addSeparator()
         self.menu.addAction(self.actSaveReport)
+        self.actConditionalPFA.triggered.connect(self.update_report)
         self.actImportDist.triggered.connect(self.importdist)
         self.actCalcGB.triggered.connect(self.calc_guardband)
         self.actSaveReport.triggered.connect(self.save_report)
@@ -625,6 +525,7 @@ class RiskWidget(QtWidgets.QWidget):
         self.simple.setVisible(simple)
         self.limits.setVisible(not simple)
         self.chkProc.setVisible(not simple)
+        self.btnSetItp.setVisible(not simple)
         self.chkTest.setVisible(not simple)
         self.dproc_table.setVisible(not simple)
         self.dtest_table.setVisible(not simple)
@@ -633,6 +534,7 @@ class RiskWidget(QtWidgets.QWidget):
         self.block(False)
         if replot:
             self.replot()
+        self.change_help.emit()
 
     def changecalc(self):
         ''' Change calculation mode (integration vs monte carlo vs gbsweep) '''
@@ -643,6 +545,7 @@ class RiskWidget(QtWidgets.QWidget):
             self.chkProc.setChecked(True)
             self.chkTest.setChecked(True)
             self.chkProc.setEnabled(False)
+            self.btnSetItp.setEnabled(False)
             self.chkTest.setEnabled(False)
             self.guardband.setEnabled(True)
             self.chkGB.setEnabled(True)
@@ -655,6 +558,7 @@ class RiskWidget(QtWidgets.QWidget):
             self.mode.setEnabled(True)
             self.chkTest.setEnabled(True)
             self.chkProc.setEnabled(True)
+            self.btnSetItp.setEnabled(True)
             self.guardband.setEnabled(False)
             self.chkGB.setEnabled(False)
             self.simple.setVisible(simple)
@@ -668,6 +572,7 @@ class RiskWidget(QtWidgets.QWidget):
             self.changemode(replot=False)
             self.chkTest.setEnabled(True)
             self.chkProc.setEnabled(True)
+            self.btnSetItp.setEnabled(True)
             self.guardband.setEnabled(True)
             self.chkGB.setEnabled(False)
             self.simple.setVisible(False)
@@ -676,6 +581,7 @@ class RiskWidget(QtWidgets.QWidget):
             self.mode.setEnabled(True)
             self.chkTest.setEnabled(True)
             self.chkProc.setEnabled(True)
+            self.btnSetItp.setEnabled(True)
             self.guardband.setEnabled(True)
             self.chkGB.setEnabled(True)
             self.simple.setVisible(simple)
@@ -686,6 +592,7 @@ class RiskWidget(QtWidgets.QWidget):
             self.testprocclick()
         self.block(False)
         self.replot()
+        self.change_help.emit()
 
     def entry_changed(self):
         ''' An entry changed. Trigger replot except in curves mode '''
@@ -740,7 +647,8 @@ class RiskWidget(QtWidgets.QWidget):
 
     def update_report(self):
         ''' Update label fields, recalculating risk values '''
-        self.txtOutput.setReport(self.projitem.result.report.summary())
+        conditional = self.actConditionalPFA.isChecked()
+        self.txtOutput.setReport(self.projitem.result.report.summary(conditional=conditional))
 
     def replot_mc(self):
         ''' Replot/report monte carlo method '''
@@ -839,33 +747,51 @@ class RiskWidget(QtWidgets.QWidget):
 
         dlg = GuardBandFinderWidget()
         if not np.isfinite(self.projitem.model.get_tur()):
-            dlg.dobbert.setEnabled(False)
-            dlg.rss.setEnabled(False)
-            dlg.rp10.setEnabled(False)
-            dlg.test.setEnabled(False)
-            dlg.fourtoone.setEnabled(False)
-            dlg.mincost.setEnabled(False)
-            dlg.minimax.setEnabled(False)
+            dlg.tabTur.dobbert.setEnabled(False)
+            dlg.tabTur.rss.setEnabled(False)
+            dlg.tabTur.rp10.setEnabled(False)
+            dlg.tabTur.test.setEnabled(False)
+            dlg.tabTur.fourtoone.setEnabled(False)
+            dlg.tabCost.optMincost.setEnabled(False)
+            dlg.tabCost.optMinimax.setEnabled(False)
             if self.projitem.model.procdist is None:
-                dlg.pfa.setEnabled(False)
-                dlg.pfaval.setEnabled(False)
-                dlg.maxspecific.setChecked(True)
+                dlg.tabPfa.optConditional.setEnabled(False)
+                dlg.tabPfa.optUnconditional.setEnabled(False)
 
         elif self.projitem.model.procdist is None:
-            dlg.pfa.setEnabled(False)
-            dlg.pfaval.setEnabled(False)
-            dlg.fourtoone.setEnabled(False)
-            dlg.mincost.setEnabled(False)
-            dlg.dobbert.setChecked(True)
+            dlg.tabPfa.optUnconditional.setEnabled(False)
+            dlg.tabPfa.optConditional.setEnabled(False)
+            dlg.tabTur.fourtoone.setEnabled(False)
+            dlg.tabCost.optMincost.setEnabled(False)
+            dlg.tabCost.optMinimax.setEnabled(False)
+            dlg.tabTur.dobbert.setChecked(True)
 
         ok = dlg.exec()
         if ok:
             self.block(True)
             methodargs = dlg.get_method()
-            if methodargs['method'] in ['mincost', 'minimax']:
-                self.set_costs()
+            method = methodargs['method']
+            if method in ['pfa', 'cpfa']:
+                self.projitem.model.guardband_pfa(
+                    methodargs.get('pfa', .08),
+                    conditional = 'c' in method,
+                    optimizepfr = methodargs.get('optimize', False),
+                    allow_negative = methodargs.get('allow_negative', False)
+                )
 
-            self.projitem.model.calc_guardband(**methodargs)
+            elif method in ['mincost', 'minimax']:
+                self.projitem.model.guardband_cost(
+                    method=method,
+                    costfa=methodargs.get('costfa', 100),
+                    costfr=methodargs.get('costfr', 10)
+                )
+
+            elif method == 'specific':
+                self.projitem.model.guardband_specific(methodargs.get('pfa', 0.08))
+
+            else:  # TUR-based
+                self.projitem.model.guardband_tur(method=method)
+
             if simple:
                 self.simple.gbfactor.setValue(self.projitem.model.get_gbf())
                 self.chkGB.setChecked(True)
@@ -877,13 +803,53 @@ class RiskWidget(QtWidgets.QWidget):
             self.block(False)
             self.replot()
 
-    def set_costs(self):
-        ''' Set expected cost of FA and FR '''
-        dlg = CostEntryWidget(self.projitem.model.cost_FA, self.projitem.model.cost_FR, parent=self)
-        ok = dlg.exec()
-        if ok:
-            self.projitem.model.set_costs(*dlg.getCost())
-        self.entry_changed()
+    def setprocitp(self):
+        ''' Set the process distribution standard deviation to reach the
+            input ITP value
+        '''
+        itp, ok = QtWidgets.QInputDialog.getDouble(
+            self, 'Enter ITP', 'Adjust process distribution to result in this ITP value (as a percent from 1-99)',
+            95, .1, 99.999999, 3)
+
+        if self.projitem.model.procdist.dist.name != 'norm':
+            params = self.projitem.model.procdist.argnames
+            param, ok2 = QtWidgets.QInputDialog.getItem(
+                self, 'Distribution Parameter', 'Select parameter to adjust',
+                params, editable=False)
+            if ok and ok2:
+                itp /= 100
+                pvalue = risk.get_sigmaproc_from_itp_arb(
+                    self.projitem.model.procdist,
+                    param,
+                    itp,
+                    *self.projitem.model.speclimits)
+
+                if pvalue is None:
+                    QtWidgets.QMessageBox.warning(self, 'ITP', f'No solution found for itp={itp*100:.2f}%. '
+                                                  f'Try again after adjusting {param} manually to get closer to the '
+                                                  'target ITP value.')
+                    return
+
+                args = self.projitem.model.procdist.kwds
+                args[param] = pvalue
+                args['dist'] = self.projitem.model.procdist.dist.name
+                self.dproc_table.set_disttype(args)
+                self.dproc_table.valuechanged()
+
+        else:
+            if ok:
+                itp /= 100  # percent to decimal
+                procmean = self.dproc_table.statsdist.mean()
+                UL, LL = self.projitem.model.speclimits
+                nominal = (LL + UL)/2
+                bias = procmean - nominal
+                sigma = risk.get_sigmaproc_from_itp(itp, bias)
+
+                args = {'dist': 'normal',
+                        'median': procmean,
+                        'std': sigma}
+                self.dproc_table.set_disttype(args)
+                self.dproc_table.valuechanged()
 
     def get_report(self):
         ''' Get full report of curve fit, using page settings '''
@@ -920,3 +886,24 @@ class RiskWidget(QtWidgets.QWidget):
                 self.chkTest.setChecked(True)
             self.block(False)
             self.entry_changed()
+
+    def help_report(self):
+        ''' Get the help report to display the current widget mode '''
+        mode = self.mode.currentText()  # simple or full
+        calctype = self.calctype.currentText()  # integral, MC, etc.
+
+        if calctype == 'Integral' and mode == 'Simple':
+            return RiskHelp.simple()
+        elif calctype == 'Integral' and mode == 'Full':
+            return RiskHelp.full()
+        elif calctype == 'Monte Carlo' and mode == 'Simple':
+            return RiskHelp.simple_mc()
+        elif calctype == 'Monte Carlo' and mode == 'Full':
+            return RiskHelp.full_mc()
+        elif calctype == 'Guardband sweep':
+            return RiskHelp.gb_sweep()
+        elif calctype == 'Probability of Conformance':
+            return RiskHelp.prob_conform()
+        elif calctype == 'Risk Curves':
+            return RiskHelp.curves()
+        return RiskHelp.nohelp()

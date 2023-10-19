@@ -6,6 +6,7 @@ from PyQt5 import QtWidgets, QtGui, QtCore
 from . import gui_widgets
 from . import gui_common   # noqa: F401
 from . import page_uncert
+from .help_strings import UncertHelp
 
 
 class TargetSetupWidget(QtWidgets.QTableWidget):
@@ -195,3 +196,8 @@ class UncertReverseWidget(page_uncert.UncertPropWidget):
     def save_report(self):
         ''' Save full report, asking user for settings/filename '''
         gui_widgets.savereport(self.get_report())
+
+    def help_report(self):
+        if self.stack.m_next == 1:
+            return UncertHelp.reverse_output()
+        return UncertHelp.reverse_input()

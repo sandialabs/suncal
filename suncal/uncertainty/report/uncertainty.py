@@ -291,7 +291,8 @@ class ReportUncertainty:
                                         legend=params.get('legend'))
                 else:
                     self.plot.pdf(fig=fig, mchist=not params.get('contour'), legend=params.get('legend'),
-                                  interval=params.get('interval'), shortest=params.get('shortest'))
+                                  interval=params.get('interval'), shortest=params.get('shortest'),
+                                  bins=params.get('bins', 100))
                 rpt.plot(fig)
 
         if setup.get('inputs', True):

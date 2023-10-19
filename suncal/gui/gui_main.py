@@ -22,6 +22,7 @@ from . import page_distribution
 from . import page_interval
 from . import page_ttable
 from . import page_units
+from .help_strings import MainHelp
 
 
 class ToolButton(QtWidgets.QToolButton):
@@ -178,6 +179,25 @@ class InsertCalcWidget(QtWidgets.QWidget):
         layout.addStretch()
         self.setLayout(layout)
 
+    def help_report(self):
+        ''' Get main help text '''
+        return MainHelp.project_types()
+
+
+class HelpWindow(QtWidgets.QDockWidget):
+    ''' Dock widget for showing help information '''
+    def __init__(self):
+        super().__init__('Help')
+        self.setFeatures(QtWidgets.QDockWidget.DockWidgetClosable |
+                         QtWidgets.QDockWidget.DockWidgetMovable |
+                         QtWidgets.QDockWidget.DockWidgetFloatable)
+        self.helppane = gui_widgets.MarkdownTextEdit()
+        self.setWidget(self.helppane)
+
+    def setHelp(self, rpt):
+        ''' Set the report to display '''
+        self.helppane.setReport(rpt)
+
 
 class MainGUI(QtWidgets.QMainWindow):
     ''' Main GUI holds the project, stack of project component widgets, insert component widget, and menus '''
@@ -198,12 +218,17 @@ class MainGUI(QtWidgets.QMainWindow):
 
         # project dock
         self.projdock = QtWidgets.QDockWidget('Project Components', self)
-        self.projdock.setFeatures(QtWidgets.QDockWidget.DockWidgetClosable | QtWidgets.QDockWidget.DockWidgetMovable)
+        self.projdock.setFeatures(QtWidgets.QDockWidget.DockWidgetClosable |
+                                  QtWidgets.QDockWidget.DockWidgetMovable |
+                                  QtWidgets.QDockWidget.DockWidgetFloatable)
         self.dockwidget = ProjectDockWidget()
         self.dockwidget.projectlist.currentRowChanged.connect(self.changepage)
         self.projdock.setWidget(self.dockwidget)
         self.addDockWidget(QtCore.Qt.RightDockWidgetArea, self.projdock)
         self.projdock.setVisible(False)
+        self.helpdock = HelpWindow()
+        self.helpdock.setVisible(False)
+        self.addDockWidget(QtCore.Qt.RightDockWidgetArea, self.helpdock)
 
         self.pginsert = InsertCalcWidget()
         self.projstack = QtWidgets.QStackedWidget()   # Stack for all project components
@@ -233,8 +258,10 @@ class MainGUI(QtWidgets.QMainWindow):
         actQuit.triggered.connect(self.close)
         actAbout = QtWidgets.QAction('&About', self)
         actAbout.triggered.connect(page_about.show)
-        actHelp = QtWidgets.QAction('&Documentation', self)
-        actHelp.triggered.connect(self.showhelp)
+        actManual = QtWidgets.QAction('&User Manual', self)
+        actManual.triggered.connect(self.showmanual)
+        actHelp = QtWidgets.QAction('&Help', self)
+        actHelp.triggered.connect(self.open_page_help)
 
         # Project Menu
         self.actInsertCalc = QtWidgets.QAction('Add Calculation...', self)
@@ -275,6 +302,7 @@ class MainGUI(QtWidgets.QMainWindow):
         # Help Menu
         self.menuHelp = QtWidgets.QMenu('&Help')
         self.menuHelp.addAction(actHelp)
+        self.menuHelp.addAction(actManual)
         self.menuHelp.addAction(actAbout)
         self.menubar.addMenu(self.menuHelp)
         self.setMenuBar(self.menubar)
@@ -361,6 +389,10 @@ class MainGUI(QtWidgets.QMainWindow):
         self.dockwidget.projectlist.setCurrentRow(self.dockwidget.projectlist.count()-1)
         self.dockwidget.projectlist.blockSignals(False)
         self.changepage(self.projstack.count()-1)
+        with suppress(AttributeError):
+            widget.change_help.connect(self.set_page_help)
+            widget.open_help.connect(self.open_page_help)
+        self.set_page_help()
 
     def change_component(self, config, newtype):
         ''' Convert item into new type (e.g. uncertprop into reverse) '''
@@ -406,6 +438,7 @@ class MainGUI(QtWidgets.QMainWindow):
         self.projstack.removeWidget(widget)
         if self.project.count() == 0:
             self.topstack.setCurrentIndex(self.PG_TOP_INSERT)
+        self.set_page_help()
 
     def changepage(self, index):
         ''' Change the current component page '''
@@ -416,11 +449,30 @@ class MainGUI(QtWidgets.QMainWindow):
             self.projstack.setCurrentIndex(index)
             self.topstack.setCurrentIndex(self.PG_TOP_PROJECT)
             self.projstack.currentWidget().get_menu().menuAction().setVisible(True)
+            with suppress(AttributeError):
+                self.set_page_help()
 
-    def showhelp(self):
+    def showmanual(self):
         ''' Show the user manual '''
         filename = gui_common.resource_path('SUNCALmanual.pdf')
         QtGui.QDesktopServices.openUrl(QtCore.QUrl(r'file:/' + filename))
+
+    def open_page_help(self):
+        ''' Make the help dock visible '''
+        self.helpdock.setVisible(True)
+        self.set_page_help()
+
+    def set_page_help(self):
+        ''' Change the help report to display, get it from the active widget '''
+        if self.topstack.currentIndex() == self.PG_TOP_INSERT:
+            rpt = self.topstack.currentWidget().help_report()
+        else:
+            try:
+                rpt = self.projstack.currentWidget().help_report()
+            except AttributeError:
+                rpt = report.Report()
+                rpt.add('No help available')
+        self.helpdock.setHelp(rpt)
 
     def edit_prefs(self):
         ''' Show preferences dialog '''

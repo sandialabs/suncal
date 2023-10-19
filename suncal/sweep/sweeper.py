@@ -8,9 +8,10 @@ def model_copy(model):
     ''' Make a deep copy of the uncertainty Model '''
     exprs = [f'{name}={expr}' for name, expr in zip(model.functionnames, model.exprs)]
     modelcopy = Model(*exprs)
+    modelcopy.descriptions = model.descriptions
     for varname in modelcopy.variables.names:
         var = modelcopy.var(varname)
-        var.measure(model.variables.expected[varname])
+        var.measure(model.variables.expected[varname], description=model.var(varname).description)
         for typeb in model.variables.variables[varname]._typeb:
             var.typeb(dist=typeb.distname, description=typeb.description,
                       units=typeb.units, name=typeb.name, **typeb.kwargs)

@@ -9,6 +9,7 @@ from pint import PintError
 from . import gui_common
 from . import gui_widgets
 from ..common import report, distributions, unitmgr
+from .help_strings import UncertHelp
 
 
 class OutputPlotWidget(QtWidgets.QWidget):
@@ -370,6 +371,7 @@ class OutputUnitsWidget(QtWidgets.QWidget):
 class PageOutput(QtWidgets.QWidget):
     ''' Page for viewing output values '''
     back = QtCore.pyqtSignal()
+    change_help = QtCore.pyqtSignal()
 
     allitems = ['Summary', 'Comparison Plots', 'Expanded Uncertainties', 'Uncertainty Budget',
                 'GUM Derivation', 'GUM Validity', 'Monte Carlo Distribution',
@@ -450,6 +452,7 @@ class PageOutput(QtWidgets.QWidget):
         ''' Change the output page '''
         self.ctrlStack.setCurrentIndex(self.outputSelect.currentIndex())
         self.outputupdate()
+        self.change_help.emit()
 
     def load_proj(self, uncproj):
         ''' Save the uncertainty calculator object used to show the output pages '''
@@ -678,3 +681,17 @@ class PageOutput(QtWidgets.QWidget):
 
     def goback(self):
         self.back.emit()
+
+    def help_report(self):
+        ''' Get the help report to display the current widget mode '''
+        option = self.outputSelect.currentText()
+        return {'Summary': UncertHelp.summary,
+                'Expanded Uncertainties': UncertHelp.expanded,
+                'Uncertainty Budget': UncertHelp.budget,
+                'GUM Derivation': UncertHelp.derivation,
+                'Monte Carlo Convergence': UncertHelp.converge,
+                'Comparison Plots': UncertHelp.plots,
+                'Monte Carlo Input Plots': UncertHelp.montecarlo,
+                'GUM Validity': UncertHelp.validity,
+                'Monte Carlo Distribution': UncertHelp.mcdistribution,
+                }.get(option, UncertHelp.nohelp)()

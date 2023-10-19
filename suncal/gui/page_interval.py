@@ -9,6 +9,7 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from . import gui_common   # noqa: F401
 from . import gui_widgets
 from . import page_dataimport
+from .help_strings import IntervalHelp
 from ..intervals import datearray
 from ..intervals import BinomialIntervalAssets, TestIntervalAssets
 
@@ -702,7 +703,7 @@ class IntervalWidget(QtWidgets.QWidget):
             mbox.setStandardButtons(QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
             ok = mbox.exec_()
             if ok == QtWidgets.QMessageBox.Yes:
-                self.projitem.model.__ge__remasset(self.asset.currentText())
+                self.projitem.model.remasset(self.asset.currentText())
                 self.asset.removeItem(self.asset.currentIndex())
 
     def load_data(self):
@@ -781,6 +782,17 @@ class IntervalWidget(QtWidgets.QWidget):
     def save_report(self):
         ''' Save full report, asking user for settings/filename '''
         gui_widgets.savereport(self.get_report())
+
+    def help_report(self):
+        ''' Get the help report to display the current widget mode '''
+        if 'test' in self.mode:  # intervaltest, intervaltestasset
+            return IntervalHelp.test()
+        elif 'binom' in self.mode:  # intervalbinom, intervalbinomasset
+            return IntervalHelp.binomial()
+        elif 'variable' in self.mode:  # intervalvariables, intervalvariablesasset
+            return IntervalHelp.variables()
+        else:
+            return IntervalHelp.nohelp()
 
 
 class BinData(QtWidgets.QDialog):

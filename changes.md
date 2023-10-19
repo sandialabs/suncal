@@ -1,5 +1,21 @@
 # Change History
 
+## Version 1.6.4
+
+- Added inline help documentation
+- Risk Analysis: Added calculation of conditional false accept risk and guardbanding based on conditional risk
+- Risk Analysis: Added option to set process distribution using ITP
+- Data Sets: Fixed errors when saving and displaying histograms with empty data
+- Other minor bug fixes
+
+API Changes - Risk Analysis (possibly breaking):
+
+- Target PFA guardband calculation `risk.guardband` is now `risk.guardband.target`.
+- `GB` parameter of `PFA_norm` and `PFR_norm` methods must be float. To calculate GB using a defined method, use methods in `risk.guardband_tur.*`.
+- Removed `approx` keyword from risk `PFA`, `PFR` and `guardband.target methods`.
+- `PFAR_MC` returns an additional element for Conditional PFA.
+
+
 ## Version 1.6.3
 
 - Added re() and im() functions for ModelComplex calculations
