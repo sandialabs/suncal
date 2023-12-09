@@ -8,6 +8,6 @@ markdown==3.4.1
 pint==0.20.1
 pyqt5==5.15.7
 scipy==1.10.0
-PyInstaller==5.7  # For building exe
+PyInstaller==5.13.1  # For building exe
 pip-licenses      # Needed to generate license info for exe about page
 pytest            # To run test cases
