@@ -2,6 +2,8 @@
 
 The Suncal-Web interface currently provides these tools as a beta-test:
 
+- [Decision Risk Calculator](risk.html): Calculate probability of false accept and reject
+- [Decision Risk Curves](riskcurves.html): Generate plots of decision risk versus guardbanding, in-tolerance probability, or TURs
 - [Student T Calculator](student.html): Calculate coverage factor, level of confidence, and degrees of freedom
 - [Units Converter](units.html): Convert between measurement units
 
@@ -17,17 +19,6 @@ Source code for this website and the web interface can be found on [github](http
 
 Suncal-Web is still under active development and considered in beta testing.
 
-
-### Limitations
-
-Some features are only available in the desktop version at this time, including:
-
-- Loading and saving calculation setup
-- Reverse and swept uncertainty propagation
-- Analysis of Variance calculations
-- Calibration interval analysis
-- Curve fitting uncertainty analysis
-- Combining the results of different calculations
 
 
 ### License and Copyright
