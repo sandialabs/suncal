@@ -51,7 +51,7 @@ def _wrap_callable(func, informats=None, outfmt='ri'):
         if hasattr(out, '_fields'):  # Namedtuple
             outnames = out._fields
         else:
-            outnames = ['{funcname}_{i+1}' for i in range(noutputs)]
+            outnames = [f'{funcname}_{i+1}' for i in range(noutputs)]
     except TypeError:
         noutputs = 1
         outnames = [funcname]
