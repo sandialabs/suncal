@@ -97,20 +97,26 @@ class GumResults:
         ''' List of variable uncertainty names (ie "u_x") in model '''
         return list(self.variables.uncertainty.keys())
 
-    def expanded(self, conf=0.95):
+    def expanded(self, conf=0.95, k=None):
         ''' Expanded uncertainties
 
             Args:
-                conf (float): Level of confidence for interval
+                conf (float): Level of confidence in interval
+                k (float): Coverage factor for interval, overrides conf
 
             Returns:
-                Expanded tuple of (uncerts, kvalues, confidence) dictionaries
+                Dictionary of of Expanded(uncerts, kvalues, confidence)
+                for each output function.
         '''
         assert 0 < conf < 1
         expanded = {}
         for name in self.functionnames:
-            k = ttable.k_factor(conf, self.degf[name])
-            expanded[name] = Expanded(self.uncertainty[name]*k, k, conf)
+            if k is None:
+                kmult = ttable.k_factor(conf, self.degf[name])
+            else:
+                kmult = k
+                conf = ttable.confidence(k, self.degf[name])
+            expanded[name] = Expanded(self.uncertainty[name]*kmult, kmult, conf)
         return expanded
 
     def expand(self, name=None, k=None, conf=0.95):

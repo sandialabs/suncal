@@ -155,6 +155,7 @@ class ReportIntervalVariablesUncertainty:
         self._results = results
         if results is not None:
             self.interval = self._results.interval
+        self.fit = ReportFit(self._results, self._results)
 
     def eop(self):
         ''' Get end-of-period value and uncertainty '''
@@ -224,6 +225,7 @@ class ReportIntervalVariablesReliability:
         self._results = results
         if results is not None:
             self.interval = results.interval
+        self.fit = ReportFit(self._results, self._results)
 
     def eop(self):
         ''' Get end-of-period value and uncertainty '''
@@ -254,7 +256,7 @@ class ReportIntervalVariablesReliability:
         ''' Plot the variables fit and suggested interval '''
         t = self._results.dt
         k = self._results.k
-        u0 = self._results.u0 / k
+        u0 = self._results.u0 / self._results.k_u0
         b = self._results.b
         cov = self._results.cov
         syx = self._results.syx

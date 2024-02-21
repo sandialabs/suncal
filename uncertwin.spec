@@ -3,10 +3,12 @@
 block_cipher = None
 
 
-a = Analysis(['suncal\\startui.py'],
+a = Analysis(['suncal\\gui\\__main__.py'],
              pathex=[],
              binaries=[],
-             datas=[('suncal/gui/SUNCALmanual.pdf', '.')],
+             datas=[('suncal/gui/SUNCALmanual.pdf', '.'),
+                    ('suncal/common/style/suncal_light.mplstyle', '.'),
+                    ('suncal/common/style/suncal_dark.mplstyle', '.')],
              hiddenimports=[],
              hookspath=[],
              hooksconfig={
@@ -29,7 +31,7 @@ exe = EXE(pyz,
           name='Suncal',
           debug=False,
           strip=False,
-          icon='suncal/gui/PSLcal_logo.ico',
+          icon='suncal/gui/icons/PSLcal_logo.ico',
           upx=True,
           console=False,
           version='winexe_version_info.txt')

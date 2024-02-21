@@ -33,21 +33,23 @@ class ReportMonteCarlo:
         rpt.table(rows, hdr=hdr)
         return rpt
 
-    def expanded(self, conf=0.95, shortest=False, **kwargs):
+    def expanded(self, conf=0.95, k=None, shortest=False, **kwargs):
         ''' Generate table of expanded uncertainties, min/max, from level of confidence
 
             Args:
                 conf (float): Level of confidence in interval
+                k: Coverage factor (overrides confidence)
                 shortest (bool): Use shortest instead of symmetric interval
         '''
         rows = []
         hdr = ['Function', 'Level of Confidence', 'Minimum', 'Maximum', 'Coverage Factor']
-        expanded = self._results.expanded(conf, shortest=False)
+        expanded = self._results.expanded(conf, k=k, shortest=False)
 
         for funcname in self._results.functionnames:
             uncert = self._results.uncertainty[funcname]
             low = expanded[funcname].low
             high = expanded[funcname].high
+            conf = expanded[funcname].confidence
             row = [report.Math(funcname),
                    f'{conf*100:.2f}%',
                    report.Number(low, matchto=uncert, **kwargs),
@@ -86,7 +88,7 @@ class ReportMonteCarlo:
 
         correlation = self._results.correlation()
 
-        hdr = ['-'] + [report.Math(n) for n in self._results.functionnames]
+        hdr = ['&nbsp;'] + [report.Math(n) for n in self._results.functionnames]
         rows = []
         for func1 in self._results.functionnames:
             row = [report.Math(func1)]
@@ -124,9 +126,10 @@ class McPlot:
         axs = plotting.axes_grid(len(functions), fig, len(functions))
         for fname, ax in zip(functions, axs):
             self.axis.hist(funcname=fname, ax=ax, bins=bins, labeldesc=labeldesc, **kwargs)
-        fig.tight_layout()
+        if len(axs) > 1:
+            fig.tight_layout()
 
-    def pdf(self, fig=None, functions=None, bins=100, interval=None, shortest=False,
+    def pdf(self, fig=None, functions=None, bins=100, interval=None, k=None, shortest=False,
             labeldesc=False, **kwargs):
         ''' Plot piecewise PDF of Monte Carlo distribution,
 
@@ -135,6 +138,7 @@ class McPlot:
                 functions (list of str): Function names to include
                 bins (int): Number of histogram bins
                 interval (float): Show expanded interval to this level of confidence
+                k (float): Show expanded interval to this coverage factor (overrides interval argument)
                 shortest (bool): Use shortest instead of symmetric interval
                 labeldesc (bool): Use "description" as axis label instead of variable name
                 **kwargs: passed to hist()
@@ -148,8 +152,9 @@ class McPlot:
         axs = plotting.axes_grid(len(functions), fig, len(functions))
         for fname, ax in zip(functions, axs):
             self.axis.pdf(funcname=fname, ax=ax, bins=bins, interval=interval,
-                          shortest=shortest, labeldesc=labeldesc, **kwargs)
-        fig.tight_layout()
+                          k=k, shortest=shortest, labeldesc=labeldesc, **kwargs)
+        if len(axs) > 1:
+            fig.tight_layout()
 
     def scatter(self, functions=None, fig=None, points=10000, labeldesc=False, **kwargs):
         ''' Plot correlations
@@ -361,7 +366,7 @@ class McAxisPlot:
             return y
         return [np.nan] * x
 
-    def hist(self, funcname=None, ax=None, bins=100, interval=None, shortest=False,
+    def hist(self, funcname=None, ax=None, bins=100, interval=None, k=None, shortest=False,
              labeldesc=False, **kwargs):
         ''' Plot histogram of one function
 
@@ -370,6 +375,7 @@ class McAxisPlot:
                 ax (plt.axes): Matplotlib Axis to plot on
                 bins (int): Number of histogram bins
                 interval (float): Expanded interval to plot at this confidence
+                k (float): Show expanded interval to this coverage factor (overrides interval argument)
                 shortest (bool): Use shortest instead of symmetric interval
                 labeldesc (bool): Use "description" as axis label instead of variable name
         '''
@@ -379,12 +385,16 @@ class McAxisPlot:
         if np.isfinite(samples).any():
             _, _, line = ax.hist(samples, bins=bins, density=True, **kwargs)
 
-        if interval is not None:
-            expand = self._results.expand(funcname, conf=interval, shortest=shortest)
+        if k is not None or interval is not None:
+            if k is not None:
+                expand = self._results.expand(funcname, k=k)
+                ax.legend(loc='lower left', title=f'k = {k:.2f}')
+            else:
+                expand = self._results.expand(funcname, conf=interval, shortest=shortest)
+                ax.legend(loc='lower left', title=f'{interval*100:.2f}% Coverage')
             low, high = unitmgr.strip_units(expand.low), unitmgr.strip_units(expand.high)
-            ax.axvline(low, ls='--', color='C6')
-            ax.axvline(high, ls='--', color='C6', label='Monte Carlo')
-            ax.legend(loc='lower left', title=f'{interval*100:.2f}% Coverage')
+            ax.axvline(low, ls='--', color='C4')
+            ax.axvline(high, ls='--', color='C4', label='Monte Carlo')
 
         if labeldesc:
             label = self._results.descriptions.get(funcname)
@@ -395,7 +405,8 @@ class McAxisPlot:
         ax.set_xlabel(label)
         return line
 
-    def pdf(self, funcname=None, ax=None, bins=100, interval=None, shortest=False, labeldesc=False, **kwargs):
+    def pdf(self, funcname=None, ax=None, bins=100, interval=None, k=None,
+            shortest=False, labeldesc=False, **kwargs):
         ''' Plot piecewise PDF of one function
 
             Args:
@@ -403,6 +414,7 @@ class McAxisPlot:
                 ax (plt.axes): Matplotlib Axis to plot on
                 bins (int): Number of histogram bins
                 interval (float): Show expanded interval to this level of confidence
+                k (float): Show expanded interval to this coverage factor (overrides interval argument)
                 shortest (bool): Use shortest instead of symmetric interval
                 labeldesc (bool): Use "description" as axis label instead of variable name
                 **kwargs: passed to hist()
@@ -415,12 +427,16 @@ class McAxisPlot:
         y = self._approx_pdf(x, funcname=funcname, bins=bins)
         line, *_ = ax.plot(x, y, **kwargs)
 
-        if interval is not None:
-            low, high, _, _ = self._results.expand(funcname, conf=interval, shortest=shortest)
+        if k is not None or interval is not None:
+            if k is not None:
+                low, high, _, _ = self._results.expand(funcname, k=k)
+                ax.legend(loc='lower left', title=f'k = {k:.2f}')
+            else:
+                low, high, _, _ = self._results.expand(funcname, conf=interval, shortest=shortest)
+                ax.legend(loc='lower left', title=f'{interval*100:.2f}% Coverage')
             low, high = unitmgr.strip_units(low), unitmgr.strip_units(high)
-            ax.axvline(low, ls='--', color='C6')
-            ax.axvline(high, ls='--', color='C6', label='Monte Carlo')
-            ax.legend(loc='lower left', title=f'{interval*100:.2f}% Coverage')
+            ax.axvline(low, ls='--', color='C4')
+            ax.axvline(high, ls='--', color='C4', label='Monte Carlo')
 
         if labeldesc:
             label = self._results.descriptions.get(funcname)
@@ -468,6 +484,7 @@ class McAxisPlot:
         kwargs.setdefault('marker', '.')
         kwargs.setdefault('ls', '')
         kwargs.setdefault('markersize', 2)
+        kwargs.setdefault('color', 'C2')
         xsamples, xunits = unitmgr.split_units(self._results.varsamples[varname1])
         ysamples, yunits = unitmgr.split_units(self._results.varsamples[varname2])
         ax.plot(xsamples[:points], ysamples[:points], **kwargs)
@@ -562,6 +579,7 @@ class McAxisPlot:
         kwargs.setdefault('marker', '.')
         kwargs.setdefault('ls', '')
         kwargs.setdefault('markersize', 2)
+        kwargs.setdefault('color', 'C2')
 
         with suppress(ValueError):  # Raises in case where len(x) != len(y) when one output is constant
             ax.plot(xsamples[:points], ysamples[:points], **kwargs)

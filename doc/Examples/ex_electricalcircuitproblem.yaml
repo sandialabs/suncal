@@ -8,40 +8,13 @@
   - desc: Time Constant
     expr: R1*(C2 + C3)
     name: tau
-    units: millisecond
+    units: ms
   inputs:
-  - desc: Capacitor 3
-    mean: 0.22
-    name: C3
-    uncerts:
-    - a: '.01'
-      degf: .inf
-      desc: Manufacturer spec of capacitor 3
-      dist: uniform
-      name: u(C3)
-      units: microfarad
-    units: microfarad
-  - desc: Resistor
-    mean: 32.2014
-    name: R1
-    uncerts:
-    - degf: 9
-      desc: Type A uncertainty from resistance.txt
-      dist: normal
-      name: typeA
-      unc: 0.0038096952342382188
-      units: kiloohm
-    - conf: '.95'
-      degf: .inf
-      desc: Type B uncertainty of meter
-      dist: normal
-      name: meter
-      unc: .01% + 0.001%range(100)
-      units: kiloohm
-    units: kiloohm
-  - desc: Capacitor 2
+  - autocorrelate: true
+    desc: Capacitor 2
     mean: 0.1
     name: C2
+    numnewmeas: 1
     uncerts:
     - a: '.005'
       degf: .inf
@@ -50,6 +23,45 @@
       name: u(C2)
       units: microfarad
     units: microfarad
+  - autocorrelate: true
+    desc: Capacitor 3
+    mean: 0.22
+    name: C3
+    numnewmeas: 1
+    uncerts:
+    - a: '.01'
+      degf: .inf
+      desc: Manufacturer spec of capacitor 3
+      dist: uniform
+      name: u(C3)
+      units: microfarad
+    units: microfarad
+  - autocorrelate: false
+    desc: Resistor
+    mean: 32.2014
+    name: R1
+    numnewmeas: 10
+    typea:
+    - 32.205
+    - 32.1878
+    - 32.2081
+    - 32.2201
+    - 32.1807
+    - 32.199
+    - 32.1965
+    - 32.212
+    - 32.194
+    - 32.2108
+    typea_uncert: 0.0038096952342382188
+    uncerts:
+    - conf: '.95'
+      degf: .inf
+      desc: Type B uncertainty of meter
+      dist: normal
+      name: meter
+      unc: .01% + 0.001%range(100)
+      units: kiloohm
+    units: kiloohm
   mode: uncertainty
   name: uncertainty
   samples: 1000000

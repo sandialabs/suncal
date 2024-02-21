@@ -113,7 +113,7 @@ class IntervalHelp:
                 '- **Uncertainty k**: Coverage factor for the entered measurement uncertainty\n'
                 '- **Next interval as-left value**: The measured value at the beginning of the upcoming interval\n'
                 '- **Fit polynomial order**: Polynomial order for the curve fit to asset deviation over time\n\n')
-        
+
         rpt.hdr('Uncertainty Target Options', level=3)
         rpt.txt('- **Maximum Allowed Uncertainty**: Stop the interval when the uncertainty is predicted '
                 'to exceed this value\n\n')

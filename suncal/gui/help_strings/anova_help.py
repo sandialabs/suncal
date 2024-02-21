@@ -1,6 +1,7 @@
 ''' Inline help reports for ANOVA tools '''
 from ...common import report
 
+
 def inputs():
     rpt = report.Report()
     rpt.hdr('Data Entry', level=3)
@@ -33,7 +34,7 @@ class AnovaHelp:
                 '- **Std. Dev.**: The sample standard deviation of each column\n'
                 '- **Std. Error.**: The standard error of each column\n'
                 '- **Deg. Freedom**: Degrees of freedom (number of measurements minus one) for each column.\n\n')
-    
+
         rpt.txt('The Pooled Statistics shows statistics over all the groups:\n\n'
                 '- **Grand Mean**: Mean of all the individual measurements\n'
                 '- **Repeatability**: The pooled standard deviation. Square root of '

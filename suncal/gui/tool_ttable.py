@@ -3,12 +3,11 @@
 import numpy as np
 from scipy import stats
 
-from PyQt5 import QtWidgets, QtGui
+from PyQt6 import QtWidgets, QtGui
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 
-from . import gui_common  # noqa: F401
-from . import gui_widgets
+from . import widgets
 from ..common import ttable
 
 
@@ -24,11 +23,11 @@ class TTableDialog(QtWidgets.QDialog):
         self.setFont(font)
         self.cmbSolveFor = QtWidgets.QComboBox()
         self.cmbSolveFor.addItems(['Coverage Factor', 'Confidence', 'Degrees of Freedom'])
-        self.degf = gui_widgets.LineEditLabelWidget('Degrees of Freedom', '30')
+        self.degf = widgets.LineEditLabelWidget('Degrees of Freedom', '30')
         self.degf.setValidator(QtGui.QIntValidator(1, 10000000))
-        self.conf = gui_widgets.LineEditLabelWidget('Confidence Percent', '95.45')
+        self.conf = widgets.LineEditLabelWidget('Confidence Percent', '95.45')
         self.conf.setValidator(QtGui.QDoubleValidator(0, 100, 6))
-        self.k = gui_widgets.LineEditLabelWidget('Coverage Factor', '2.00')
+        self.k = widgets.LineEditLabelWidget('Coverage Factor', '2.00')
         self.k.setValidator(QtGui.QDoubleValidator(0, 1000, 6))
         self.k.setVisible(False)
         self.output = QtWidgets.QLabel()
@@ -88,7 +87,6 @@ class TTableDialog(QtWidgets.QDialog):
         ax.axvline(-k, ls=':', color='black')
         ax.set_ylabel('Probability Density Function')
         ax.legend(loc='upper right')
-        self.fig.tight_layout()
         self.canvas.draw_idle()
 
     def change_solvefor(self):

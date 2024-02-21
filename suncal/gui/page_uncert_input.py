@@ -3,7 +3,7 @@ from copy import deepcopy
 
 import sympy
 import numpy as np
-from PyQt5 import QtWidgets, QtGui, QtCore
+from PyQt6 import QtWidgets, QtGui, QtCore
 import matplotlib.pyplot as plt
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
@@ -12,53 +12,11 @@ from pint import PintError
 from ..common import report, uparser, ttable, unitmgr
 from ..uncertainty.variables import Typeb, RandomVariable
 from ..uncertainty import Model
-from . import gui_common
-from . import gui_widgets
-from . import page_dataimport
-
-
-TREESTYLE = """
-QTreeView {
-    show-decoration-selected: 1;
-}
-"""
-
-
-TABLESTYLE = """
-QTableView {
-    show-decoration-selected: 1;
-}
-QTableView::item:selected {
-    border: 1px solid #567dbc;
-}
-QTableView::item:selected:active{
-    background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1, stop: 0 #6ea1f1, stop: 1 #567dbc);
-}
-QTableView::item:selected:!active {
-    background: palette(base);
-    border: none;
-}"""
-
-
-class TableItemTex(QtWidgets.QTableWidgetItem):
-    ROLE_ENTERED = QtCore.Qt.UserRole + 1    # Original, user-entered data
-
-    ''' TableWidgetItem formatted to display Math expression '''
-    def __init__(self, expr='', editable=True):
-        super().__init__()
-        if not editable:
-            self.setFlags(QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsSelectable)
-        self.setExpr(expr)
-
-    def setExpr(self, expr):
-        # Remove display text, replace with rendered math
-        px = QtGui.QPixmap()
-        ratio = QtWidgets.QApplication.instance().devicePixelRatio()
-        tex = uparser.parse_math_with_quantities_to_tex(expr)
-        px.loadFromData(report.Math.from_latex(tex).svg_buf(fontsize=16*ratio).read())
-        px.setDevicePixelRatio(ratio)
-        self.setData(QtCore.Qt.DecorationRole, px)
-        self.setData(self.ROLE_ENTERED, expr)
+from .gui_settings import gui_settings
+from .gui_common import BlockedSignals
+from . import widgets
+from . import gui_styles
+from . import page_typea
 
 
 class FunctionTableWidget(QtWidgets.QTableWidget):
@@ -79,28 +37,30 @@ class FunctionTableWidget(QtWidgets.QTableWidget):
     COL_DESC = 3
     COL_CNT = 4
 
-    ROLE_ENTERED = QtCore.Qt.UserRole + 1    # Original, user-entered data
+    ROLE_ENTERED = QtCore.Qt.ItemDataRole.UserRole + 1    # Original, user-entered data
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        font = self.font()
+        font.setPointSize(12)
+        self.setFont(font)
         self.setColumnCount(self.COL_CNT)
         self.setDragEnabled(True)
         self.setAcceptDrops(True)
         self.viewport().setAcceptDrops(True)
         self.setDragDropOverwriteMode(False)
         self.setDropIndicatorShown(True)
-        self.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
-        self.setDragDropMode(QtWidgets.QAbstractItemView.InternalMove)
-        self._delegate = gui_widgets.LatexDelegate()  # Assign to self - don't let the garbage collector eat it
+        self.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
+        self.setDragDropMode(QtWidgets.QAbstractItemView.DragDropMode.InternalMove)
+        self._delegate = widgets.LatexDelegate()  # Assign to self - don't let the garbage collector eat it
         self.setItemDelegateForColumn(self.COL_NAME, self._delegate)
         self.setItemDelegateForColumn(self.COL_EXPR, self._delegate)
-        self.setSizePolicy(QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Minimum)
-        self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
-        self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
-        self.setStyleSheet(TABLESTYLE)
+        self.setSizePolicy(QtWidgets.QSizePolicy.Policy.Minimum, QtWidgets.QSizePolicy.Policy.Minimum)
+        self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.verticalHeader().hide()
         self.verticalHeader().setDefaultSectionSize(48)
-        self.setSizePolicy(QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Minimum)
+        self.setSizePolicy(QtWidgets.QSizePolicy.Policy.Minimum, QtWidgets.QSizePolicy.Policy.Minimum)
         self.clear()
         self.addRow()
         self.cellChanged.connect(self.itemEdit)
@@ -141,28 +101,27 @@ class FunctionTableWidget(QtWidgets.QTableWidget):
 
     def load_config(self, config):
         ''' Load the uncert project/model '''
-        self.blockSignals(True)
-        self.clear()
-        for row, function in enumerate(config.get('functions', [])):
-            self.addRow()
-            self.setItem(row, self.COL_NAME, TableItemTex(function['name']))
-            self.setItem(row, self.COL_EXPR, TableItemTex(function['expr']))
-            self.setItem(row, self.COL_UNIT, gui_widgets.EditableTableItem(function.get('units', '')))
-            self.setItem(row, self.COL_DESC, gui_widgets.EditableTableItem(function.get('desc', '')))
-        self.blockSignals(False)
+        with BlockedSignals(self):
+            self.clear()
+            functions = config.get('functions', [])
+            self.setRowCount(len(functions))
+            for row, function in enumerate(functions):
+                self.setItem(row, self.COL_NAME, widgets.TableItemTex(function['name']))
+                self.setItem(row, self.COL_EXPR, widgets.TableItemTex(function['expr']))
+                self.setItem(row, self.COL_UNIT, widgets.EditableTableItem(function.get('units', '')))
+                self.setItem(row, self.COL_DESC, widgets.EditableTableItem(function.get('desc', '')))
         self.funcchanged.emit(self.get_config())
         self.fixSize()
 
     def addRow(self):
         ''' Add an empty row to function table '''
-        self.blockSignals(True)
-        rows = self.rowCount()
-        self.setRowCount(rows + 1)
-        self.setItem(rows, self.COL_NAME, TableItemTex())
-        self.setItem(rows, self.COL_EXPR, TableItemTex())
-        self.setItem(rows, self.COL_UNIT, gui_widgets.EditableTableItem())
-        self.setItem(rows, self.COL_DESC, gui_widgets.EditableTableItem())
-        self.blockSignals(False)
+        with BlockedSignals(self):
+            rows = self.rowCount()
+            self.setRowCount(rows + 1)
+            self.setItem(rows, self.COL_NAME, widgets.TableItemTex())
+            self.setItem(rows, self.COL_EXPR, widgets.TableItemTex())
+            self.setItem(rows, self.COL_UNIT, widgets.EditableTableItem())
+            self.setItem(rows, self.COL_DESC, widgets.EditableTableItem())
         self.fixSize()
 
     def remRow(self):
@@ -184,101 +143,99 @@ class FunctionTableWidget(QtWidgets.QTableWidget):
 
     def itemEdit(self, row, col):
         ''' A cell was changed. '''
-        self.blockSignals(True)
-        ok = False
-        name = self.item(row, self.COL_NAME).data(self.ROLE_ENTERED)
-        expr = self.item(row, self.COL_EXPR).data(self.ROLE_ENTERED)
-        unit = self.item(row, self.COL_UNIT).text()
-        if expr is None:
-            expr = self.item(row, self.COL_EXPR).text()
-
-        # Check Expression
-        try:
-            fn = uparser.parse_math_with_quantities(expr, name=name)
-        except (ValueError, PintError):
-            fn = None
-        else:
-            ok = True
-
-        try:
-            sname = uparser.parse_math(name)
-        except ValueError:
-            sname = None
+        with BlockedSignals(self):
             ok = False
+            name = self.item(row, self.COL_NAME).data(self.ROLE_ENTERED)
+            expr = self.item(row, self.COL_EXPR).data(self.ROLE_ENTERED)
+            unit = self.item(row, self.COL_UNIT).text()
+            if expr is None:
+                expr = self.item(row, self.COL_EXPR).text()
 
-        if self.item(row, self.COL_EXPR) is not None:
-            if fn is not None:
-                self.item(row, self.COL_EXPR).setBackground(QtGui.QBrush(gui_common.COLOR_OK))
-            else:
-                self.item(row, self.COL_EXPR).setBackground(QtGui.QBrush(gui_common.COLOR_INVALID))
-                self.clearSelection()
-
-        if col == self.COL_NAME and self.item(row, self.COL_NAME) is not None:
-            if isinstance(sname, sympy.Basic):
-                self.item(row, self.COL_NAME).setBackground(QtGui.QBrush(gui_common.COLOR_OK))
-            else:
-                self.item(row, self.COL_NAME).setBackground(QtGui.QBrush(gui_common.COLOR_INVALID))
-                self.clearSelection()
-
-        # Check units
-        if unit != '':
+            # Check Expression
             try:
-                unit = uparser.parse_unit(unit)
-            except ValueError:
-                self.item(row, self.COL_UNIT).setBackground(QtGui.QBrush(gui_common.COLOR_INVALID))
-                self.item(row, self.COL_UNIT).setText(unit)
-                self.clearSelection()
+                fn = uparser.parse_math_with_quantities(expr, name=name)
+            except (ValueError, PintError):
+                fn = None
             else:
-                self.item(row, self.COL_UNIT).setBackground(QtGui.QBrush(gui_common.COLOR_OK))
-                self.item(row, self.COL_UNIT).setText(f'{unit:~P}')
-                unit = str(unit)
-        else:
-            unit = None
+                ok = True
 
-        self.blockSignals(False)
+            try:
+                sname = uparser.parse_math(name)
+            except ValueError:
+                sname = None
+                ok = False
+
+            if self.item(row, self.COL_EXPR) is not None:
+                if fn is not None:
+                    self.item(row, self.COL_EXPR).setBackground(gui_styles.color.transparent)
+                else:
+                    self.item(row, self.COL_EXPR).setBackground(gui_styles.color.invalid)
+                    self.clearSelection()
+
+            if col == self.COL_NAME and self.item(row, self.COL_NAME) is not None:
+                if isinstance(sname, sympy.Basic):
+                    self.item(row, self.COL_NAME).setBackground(gui_styles.color.transparent)
+                else:
+                    self.item(row, self.COL_NAME).setBackground(gui_styles.color.invalid)
+                    self.clearSelection()
+
+            # Check units
+            if unit != '':
+                try:
+                    unit = uparser.parse_unit(unit)
+                except ValueError:
+                    self.item(row, self.COL_UNIT).setBackground(gui_styles.color.invalid)
+                    self.item(row, self.COL_UNIT).setText(unit)
+                    self.clearSelection()
+                else:
+                    self.item(row, self.COL_UNIT).setBackground(gui_styles.color.transparent)
+                    self.item(row, self.COL_UNIT).setText(f'{unit:~P}')
+                    unit = str(unit)
+            else:
+                unit = None
+
         if ok:
             self.funcchanged.emit(self.get_config())
 
     def drop_on(self, event):
         ''' Get row to drop on (see https://stackoverflow.com/a/43789304) '''
-        index = self.indexAt(event.pos())
+        index = self.indexAt(event.position().toPoint())
         if not index.isValid():
             return self.rowCount()
-        return index.row() + 1 if self.is_below(event.pos(), index) else index.row()
+        return index.row() + 1 if self.is_below(event.position().toPoint(), index) else index.row()
 
     def dropEvent(self, event):
         ''' Process drop event '''
-        self.blockSignals(True)
-        if not event.isAccepted() and event.source() == self:
-            drop_row = self.drop_on(event)
-            rows = sorted(set(item.row() for item in self.selectedItems()))
-            rows_to_move = [[QtWidgets.QTableWidgetItem(self.item(row_index, column_index))
-                            for column_index in range(self.columnCount())]
-                            for row_index in rows]
-            for row_index in reversed(rows):
-                self.removeRow(row_index)
-                if row_index < drop_row:
-                    drop_row -= 1
+        with BlockedSignals(self):
+            if not event.isAccepted() and event.source() == self:
+                drop_row = self.drop_on(event)
+                rows = sorted(set(item.row() for item in self.selectedItems()))
+                rows_to_move = [[QtWidgets.QTableWidgetItem(self.item(row_index, column_index))
+                                for column_index in range(self.columnCount())]
+                                for row_index in rows]
+                for row_index in reversed(rows):
+                    self.removeRow(row_index)
+                    if row_index < drop_row:
+                        drop_row -= 1
 
-            for row_index, data in enumerate(rows_to_move):
-                row_index += drop_row
-                self.insertRow(row_index)
-                for column_index, column_data in enumerate(data):
-                    self.setItem(row_index, column_index, column_data)
+                for row_index, data in enumerate(rows_to_move):
+                    row_index += drop_row
+                    self.insertRow(row_index)
+                    for column_index, column_data in enumerate(data):
+                        self.setItem(row_index, column_index, column_data)
 
-            event.accept()
-            for row_index in range(len(rows_to_move)):
-                self.item(drop_row + row_index, 0).setSelected(True)
-                self.item(drop_row + row_index, 1).setSelected(True)
+                event.accept()
+                for row_index in range(len(rows_to_move)):
+                    self.item(drop_row + row_index, 0).setSelected(True)
+                    self.item(drop_row + row_index, 1).setSelected(True)
 
-            # Remove blank rows to maintain consistency with functions list
-            for row_idx in reversed(range(self.rowCount())):
-                if ((self.item(row_idx, self.COL_EXPR) is None or
-                   self.item(row_idx, self.COL_EXPR).data(self.ROLE_ENTERED) == '')):
-                    self.removeRow(row_idx)
+                # Remove blank rows to maintain consistency with functions list
+                for row_idx in reversed(range(self.rowCount())):
+                    if ((self.item(row_idx, self.COL_EXPR) is None or
+                            self.item(row_idx, self.COL_EXPR).data(self.ROLE_ENTERED) == '')):
+                        self.removeRow(row_idx)
 
-        super().dropEvent(event)
-        self.blockSignals(False)
+            super().dropEvent(event)
 
     def is_below(self, pos, index):
         ''' Check if index is below position. Used for drag/drop '''
@@ -289,15 +246,15 @@ class FunctionTableWidget(QtWidgets.QTableWidget):
         elif rect.bottom() - pos.y() < margin:
             return True
         return (rect.contains(pos, True) and
-                not (int(self.model().flags(index)) & QtCore.Qt.ItemIsDropEnabled) and
+                not (self.model().flags(index) & QtCore.Qt.ItemFlag.ItemIsDropEnabled) and
                 pos.y() >= rect.center().y())
 
     def is_valid(self):
         ''' Return True if all entries are valid. '''
         for row in range(self.rowCount()):
-            if (self.item(row, self.COL_EXPR).background().color() == gui_common.COLOR_INVALID or
-               self.item(row, self.COL_NAME).background().color() == gui_common.COLOR_INVALID or
-               self.item(row, self.COL_UNIT).background().color() == gui_common.COLOR_INVALID):
+            if (self.item(row, self.COL_EXPR).background().color() == gui_styles.color.invalid or
+               self.item(row, self.COL_NAME).background().color() == gui_styles.color.invalid or
+               self.item(row, self.COL_UNIT).background().color() == gui_styles.color.invalid):
                 return False
         return True
 
@@ -338,7 +295,7 @@ class FunctionTableWidget(QtWidgets.QTableWidget):
         ''' Override cursor so tab works as expected '''
         assert self.COL_CNT == 4   # If column defs change, need to update this tab-key behavior
         assert self.COL_DESC == 3
-        if cursorAction == QtWidgets.QAbstractItemView.MoveNext:
+        if cursorAction == QtWidgets.QAbstractItemView.CursorAction.MoveNext:
             index = self.currentIndex()
             if index.isValid():
                 if (index.column() in [self.COL_DESC] and
@@ -348,7 +305,7 @@ class FunctionTableWidget(QtWidgets.QTableWidget):
                     return index.sibling(index.row(), index.column()+1)
                 else:
                     return QtCore.QModelIndex()
-        elif cursorAction == QtWidgets.QAbstractItemView.MovePrevious:
+        elif cursorAction == QtWidgets.QAbstractItemView.CursorAction.MovePrevious:
             index = self.currentIndex()
             if index.isValid():
                 if index.column() == self.COL_NAME:
@@ -405,9 +362,9 @@ class FunctionTableWidget(QtWidgets.QTableWidget):
         mbox.setText(f'Set model equation?<br><br><img src="{math}"/>')
         mbox.setInformativeText('Measured Quantity entries may be removed.<br><br>Note: Do not use for reversing '
                                 'the calculation to determine required uncertainty of a measured quantity.')
-        mbox.setStandardButtons(QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
-        ok = mbox.exec_()
-        if ok == QtWidgets.QMessageBox.Yes:
+        mbox.setStandardButtons(QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No)
+        ok = mbox.exec()
+        if ok == QtWidgets.QMessageBox.StandardButton.Yes:
             expr = str(solution)
             if fn is not None:
                 # Must use delegate to set so equation renders properly
@@ -420,7 +377,7 @@ class FunctionTableWidget(QtWidgets.QTableWidget):
 
 
 class MeasTableWidget(QtWidgets.QTableWidget):
-    ''' Table Widget ... '''
+    ''' Table Widget showing the variables and their measured values/uncertainties '''
     COL_VARNAME = 0
     COL_VALNAME = 1
     COL_VALUE = 2
@@ -430,30 +387,29 @@ class MeasTableWidget(QtWidgets.QTableWidget):
     COL_STDUNC = 6
     COL_PREVIEW = 7
     COL_BTN = 8
-    COL_CNT = 9
+    COL_BTN2 = 9
+    COL_CNT = 10
 
     COL_DATA = COL_VALUE                   # setData lives in this column
-    ROLE_ENTERED = QtCore.Qt.UserRole + 1  # Value as entered by user
+    ROLE_ENTERED = QtCore.Qt.ItemDataRole.UserRole + 1  # Value as entered by user
     ROLE_CONFIGIDX = ROLE_ENTERED + 1      # Tuple. Index of (variableidx, uncertidx)
-
-    COLOR2 = QtGui.QBrush(QtGui.QColor(246, 246, 246, 255))
-    COLOR = {True: gui_common.COLOR_OK,
-             False: gui_common.COLOR_INVALID}
-    COLORINPT = {True: QtGui.QBrush(QtGui.QColor(246, 246, 246, 255)),
-                 False: gui_common.COLOR_INVALID}
 
     resizerows = QtCore.pyqtSignal()
     changed = QtCore.pyqtSignal(list)
+    correlate = QtCore.pyqtSignal(object)  # Send list of correlation coefficients
 
-    def __init__(self, projitem):
+    def __init__(self, component):
         super().__init__()
-        self.projitem = projitem
+        self.setcolors()
+        font = self.font()
+        font.setPointSize(12)
+        self.setFont(font)
+        self.component = component
         self.clear()
-        self.setStyleSheet(TABLESTYLE)
-        self._delegate = gui_widgets.LatexDelegate()
+        self._delegate = widgets.LatexDelegate()
         self.setItemDelegateForColumn(self.COL_VARNAME, self._delegate)
-        self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
-        self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.verticalHeader().hide()
         self.itemActivated.connect(self.editItem)
         self.itemChanged.connect(self.itemchange)
@@ -461,58 +417,111 @@ class MeasTableWidget(QtWidgets.QTableWidget):
         self.fixSize()
         self.config = []  # list of inputs, each one is a dict
         self.storedconfig = {}   # Stored configuration, for when variables are removed then put back
+        gui_styles.darkmode_signal().connect(self.setcolors)
+
+    def setcolors(self):
+        ''' Set color theme based on System Color Scheme (light or dark) '''
+        if gui_styles.isdark():
+            self.COLOR_VARROW_EDITABLE = QtGui.QBrush(QtGui.QColor(90, 90, 90, 255))
+            self.COLOR_VARROW = QtGui.QBrush(QtGui.QColor(75, 75, 75, 255))
+        else:
+            self.COLOR_VARROW_EDITABLE = QtGui.QBrush(QtGui.QColor(246, 246, 246, 255))
+            self.COLOR_VARROW = QtGui.QBrush(QtGui.QColor(236, 236, 236, 255))
 
     def load_config(self, config):
         ''' Load values from configuration '''
-        self.blockSignals(True)
-        self.clear()
-        self.config = config.get('inputs', [])
-        for varidx, variable in enumerate(self.config):
-            units = uparser.parse_unit(variable.get('units', ''))
-            degf = variable.get('degf', np.inf)
+        with BlockedSignals(self):
+            self.clear()
+            self.config = config.get('inputs', [])
+            for varidx, variable in enumerate(self.config):
+                units = uparser.parse_unit(variable.get('units', ''))
+                degf = variable.get('degf', np.inf)
+                typea_data = variable.get('typea')
+                has_typea = typea_data is not None and (np.asarray(typea_data).size > 1 or variable.get('typea_uncert'))
 
-            self.setRowCount(self.rowCount() + 1)
-            row = self.rowCount() - 1
-            varnameitem = TableItemTex(variable.get('name'), editable=False)
-            varnameitem.setBackground(QtGui.QBrush(gui_common.COLOR_UNUSED))
-            varvalueitem = gui_widgets.EditableTableItem(f'{variable.get("mean"):.5g}')
-            self.setItem(row, self.COL_VARNAME, varnameitem)
-            self.setItem(row, self.COL_VALNAME, gui_widgets.ReadOnlyTableItem('Measured'))
-            self.setItem(row, self.COL_VALUE, varvalueitem)
-            self.item(row, self.COL_DATA).setData(self.ROLE_CONFIGIDX, (varidx, None))
-
-            self.setItem(row, self.COL_UNITS, gui_widgets.EditableTableItem(f'{units:~P}' if units else ''))
-            self.setItem(row, self.COL_DESC, gui_widgets.EditableTableItem(variable.get('desc')))
-            self.setItem(row, self.COL_PREVIEW, gui_widgets.ReadOnlyTableItem())
-            self.setItem(row, self.COL_DEGF,
-                         gui_widgets.ReadOnlyTableItem('inf' if not np.isfinite(degf) else f'{degf:.1f}'))
-            self.setItem(row, self.COL_STDUNC, gui_widgets.ReadOnlyTableItem('± 1'))
-
-            btn = gui_widgets.TreeButton('+')
-            btn.setToolTip('Add Uncertainty Component')
-            btn.clicked.connect(lambda x, varidx=varidx: self.add_uncertainty(varidx))
-            self.setCellWidget(row, self.COL_BTN, btn)
-
-            # Set colors for the variable row (grayish)
-            for col in range(self.COL_CNT):
-                with suppress(AttributeError):
-                    self.item(row, col).setBackground(QtGui.QBrush(gui_common.COLOR_UNUSED))
-            for col in [self.COL_VALUE, self.COL_UNITS, self.COL_DESC]:
-                with suppress(AttributeError):
-                    self.item(row, col).setBackground(QtGui.QBrush(self.COLOR2))
-
-            # Fill in uncertainties under the variable
-            for uncidx, uncert in enumerate(variable.get('uncerts')):
                 self.setRowCount(self.rowCount() + 1)
                 row = self.rowCount() - 1
-                item = QtWidgets.QTableWidgetItem()
-                item.setData(self.ROLE_CONFIGIDX, (varidx, uncidx))
-                self.setItem(row, self.COL_VALUE, item)
-                self.fill_uncertparams(row, varidx, uncidx)
+                varnameitem = widgets.TableItemTex(variable.get('name'), editable=False)
+                varnameitem.setBackground(self.COLOR_VARROW)
+                if has_typea:
+                    varvalueitem = widgets.ReadOnlyTableItem(f'{variable.get("mean"):.5g}')
+                else:
+                    varvalueitem = widgets.EditableTableItem(f'{variable.get("mean"):.5g}')
+                self.setItem(row, self.COL_VARNAME, varnameitem)
+                self.setItem(row, self.COL_VALNAME, widgets.ReadOnlyTableItem('Measured'))
+                self.setItem(row, self.COL_VALUE, varvalueitem)
+                self.item(row, self.COL_DATA).setData(self.ROLE_CONFIGIDX, (varidx, None))
 
-        self.fixSize()
-        self.trickle_units()
-        self.blockSignals(False)
+                self.setItem(row, self.COL_UNITS, widgets.EditableTableItem(f'{units:~P}' if units else ''))
+                self.setItem(row, self.COL_DESC, widgets.EditableTableItem(variable.get('desc')))
+                self.setItem(row, self.COL_PREVIEW, widgets.ReadOnlyTableItem())
+                self.setItem(row, self.COL_DEGF,
+                             widgets.ReadOnlyTableItem('inf' if not np.isfinite(degf) else f'{degf:.1f}'))
+                self.setItem(row, self.COL_STDUNC, widgets.ReadOnlyTableItem('± 1'))
+
+                btnplus = widgets.PlusButton()
+                btnplus.setToolTip('Add Uncertainty Component')
+                btnplus.clicked.connect(lambda x, varidx=varidx: self.add_uncertainty(varidx))
+                btna = widgets.RoundButton('⧯')
+                btna.setToolTip('Enter Type A measurement data')
+                font = btna.font()
+                font.setPointSize(7)
+                btna.setFont(font)
+                btna.clicked.connect(lambda x, varidx=varidx: self.enter_typea_data(varidx))
+
+                # NOTE: setCellWidget is extremely slow with multiple widgets contained
+                # in a layout in another widget. So having a second column speeds it up
+                # compared to both buttons in one cell (~2 seconds faster on page load!).
+                # Using QStyledItemDelegate could be a better/faster option too.
+                self.setCellWidget(row, self.COL_BTN, btnplus)
+                self.setCellWidget(row, self.COL_BTN2, btna)
+
+                # Set colors for the variable row (grayish)
+                for col in range(self.COL_CNT):
+                    with suppress(AttributeError):
+                        self.item(row, col).setBackground(self.COLOR_VARROW)
+                for col in [self.COL_VALUE, self.COL_UNITS, self.COL_DESC]:
+                    with suppress(AttributeError):
+                        self.item(row, col).setBackground(self.COLOR_VARROW_EDITABLE)
+
+                # Add row for type a uncertainty
+                if has_typea:
+                    nnew = variable.get('numnewmeas', None)
+                    acorr = variable.get('autocorrelate', True)
+                    rv = RandomVariable(typea_data)
+                    rv.measure(typea_data, typea=variable.get('typea_uncert'), num_new_meas=nnew, autocor=acorr)
+                    typea_unc = variable.get('typea_uncert', rv.typea)
+                    typea_degf = variable.get('typea_degf', rv.degrees_freedom)
+
+                    self.setRowCount(self.rowCount() + 1)
+                    row = self.rowCount() - 1
+                    self.setItem(row, self.COL_VALNAME, widgets.ReadOnlyTableItem('Type A Unc.'))
+                    self.setItem(row, self.COL_VALUE, widgets.ReadOnlyTableItem(f'± {typea_unc:.2g}'))
+                    self.setItem(row, self.COL_STDUNC, widgets.ReadOnlyTableItem(f'± {typea_unc:.2g}'))
+                    self.setItem(row, self.COL_DEGF, widgets.ReadOnlyTableItem(f'{typea_degf:.1f}'))
+                    self.setItem(row, self.COL_PREVIEW, widgets.ReadOnlyTableItem())
+                    self.setItem(row, self.COL_VARNAME, widgets.ReadOnlyTableItem())
+                    self.setItem(row, self.COL_UNITS, widgets.ReadOnlyTableItem())
+                    self.setItem(row, self.COL_DESC, widgets.ReadOnlyTableItem())
+                    self.setItem(row, self.COL_BTN, widgets.ReadOnlyTableItem())
+                    self.setItem(row, self.COL_BTN2, widgets.ReadOnlyTableItem())
+
+                    for col in range(1, self.COL_CNT):
+                        with suppress(AttributeError):
+                            self.item(row, col).setBackground(self.COLOR_VARROW)
+                    self.item(row, self.COL_DATA).setData(self.ROLE_CONFIGIDX, (varidx, 'typea'))
+
+                # Fill in uncertainties under the variable
+                for uncidx, uncert in enumerate(variable.get('uncerts')):
+                    self.setRowCount(self.rowCount() + 1)
+                    row = self.rowCount() - 1
+                    item = QtWidgets.QTableWidgetItem()
+                    item.setData(self.ROLE_CONFIGIDX, (varidx, uncidx))
+                    self.setItem(row, self.COL_VALUE, item)
+                    self.fill_uncertparams(row, varidx, uncidx)
+
+            self.trickle_units()
+            self.fixSize()
         self.changed.emit(self.get_config())
 
     def fill_uncertparams(self, row, varidx, uncidx):
@@ -522,26 +531,27 @@ class MeasTableWidget(QtWidgets.QTableWidget):
         typeb = Typeb(nominal=self.get_nominal(varidx), **config)
 
         # Distribution select widget
-        cmbdist = gui_widgets.ComboNoWheel()
-        cmbdist.addItems(gui_common.settings.getDistributions())
+        cmbdist = widgets.ComboNoWheel()
+        cmbdist.addItems(gui_settings.distributions)
         cmbdist.setCurrentIndex(cmbdist.findText(config.get('dist')))
         if cmbdist.currentText() == '':
             cmbdist.addItem(config.get('dist'))
             cmbdist.setCurrentIndex(cmbdist.count()-1)
-        self.setItem(row, self.COL_VALNAME, gui_widgets.ReadOnlyTableItem('Distribution'))
+        self.setItem(row, self.COL_VALNAME, widgets.ReadOnlyTableItem('Distribution'))
         self.setCellWidget(row, self.COL_VALUE, cmbdist)
 
         # Other top-row items
-        self.setItem(row, self.COL_UNITS, gui_widgets.EditableTableItem(config.get('units')))
-        self.setItem(row, self.COL_VARNAME, TableItemTex(config.get('name', '')))
-        self.setItem(row, self.COL_DEGF, gui_widgets.EditableTableItem(str(config.get('degf', 'inf'))))
-        self.setItem(row, self.COL_DESC, gui_widgets.EditableTableItem(config.get('desc', '')))
-        self.setItem(row, self.COL_STDUNC, gui_widgets.ReadOnlyTableItem(
+        self.setItem(row, self.COL_UNITS, widgets.EditableTableItem(config.get('units')))
+        self.setItem(row, self.COL_VARNAME, widgets.TableItemTex(config.get('name', '')))
+        self.setItem(row, self.COL_DEGF, widgets.EditableTableItem(str(config.get('degf', 'inf'))))
+        self.setItem(row, self.COL_DESC, widgets.EditableTableItem(config.get('desc', '')))
+        self.setItem(row, self.COL_STDUNC, widgets.ReadOnlyTableItem(
             f'± {typeb.uncertainty:.2g~P}' if typeb.units else f'± {typeb.uncertainty:.2g}'))
-        btn = gui_widgets.TreeButton('–')  # endash
+        btn = widgets.MinusButton()
         btn.setToolTip('Remove Uncertainty Component')
         btn.clicked.connect(lambda x, varidx=varidx, uncidx=uncidx: self.remove_uncertainty(varidx, uncidx))
         self.setCellWidget(row, self.COL_BTN, btn)
+        self.setItem(row, self.COL_BTN2, widgets.ReadOnlyTableItem())
 
         # Other uncertainty parameters (more rows)
         if config.get('dist') in ['norm', 'normal', 't']:
@@ -557,16 +567,16 @@ class MeasTableWidget(QtWidgets.QTableWidget):
                 uncstr = f'{uncstr:.5g}'
 
             self.insertRow(row+1)
-            self.setItem(row+1, self.COL_VALNAME, gui_widgets.ReadOnlyTableItem('Confidence'))
-            self.setItem(row+1, self.COL_VALUE, gui_widgets.EditableTableItem(f'{float(conf)*100:.2f}%'))
+            self.setItem(row+1, self.COL_VALNAME, widgets.ReadOnlyTableItem('Confidence'))
+            self.setItem(row+1, self.COL_VALUE, widgets.EditableTableItem(f'{float(conf)*100:.2f}%'))
             self.item(row+1, self.COL_DATA).setData(self.ROLE_CONFIGIDX, (varidx, uncidx))
             self.insertRow(row+1)
-            self.setItem(row+1, self.COL_VALNAME, gui_widgets.ReadOnlyTableItem('k'))
-            self.setItem(row+1, self.COL_VALUE, gui_widgets.EditableTableItem(f'{k:.2f}'))
+            self.setItem(row+1, self.COL_VALNAME, widgets.ReadOnlyTableItem('k'))
+            self.setItem(row+1, self.COL_VALUE, widgets.EditableTableItem(f'{k:.2f}'))
             self.item(row+1, self.COL_DATA).setData(self.ROLE_CONFIGIDX, (varidx, uncidx))
             self.insertRow(row+1)
-            self.setItem(row+1, self.COL_VALNAME, gui_widgets.ReadOnlyTableItem('Uncertainty'))
-            self.setItem(row+1, self.COL_VALUE, gui_widgets.EditableTableItem(uncstr))
+            self.setItem(row+1, self.COL_VALNAME, widgets.ReadOnlyTableItem('Uncertainty'))
+            self.setItem(row+1, self.COL_VALUE, widgets.EditableTableItem(uncstr))
             self.item(row+1, self.COL_DATA).setData(self.ROLE_CONFIGIDX, (varidx, uncidx))
 
         elif config.get('dist') == 'histogram':
@@ -576,8 +586,8 @@ class MeasTableWidget(QtWidgets.QTableWidget):
             newrows = len(typeb.distribution.argnames) + 1
             for arg in reversed(sorted(typeb.distribution.argnames)):
                 self.insertRow(row+1)
-                self.setItem(row+1, self.COL_VALNAME, gui_widgets.ReadOnlyTableItem(arg))
-                self.setItem(row+1, self.COL_VALUE, gui_widgets.EditableTableItem(str(typeb.kwargs.get(arg, 1))))
+                self.setItem(row+1, self.COL_VALNAME, widgets.ReadOnlyTableItem(arg))
+                self.setItem(row+1, self.COL_VALUE, widgets.EditableTableItem(str(typeb.kwargs.get(arg, 1))))
                 self.item(row+1, self.COL_DATA).setData(self.ROLE_CONFIGIDX, (varidx, uncidx))
 
         # Preview Plot
@@ -591,7 +601,7 @@ class MeasTableWidget(QtWidgets.QTableWidget):
         self.setSpan(row, self.COL_DEGF, newrows, 1)
         self.setSpan(row, self.COL_DESC, newrows, 1)
         self.setSpan(row, self.COL_STDUNC, newrows, 1)
-        self.setSpan(row, self.COL_BTN, newrows, 1)
+        self.setSpan(row, self.COL_BTN, newrows, 2)
         item = self.item(row, self.COL_VALUE)
         cmbdist.currentIndexChanged.connect(lambda y, item=item: self.change_dist(item))
         self.fixSize()
@@ -601,12 +611,15 @@ class MeasTableWidget(QtWidgets.QTableWidget):
         return deepcopy(self.config)
 
     def get_uncert_config(self, varidx, uncidx):
+        ''' Get configuration for the uncertainty component '''
         return self.config[varidx].get('uncerts')[uncidx]
 
     def get_var_config(self, varidx):
+        ''' Get configuration for the variable '''
         return self.config[varidx]
 
     def get_nominal(self, varidx):
+        ''' Get nominal value for the variable '''
         return unitmgr.make_quantity(self.config[varidx]['mean'], self.config[varidx].get('units', 'dimensionless'))
 
     def is_valid(self):
@@ -614,28 +627,27 @@ class MeasTableWidget(QtWidgets.QTableWidget):
         for row in range(self.rowCount()):
             for col in range(self.columnCount()):
                 with suppress(AttributeError):
-                    if self.item(row, col).background().color() == gui_common.COLOR_INVALID:
+                    if self.item(row, col).background().color() == gui_styles.color.invalid:
                         return False
         return True
 
     def change_dist(self, item):
         ''' Distribution type in combobox was changed '''
-        self.blockSignals(True)
-        row = item.row()
-        cfgidx = item.data(self.ROLE_CONFIGIDX)
-        config = self.get_uncert_config(*cfgidx)
-        typeb_old = Typeb(**config)
-        distname = self.cellWidget(row, self.COL_VALUE).currentText()   # Dist combo is always first child
-        oldrows = 3 if config.get('dist') in ['norm', 'normal', 't'] else len(typeb_old.distribution.argnames)
+        with BlockedSignals(self):
+            row = item.row()
+            cfgidx = item.data(self.ROLE_CONFIGIDX)
+            config = self.get_uncert_config(*cfgidx)
+            typeb_old = Typeb(**config)
+            distname = self.cellWidget(row, self.COL_VALUE).currentText()   # Dist combo is always first child
+            oldrows = 3 if config.get('dist') in ['norm', 'normal', 't'] else len(typeb_old.distribution.argnames)
 
-        # Remove old rows except the first one with dist combobox
-        for r in range(oldrows):
-            self.removeRow(row+1)
+            # Remove old rows except the first one with dist combobox
+            for _ in range(oldrows):
+                self.removeRow(row+1)
 
-        # Old distribtuion parameters will remain in the dict, but are ignored by Distribution instance
-        config['dist'] = distname
-        self.fill_uncertparams(row, *cfgidx)
-        self.blockSignals(False)
+            # Old distribtuion parameters will remain in the dict, but are ignored by Distribution instance
+            config['dist'] = distname
+            self.fill_uncertparams(row, *cfgidx)
         self.fixSize()
         self.changed.emit(self.get_config())
 
@@ -670,7 +682,8 @@ class MeasTableWidget(QtWidgets.QTableWidget):
 
                 # Ensure all component units are compatible
                 for uncert in config.get('uncerts', []):
-                    uncunit = unitmgr.parse_units(uncert.get('units', 'dimensionless'))
+                    unit = uncert.get('units', 'dimensionless')
+                    uncunit = unitmgr.parse_units(unit) if unit is not None else unitmgr.dimensionless
                     if uncunit.dimensionality != units.dimensionality:
                         uncert['units'] = str(units)
                     if uncert['units'] in ['degree_Celsius', 'degC', 'celsius']:
@@ -763,24 +776,24 @@ class MeasTableWidget(QtWidgets.QTableWidget):
         ''' An item in the table was edited. Validate the input. '''
         row = self.row(item)
         varidx, uncidx = self.item(row, self.COL_DATA).data(self.ROLE_CONFIGIDX)
-        self.blockSignals(True)
-        if uncidx is None:
-            valid = self.varrow_change(item, varidx)
-            item.setBackground(self.COLORINPT[valid])
-        else:
-            valid = self.uncrow_change(item, varidx, uncidx)
-            item.setBackground(self.COLOR[valid])
+        with BlockedSignals(self):
+            if uncidx is None:
+                valid = self.varrow_change(item, varidx)
+                item.setBackground(self.COLOR_VARROW_EDITABLE if valid else gui_styles.color.invalid)
+            else:
+                valid = self.uncrow_change(item, varidx, uncidx)
+                item.setBackground(gui_styles.color.transparent if valid else gui_styles.color.invalid)
 
-        if valid:
-            self.replotall()
-            self.trickle_units()
-        else:
-            self.clearSelection()  # Remove highlight to see the red color
+            if valid:
+                self.replotall()
+                self.trickle_units()
+            else:
+                self.clearSelection()  # Remove highlight to see the red color
 
-        self.blockSignals(False)
         self.changed.emit(self.get_config())
 
     def validate_unit(self, unitstr, nominal):
+        ''' Validate units and convert degC into delta_degC when necessary '''
         # 1) convert degC of celsius into delta_degC; degF or fah. into delta_degF
         # 2) uparser.parse_unit
         # 3) check dimensionality with nominal
@@ -800,38 +813,45 @@ class MeasTableWidget(QtWidgets.QTableWidget):
 
     def trickle_units(self):
         ''' Trickle up/down changes in units and standard uncertainty '''
-        self.blockSignals(True)
-        for row in range(self.rowCount()):
-            varidx, uncidx = self.item(row, self.COL_DATA).data(self.ROLE_CONFIGIDX)
-            nominal = self.get_nominal(varidx)
-            if uncidx is None:  # This row is a Variable
-                config = self.get_var_config(varidx)
-                randvar = RandomVariable(nominal)
-                for uncert in config.get('uncerts', []):
-                    randvar.typeb(**uncert)
+        with BlockedSignals(self):
+            for row in range(self.rowCount()):
+                varidx, uncidx = self.item(row, self.COL_DATA).data(self.ROLE_CONFIGIDX)
+                measvalues = self.config[varidx].get('typea', self.config[varidx].get('mean'))
+                units = self.config[varidx].get('units', 'dimensionless')
+                if not unitmgr.has_units(measvalues):
+                    measvalues = unitmgr.make_quantity(measvalues, units)
 
-                degf = randvar.degrees_freedom
-                if unitmgr.has_units(randvar.uncertainty):
-                    uncstr = f'± {randvar.uncertainty:.2g~P}'
-                else:
-                    uncstr = f'± {randvar.uncertainty:.2g}'
-                self.item(row, self.COL_STDUNC).setText(uncstr)
-                self.item(row, self.COL_DEGF).setText('inf' if not np.isfinite(degf) else f'{degf:.1f}')
+                if uncidx is None:  # This row is a Variable
+                    config = self.get_var_config(varidx)
+                    nnew = config.get('numnewmeas', None)
+                    acorr = config.get('autocorrelate', True)
+                    typea = config.get('typea_uncert', None)
+                    randvar = RandomVariable(measvalues)
+                    randvar.measure(measvalues, typea=typea, num_new_meas=nnew, autocor=acorr)
+                    for uncert in config.get('uncerts', []):
+                        randvar.typeb(**uncert)
 
-            else:  # Uncertainty row
-                config = self.get_uncert_config(varidx, uncidx)
-                if unitmgr.has_units(nominal) and 'units' not in config:
-                    config['units'] = str(nominal.units)
-                typeb = Typeb(nominal=nominal, **config)
-                degf = typeb.degf
-                self.setItem(
-                    row, self.COL_DEGF, gui_widgets.EditableTableItem(f'{degf:.1f}'))
-                self.setItem(
-                    row, self.COL_UNITS, gui_widgets.EditableTableItem(f'{typeb.units:~P}' if typeb.units else ''))
-                if self.item(row, self.COL_STDUNC):  # Only applies to first row unc uncertainty component
-                    self.item(row, self.COL_STDUNC).setText(
-                        f'± {typeb.uncertainty:.2g~P}' if typeb.units else f'± {typeb.uncertainty:.2g}')
-        self.blockSignals(False)
+                    degf = randvar.degrees_freedom
+                    if unitmgr.has_units(randvar.uncertainty):
+                        uncstr = f'± {randvar.uncertainty:.2g~P}'
+                    else:
+                        uncstr = f'± {randvar.uncertainty:.2g}'
+                    self.item(row, self.COL_STDUNC).setText(uncstr)
+                    self.item(row, self.COL_DEGF).setText('inf' if not np.isfinite(degf) else f'{degf:.1f}')
+
+                elif uncidx != 'typea':  # Uncertainty row
+                    config = self.get_uncert_config(varidx, uncidx)
+                    if unitmgr.has_units(measvalues) and ('units' not in config or config['units'] == 'dimensionless'):
+                        config['units'] = str(measvalues.units)
+                    typeb = Typeb(nominal=self.get_nominal(varidx), **config)
+                    degf = typeb.degf
+                    self.setItem(
+                        row, self.COL_DEGF, widgets.EditableTableItem(f'{degf:.1f}'))
+                    self.setItem(
+                        row, self.COL_UNITS, widgets.EditableTableItem(f'{typeb.units:~P}' if typeb.units else ''))
+                    if self.item(row, self.COL_STDUNC):  # Only applies to first row unc uncertainty component
+                        self.item(row, self.COL_STDUNC).setText(
+                            f'± {typeb.uncertainty:.2g~P}' if typeb.units else f'± {typeb.uncertainty:.2g}')
 
     def replotall(self):
         ''' Replot all preview plots '''
@@ -847,6 +867,7 @@ class MeasTableWidget(QtWidgets.QTableWidget):
 
     def add_uncertainty(self, varidx, uncidx=0):
         ''' Add a new uncertianty component to the table '''
+        uncidx = 0 if uncidx == 'typea' else uncidx
         varcfg = self.get_var_config(varidx)
         varname = varcfg.get('name')
         i = 1
@@ -862,8 +883,8 @@ class MeasTableWidget(QtWidgets.QTableWidget):
         self.changed.emit(self.get_config())
 
     def remove_uncertainty(self, varidx, uncidx):
-        ''' Remove selected uncertainty component
-        '''
+        ''' Remove selected uncertainty component '''
+        uncidx = 0 if uncidx == 'typea' else uncidx
         varcfg = self.get_var_config(varidx)
         varcfg['uncerts'].pop(uncidx)
         self.load_config({'inputs': self.config})
@@ -899,19 +920,21 @@ class MeasTableWidget(QtWidgets.QTableWidget):
     def clear(self):
         ''' Clear the table '''
         super().clear()
+        self.horizontalHeader().setMinimumSectionSize(18)
         self.setRowCount(0)
         self.setColumnCount(self.COL_CNT)
-        self.setColumnWidth(self.COL_VARNAME, 70)
+        self.setColumnWidth(self.COL_VARNAME, 62)
         self.setColumnWidth(self.COL_VALNAME, 100)
         self.setColumnWidth(self.COL_VALUE, 100)
         self.setColumnWidth(self.COL_UNITS, 80)
         self.setColumnWidth(self.COL_DEGF, 80)
         self.setColumnWidth(self.COL_DESC, 290)
         self.setColumnWidth(self.COL_STDUNC, 90)
-        self.setColumnWidth(self.COL_PREVIEW, 282)
+        self.setColumnWidth(self.COL_PREVIEW, 270)
         self.setColumnWidth(self.COL_BTN, 18)
+        self.setColumnWidth(self.COL_BTN2, 18)
         self.setHorizontalHeaderLabels(['Variable', 'Parameter', 'Value', 'Units', 'Degrees\nFreedom',
-                                        'Description', 'Standard\nUncertainty', 'Preview', ''])
+                                        'Description', 'Standard\nUncertainty', 'Preview', '', ''])
         self.fixSize()
 
     def fixSize(self):
@@ -940,58 +963,42 @@ class MeasTableWidget(QtWidgets.QTableWidget):
             with suppress(AttributeError):
                 varidx, uncidx = self.item(row, self.COL_DATA).data(self.ROLE_CONFIGIDX)
 
-            if uncidx is None:  # Variable row
+            if uncidx in [None, 'typea']:  # Variable row
                 add = menu.addAction('Add uncertainty component')
                 add.triggered.connect(lambda x, varidx=varidx: self.add_uncertainty(varidx))
+                measured = menu.addAction('Type A measurement data...')
+                measured.triggered.connect(lambda x, varidx=varidx: self.enter_typea_data(varidx))
 
             else:  # Uncert Row
                 add = menu.addAction('Add uncertainty component')
                 add.triggered.connect(lambda x, varidx=varidx, uncidx=uncidx: self.add_uncertainty(varidx, uncidx))
                 rem = menu.addAction('Remove uncertainty component')
                 rem.triggered.connect(lambda x, varidx=varidx, uncidx=uncidx: self.remove_uncertainty(varidx, uncidx))
-                imp = menu.addAction('Import distribution from...')
-                imp.triggered.connect(self.import_dist)
                 hlp = menu.addAction('Distribution help...')
 
                 def helppopup():
                     ''' Show distribution description '''
                     config = self.get_uncert_config(varidx, uncidx)
                     typeb = Typeb(**config)
-                    dlg = gui_widgets.PopupHelp(typeb.distribution.helpstr())
-                    dlg.exec_()
+                    dlg = widgets.PopupHelp(typeb.distribution.helpstr())
+                    dlg.exec()
 
                 hlp.triggered.connect(helppopup)
             menu.exec(event.globalPos())
 
-    def import_dist(self):
-        ''' Import a distribution from somewhere else in the project '''
-        dlg = page_dataimport.DistributionSelectWidget(singlecol=True, project=self.projitem.project)
-        ok = dlg.exec_()
+    def enter_typea_data(self, varidx: int = 0):
+        ''' Show dialog for entering Type A measurement data '''
+        varnames = [v['name'] for v in self.config]
+        varname = varnames[varidx]
+        dlg = page_typea.TypeADataWidget(self.config, variable=varname, project=self.component.project)
+        ok = dlg.exec()
         if ok:
-            distargs = dlg.get_dist()
-            distname = distargs.get('dist', 'normal')
-            nominal = distargs.pop('expected', distargs.pop('median', distargs.pop('mean', 0)))
-            if distname == 'histogram':
-                distargs['histogram'] = (distargs['histogram'][0], np.array(distargs['histogram'][1])-nominal)
-
-            newdist = Typeb(nominal=nominal, **distargs)  # Change to RandomVariable.value eventually
-
-            selitem = self.currentItem()
-            row = selitem.row()
-            varidx, uncidx = self.item(row, self.COL_DATA).data(self.ROLE_CONFIGIDX)
-            unccfg = self.get_uncert_config(varidx, uncidx)
-            distname = unccfg.get('dist', 'normal')
-
-            # Remove old rows if different distribution
-            self.blockSignals(True)
-            oldrows = 3 if distname in ['normal', 't'] else len(newdist.distribution.argnames)
-            for r in range(oldrows):
-                self.removeRow(row+1)
-
-            self.config[varidx]['mean'] = nominal
-            self.config[varidx]['uncerts'][uncidx] = distargs
+            self.config, correlations = dlg.update_config(self.config)
             self.load_config({'inputs': self.config})
             self.trickle_units()
+            if correlations:
+                self.correlate.emit(correlations)
+            self.fixSize()
 
 
 class UncertPreview(QtWidgets.QWidget):
@@ -1000,7 +1007,9 @@ class UncertPreview(QtWidgets.QWidget):
         super().__init__()
         self.setFixedSize(282, 120)
         self.figure = Figure()
+        self.axis = self.figure.add_subplot(1, 1, 1)
         self.canvas = FigureCanvas(self.figure)
+        self.canvas.setStyleSheet("background-color:transparent;")
         self.component = None
 
         layout = QtWidgets.QVBoxLayout()
@@ -1015,11 +1024,10 @@ class UncertPreview(QtWidgets.QWidget):
 
         if self.component is not None:
             with plt.style.context({'font.size': 8}):
-                self.figure.clf()
-                ax = self.figure.add_subplot(1, 1, 1)
                 x, y = self.component.pdf()
-                ax.plot(x, y)
-                ax.yaxis.set_ticks([])
+                self.axis.clear()
+                self.axis.plot(x, y)
+                self.axis.yaxis.set_ticks([])
                 height = self.size().height()
                 self.figure.subplots_adjust(left=0, right=1, bottom=20/height, top=.99)
             self.canvas.draw_idle()
@@ -1031,14 +1039,17 @@ class CorrelationTableWidget(QtWidgets.QTableWidget):
 
     def __init__(self):
         super().__init__()
+        self.config = {}
+        font = self.font()
+        font.setPointSize(12)
+        self.setFont(font)
         self.varnames = []
         self.clear()
-        self.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
-        self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
-        self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        self.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
+        self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.verticalHeader().hide()
-        self.setSizePolicy(QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Minimum)
-        self.setStyleSheet(TABLESTYLE)
+        self.setSizePolicy(QtWidgets.QSizePolicy.Policy.Minimum, QtWidgets.QSizePolicy.Policy.Minimum)
         self.fixSize()
 
     def load_config(self, config):
@@ -1078,18 +1089,20 @@ class CorrelationTableWidget(QtWidgets.QTableWidget):
 
     def setVarNames(self, names):
         ''' Set names of available variables '''
-        self.blockSignals(True)
-        self.varnames = names
-        for row in range(self.rowCount()):
-            prev1 = self.cellWidget(row, 0).currentText()
-            prev2 = self.cellWidget(row, 1).currentText()
-            self.cellWidget(row, 0).clear()
-            self.cellWidget(row, 1).clear()
-            self.cellWidget(row, 0).addItems(names)
-            self.cellWidget(row, 1).addItems(names)
-            self.cellWidget(row, 0).setCurrentIndex(self.cellWidget(row, 0).findText(prev1))
-            self.cellWidget(row, 1).setCurrentIndex(self.cellWidget(row, 1).findText(prev2))
-        self.blockSignals(False)
+        with BlockedSignals(self):
+            self.varnames = names
+            for row in range(self.rowCount()-1, -1, -1):  # Go backwards since we'll be removing rows
+                prev1 = self.cellWidget(row, 0).currentText()
+                prev2 = self.cellWidget(row, 1).currentText()
+                if prev1 not in names or prev2 not in names:
+                    self.removeRow(row)
+                else:
+                    self.cellWidget(row, 0).clear()
+                    self.cellWidget(row, 1).clear()
+                    self.cellWidget(row, 0).addItems(names)
+                    self.cellWidget(row, 1).addItems(names)
+                    self.cellWidget(row, 0).setCurrentIndex(self.cellWidget(row, 0).findText(prev1))
+                    self.cellWidget(row, 1).setCurrentIndex(self.cellWidget(row, 1).findText(prev2))
 
     def remRow(self):
         ''' Remove selected row from correlation table '''
@@ -1100,19 +1113,18 @@ class CorrelationTableWidget(QtWidgets.QTableWidget):
     def addRow(self, name1=None, name2=None, corr=None):
         ''' Add a row to the table. '''
         row = self.rowCount()
-        self.blockSignals(True)
-        self.insertRow(row)
-        v1 = QtWidgets.QComboBox()
-        v1.addItems(self.varnames)
-        v2 = QtWidgets.QComboBox()
-        v2.addItems(self.varnames)
-        self.setCellWidget(row, 0, v1)
-        self.setCellWidget(row, 1, v2)
-        val = gui_widgets.EditableTableItem('0')
-        self.setItem(row, 2, val)
-        if name1 is not None:
-            self.setRow(row, name1, name2, corr)
-        self.blockSignals(False)
+        with BlockedSignals(self):
+            self.insertRow(row)
+            v1 = QtWidgets.QComboBox()
+            v1.addItems(self.varnames)
+            v2 = QtWidgets.QComboBox()
+            v2.addItems(self.varnames)
+            self.setCellWidget(row, 0, v1)
+            self.setCellWidget(row, 1, v2)
+            val = widgets.EditableTableItem('0')
+            self.setItem(row, 2, val)
+            if name1 is not None:
+                self.setRow(row, name1, name2, corr)
         self.fixSize()
 
     def setRow(self, row, v1, v2, cor):
@@ -1158,22 +1170,24 @@ class SettingsWidget(QtWidgets.QTableWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        font = self.font()
+        font.setPointSize(12)
+        self.setFont(font)
         self.setColumnCount(2)
         self.setRowCount(self.ROW_CNT)
         self.setHorizontalHeaderLabels(['Setting', 'Value'])
-        self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
-        self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
-        self.setStyleSheet(TABLESTYLE)
+        self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.verticalHeader().hide()
-        self.setSizePolicy(QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Minimum)
+        self.setSizePolicy(QtWidgets.QSizePolicy.Policy.Minimum, QtWidgets.QSizePolicy.Policy.Minimum)
 
-        self.setItem(self.ROW_SAMPLES, self.COL_NAME, gui_widgets.ReadOnlyTableItem('Monte Carlo Samples'))
+        self.setItem(self.ROW_SAMPLES, self.COL_NAME, widgets.ReadOnlyTableItem('Monte Carlo Samples'))
         self.setItem(self.ROW_SAMPLES, self.COL_VALUE,
-                     gui_widgets.EditableTableItem(str(gui_common.settings.getSamples())))
-        self.setItem(self.ROW_SEED, self.COL_NAME, gui_widgets.ReadOnlyTableItem('Random Seed'))
+                     widgets.EditableTableItem(str(gui_settings.samples)))
+        self.setItem(self.ROW_SEED, self.COL_NAME, widgets.ReadOnlyTableItem('Random Seed'))
         self.setItem(self.ROW_SEED, self.COL_VALUE,
-                     gui_widgets.EditableTableItem(str(gui_common.settings.getRandomSeed())))
-        self.setItem(self.ROW_SYMBOLIC, self.COL_NAME, gui_widgets.ReadOnlyTableItem('Symbolic GUM Solution Only'))
+                     widgets.EditableTableItem(str(gui_settings.randomseed)))
+        self.setItem(self.ROW_SYMBOLIC, self.COL_NAME, widgets.ReadOnlyTableItem('Symbolic GUM Solution Only'))
         chkbox = QtWidgets.QCheckBox()
         chkbox.stateChanged.connect(lambda x: self.valuechange(self.item(self.ROW_SYMBOLIC, self.COL_NAME)))
         self.setCellWidget(self.ROW_SYMBOLIC, self.COL_VALUE, chkbox)
@@ -1190,13 +1204,13 @@ class SettingsWidget(QtWidgets.QTableWidget):
         try:
             samples = int(float(self.item(self.ROW_SAMPLES, self.COL_VALUE).text()))
         except (TypeError, ValueError, OverflowError):
-            samples = gui_common.settings.getSamples()
+            samples = gui_settings.samples
         config['samples'] = samples
 
         try:
             seed = int(float(self.item(self.ROW_SEED, self.COL_VALUE).text()))
         except (TypeError, ValueError, OverflowError):
-            seed = gui_common.settings.getRandomSeed()
+            seed = gui_settings.randomseed
         config['seed'] = seed
         return config
 
@@ -1212,7 +1226,7 @@ class SettingsWidget(QtWidgets.QTableWidget):
 
     def setvalue(self, name, value):
         ''' Change the value of a setting '''
-        item = self.findItems(name, QtCore.Qt.MatchExactly)
+        item = self.findItems(name, QtCore.Qt.MatchFlag.MatchExactly)
         assert len(item) == 1
         row = item[0].row()
         if row == self.ROW_SYMBOLIC:
@@ -1225,12 +1239,12 @@ class PageInput(QtWidgets.QWidget):
     ''' Page for setting up input parameters '''
     calculate = QtCore.pyqtSignal()
 
-    def __init__(self, projitem=None, parent=None):
+    def __init__(self, component=None, parent=None):
         super().__init__(parent)
-        self.projitem = projitem
+        self.component = component
         self.symbolicmode = False
         self.funclist = FunctionTableWidget()
-        self.meastable = MeasTableWidget(self.projitem)
+        self.meastable = MeasTableWidget(self.component)
         self.corrtable = CorrelationTableWidget()
         self.btnCalc = QtWidgets.QPushButton('Calculate')
         self.description = QtWidgets.QPlainTextEdit()
@@ -1239,8 +1253,7 @@ class PageInput(QtWidgets.QWidget):
         self.description.setFont(font)
         self.settings = SettingsWidget()
 
-        self.panel = gui_widgets.WidgetPanel()
-        self.panel.setStyleSheet(TREESTYLE)
+        self.panel = widgets.WidgetPanel()
         font = QtGui.QFont('Arial', 14)
         self.panel.setFont(font)
         self.panel.setAnimated(True)
@@ -1265,7 +1278,7 @@ class PageInput(QtWidgets.QWidget):
         layout.addWidget(self.panel)
         layout.addLayout(calclayout)
         self.setLayout(layout)
-        self.load_config(self.projitem.get_config())
+        self.load_config(self.component.get_config())
 
         funcbuttons.plusclicked.connect(self.funclist.addRow)
         funcbuttons.minusclicked.connect(self.funclist.remRow)
@@ -1275,24 +1288,31 @@ class PageInput(QtWidgets.QWidget):
         self.funclist.funcchanged.connect(self.functionchanged)
         self.meastable.resizerows.connect(self.panel.fixSize)
         self.corrtable.resizerows.connect(self.panel.fixSize)
+        self.meastable.correlate.connect(self.fill_correlations)
         self.settings.changed.connect(self.settingchanged)
         self.panel.fixSize()
 
     def load_config(self, config):
         ''' Set the widgets to match the config dictionary '''
-        self.blockSignals(True)
-        self.funclist.load_config(config)
-        self.meastable.load_config(config)
-        self.corrtable.load_config(config)
-        if 'correlations' in config:
-            self.panel.expand('Correlations')
-        self.settings.setvalue('Monte Carlo Samples', config.get('samples', gui_common.settings.getSamples()))
-        self.settings.setvalue('Random Seed', config.get('seed', gui_common.settings.getRandomSeed()))
-        self.description.setPlainText(config.get('description', ''))
-        self.blockSignals(False)
+        with BlockedSignals(self):
+            self.funclist.load_config(config)
+            self.meastable.load_config(config)
+            self.corrtable.load_config(config)
+            if config.get('correlations'):
+                self.panel.expand('Correlations')
+            self.settings.setvalue('Monte Carlo Samples', config.get('samples', gui_settings.samples))
+            self.settings.setvalue('Random Seed', config.get('seed', gui_settings.randomseed))
+            self.description.setPlainText(config.get('description', config.get('desc', '')))
 
-        if 'description' in config:
+        if config.get('description'):
             self.panel.expand('Notes')
+
+    def fill_correlations(self, corrlist):
+        ''' Fill correlations table after inputting Type A data '''
+        config = self.get_config()
+        config['correlations'] = corrlist
+        self.corrtable.load_config(config)
+        self.panel.expand('Correlations')
 
     def functionchanged(self, config):
         ''' Model functions were changed. Extract variables and update variable table '''

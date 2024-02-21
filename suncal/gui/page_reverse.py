@@ -1,10 +1,10 @@
 '''
 GUI page for calculating reverse uncertainty propagation.
 '''
-from PyQt5 import QtWidgets, QtGui, QtCore
+from PyQt6 import QtWidgets, QtGui, QtCore
 
-from . import gui_widgets
-from . import gui_common   # noqa: F401
+from . import widgets
+from . import gui_styles
 from . import page_uncert
 from .help_strings import UncertHelp
 
@@ -21,23 +21,25 @@ class TargetSetupWidget(QtWidgets.QTableWidget):
     ROW_SOLVEFOR = 3
     ROW_CNT = 4
 
-    def __init__(self, projitem, parent=None):
+    def __init__(self, component, parent=None):
         super().__init__(parent=parent)
-        self.projitem = projitem
+        self.component = component
 
+        font = self.font()
+        font.setPointSize(12)
+        self.setFont(font)
         self.setColumnCount(self.COL_CNT)
         self.setRowCount(self.ROW_CNT)
         self.setHorizontalHeaderLabels(['Parameter', 'Value'])
-        self.setStyleSheet(page_uncert.page_uncert_input.TABLESTYLE)
         self.verticalHeader().hide()
-        self.setSizePolicy(QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Minimum)
-        self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
-        self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        self.setSizePolicy(QtWidgets.QSizePolicy.Policy.Minimum, QtWidgets.QSizePolicy.Policy.Minimum)
+        self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
-        self.setItem(self.ROW_FUNC, self.COL_NAME, gui_widgets.ReadOnlyTableItem('Function'))
-        self.setItem(self.ROW_TARG, self.COL_NAME, gui_widgets.ReadOnlyTableItem('Target Value'))
-        self.setItem(self.ROW_TUNC, self.COL_NAME, gui_widgets.ReadOnlyTableItem('Target Uncertainty'))
-        self.setItem(self.ROW_SOLVEFOR, self.COL_NAME, gui_widgets.ReadOnlyTableItem('Solve For'))
+        self.setItem(self.ROW_FUNC, self.COL_NAME, widgets.ReadOnlyTableItem('Function'))
+        self.setItem(self.ROW_TARG, self.COL_NAME, widgets.ReadOnlyTableItem('Target Value'))
+        self.setItem(self.ROW_TUNC, self.COL_NAME, widgets.ReadOnlyTableItem('Target Uncertainty'))
+        self.setItem(self.ROW_SOLVEFOR, self.COL_NAME, widgets.ReadOnlyTableItem('Solve For'))
 
         self.cmbFunction = QtWidgets.QComboBox()
         self.txtTarget = QtWidgets.QLineEdit('0.0')
@@ -60,15 +62,16 @@ class TargetSetupWidget(QtWidgets.QTableWidget):
         self.resizeColumnsToContents()
 
         validator = QtGui.QDoubleValidator(-1E99, 1E99, 4)
-        validator.setNotation(QtGui.QDoubleValidator.StandardNotation | QtGui.QDoubleValidator.ScientificNotation)
+        validator.setNotation(QtGui.QDoubleValidator.Notation.ScientificNotation)
         self.txtTarget.setValidator(validator)
         self.txtTargetUnc.setValidator(validator)
 
-        fidx = max(self.projitem.model.reverseparams.get('func', 0), 0)
+        fidx = max(self.component.model.reverseparams.get('func', 0), 0)
         self.cmbFunction.setCurrentIndex(fidx)
-        self.txtTarget.setText(str(self.projitem.model.reverseparams.get('targetnom', 1)))
-        self.txtTargetUnc.setText(str(self.projitem.model.reverseparams.get('targetunc', 1)))
-        self.cmbSolveFor.setCurrentIndex(self.cmbSolveFor.findText(self.projitem.model.reverseparams.get('solvefor', '')))
+        self.txtTarget.setText(str(self.component.model.reverseparams.get('targetnom', 1)))
+        self.txtTargetUnc.setText(str(self.component.model.reverseparams.get('targetunc', 1)))
+        self.cmbSolveFor.setCurrentIndex(
+            self.cmbSolveFor.findText(self.component.model.reverseparams.get('solvefor', '')))
         self.fixSize()
 
     def fixSize(self):
@@ -80,7 +83,7 @@ class TargetSetupWidget(QtWidgets.QTableWidget):
     def update_names(self, fnames=None):
         ''' Function/variable names have changed. Change entries in comboboxes to match. '''
         if fnames is None:
-            fnames = self.projitem.model.model.functionnames
+            fnames = self.component.model.model.functionnames
         current_f = self.cmbFunction.currentText()
         current_v = self.cmbSolveFor.currentText()
         self.cmbFunction.clear()
@@ -90,7 +93,7 @@ class TargetSetupWidget(QtWidgets.QTableWidget):
         else:
             self.cmbFunction.setCurrentIndex(0)
         self.cmbSolveFor.clear()
-        self.cmbSolveFor.addItems(self.projitem.model.model.variables.names)
+        self.cmbSolveFor.addItems(self.component.model.model.variables.names)
         self.cmbSolveFor.setCurrentIndex(self.cmbSolveFor.findText(current_v))
 
     def get_target(self):
@@ -115,7 +118,7 @@ class PageReverseOutput(QtWidgets.QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.txtOutput = gui_widgets.MarkdownTextEdit()
+        self.txtOutput = widgets.MarkdownTextEdit()
         self.btnBack = QtWidgets.QPushButton('Back')
         self.btnBack.clicked.connect(self.goback)
 
@@ -131,8 +134,8 @@ class PageReverseOutput(QtWidgets.QWidget):
         ''' Back button pressed '''
         self.back.emit()
 
-    # To be compatible with PageOutput
     def update(self, result, **kwargs):
+        ''' Update the report '''
         self.txtOutput.setReport(result.report.all())
 
     def outputupdate(self):
@@ -141,16 +144,16 @@ class PageReverseOutput(QtWidgets.QWidget):
 
 class UncertReverseWidget(page_uncert.UncertPropWidget):
     ''' Uncertainty Propagation in Reverse. Adds Target tab to tabwidget '''
-    def __init__(self, projitem, parent=None):
-        self.projitem = projitem
-        self.revsetup = TargetSetupWidget(self.projitem)
-        super().__init__(projitem, parent)
+    def __init__(self, component, parent=None):
+        self.component = component
+        self.revsetup = TargetSetupWidget(self.component)
+        super().__init__(component, parent)
 
         self.menu.removeAction(self.mnuSaveSamples.menuAction())
-        self.actNewUnc = QtWidgets.QAction('New forward calculation from model', self)
-        self.actNewUnc.triggered.connect(lambda event, x=projitem: self.newtype.emit(x.get_config(), 'uncertainty'))
+        self.actNewUnc = QtGui.QAction('New forward calculation from model', self)
+        self.actNewUnc.triggered.connect(lambda event, x=component: self.newtype.emit(x.get_config(), 'uncertainty'))
         self.actSweep.disconnect()
-        self.actSweep.triggered.connect(lambda event, x=projitem: self.newtype.emit(x.get_config(), 'reversesweep'))
+        self.actSweep.triggered.connect(lambda event, x=component: self.newtype.emit(x.get_config(), 'reversesweep'))
         self.menu.insertAction(self.actReverse, self.actNewUnc)
         self.menu.removeAction(self.actReverse)
         self.stack.removeWidget(self.pgoutput)
@@ -191,11 +194,12 @@ class UncertReverseWidget(page_uncert.UncertPropWidget):
 
     def get_report(self):
         ''' Get full report of curve fit, using page settings '''
-        return self.projitem.result.report.all()
+        return self.component.result.report.all()
 
     def save_report(self):
         ''' Save full report, asking user for settings/filename '''
-        gui_widgets.savereport(self.get_report())
+        with gui_styles.LightPlotstyle():
+            widgets.savereport(self.get_report())
 
     def help_report(self):
         if self.stack.m_next == 1:

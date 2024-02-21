@@ -130,17 +130,6 @@ class Distribution:
         elif 'loc' in self.kwds:
             self.kwds['loc'] = self.distargs['loc']
 
-    def set_mean(self, mean):
-        ''' Set the mean value of the distribution. Calculates the correct "loc" keyword. '''
-        zeroargs = self.distargs.copy()
-        zeroargs['loc'] = 0
-        zeromean = self.dist(**zeroargs).mean()
-        self.distargs['loc'] = mean - zeromean
-        if 'mean' in self.kwds:
-            self.kwds['mean'] = mean
-        elif 'loc' in self.kwds:
-            self.kwds['loc'] = self.distargs['loc']
-
     def set_shift(self, shift):
         ''' Set shift of the distribiton by setting loc parameter '''
         self.kwds['shift'] = shift
@@ -527,10 +516,12 @@ class DGamma(Distribution):
         self.kwds.update(kwds)
         a = self.kwds.get('alpha', 1.0)
         b = self.kwds.get('beta', 1.0)
+        if b == 0:
+            b = 1E-21
         self.distargs = {'a': a, 'scale': 1/b}
-        loc = self.kwds.get('median', 0) + self.kwds.get('loc', 0)
+        loc = self.kwds.get('median', 0) + self.kwds.get('shift', 0)
         if loc:
-            self.distargs['shift'] = loc
+            self.distargs['loc'] = loc
 
     def fit(self, x):
         ''' Find best fitting parameters for the distribution to the sampled x data. '''

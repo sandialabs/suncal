@@ -17,9 +17,5 @@ from . import risk
 from . import curvefit
 from . import datasets
 
-# Legacy API for backwards compatibility
-from .uncertcalc.uncertcalc import UncertCalc
-UncertaintyCalc = UncertCalc
-
 __all__ = ['__version__', '__date__', 'ttable', 'unitmgr', 'Model', 'ModelCallable', 'ModelComplex',
-           'reverse', 'risk', 'curvefit', 'datasets', 'UncertCalc', 'UncertaintyCalc', 'ureg']
+           'reverse', 'risk', 'curvefit', 'datasets', 'ureg']

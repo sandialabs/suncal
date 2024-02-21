@@ -8,22 +8,18 @@ from ..distexplore import DistExplore
 class ProjectDistExplore(ProjectComponent):
     ''' Distribution Explorer project component '''
     def __init__(self, model=None, name='distributions'):
-        super().__init__()
-        self.name = name
+        super().__init__(name=name)
         self.nsamples = 10000
         self.seed = None
         if model is None:
             self.model = DistExplore()
         else:
             self.model = model
-
-        self.result = self.model
-        self.description = ''
-        self.project = None  # Parent project
+        self._result = self.model
 
     def calculate(self):
         ''' Run calculation '''
-        return self.result
+        return self._result
 
     def get_config(self):
         ''' Get configuration '''

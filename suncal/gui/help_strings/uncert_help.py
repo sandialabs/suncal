@@ -1,6 +1,7 @@
 ''' Inline help reports for Uncertainty Propagation tools '''
 from ...common import report
 
+
 class UncertHelp:
     @staticmethod
     def nohelp():
@@ -57,10 +58,9 @@ class UncertHelp:
                 'compute a symbolic solution to the GUM.\n')
 
         rpt.hdr('Other Tools', level=3)
-        rpt.txt('- Right-click an uncertainty component to load an uncertainty '
-                'distribution from a file or another Suncal calculation.\n'
-                '- Use the `Uncertainty` menu to import distributions for multiple '
-                'variables at once and account for correlations in the data.\n'
+        rpt.txt('- Use the "Type A Measurement data" option in the Uncertainty menu '
+                ' or right-click menu to load measured values from a file or another '
+                ' Suncal calculation and calculate the Type A uncertainty.'
                 '- Use `Check Units` from the `Uncertainty` menu to analyze '
                 'compatibility of measurement units and check for errors.')
         return rpt
@@ -161,7 +161,7 @@ class UncertHelp:
                 'each input variable. It can be useful to check for '
                 'correlations between input variables.')
         return rpt
-    
+
     @staticmethod
     def converge():
         rpt = report.Report()
@@ -227,4 +227,3 @@ class UncertHelp:
                 'in the table to allow filling an entire column by start, stop, and step values. '
                 'Multiple sweep columns of the same length may be entered to change parameters in parallel. ')
         return rpt
-

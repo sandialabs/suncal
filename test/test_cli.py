@@ -56,6 +56,11 @@ def test_uc(capsys):
     report2md, err = capsys.readouterr()
     assert reportmd == report2md
 
+    # -s flag
+    cli.main_unc(['f=a*b+c', '-s', '--variables', 'a=10', 'b=5', 'c=3', '--uncerts',
+                  'a; std=1', 'b; dist=uniform; a=.5', 'c; unc=3; k=2',
+                  '--correlate', 'a; b; .6', 'c; b; -.3', '-f', 'md', '--seed=4848484'])
+
 
 def test_rev(capsys):
     ''' Test reverse calc '''

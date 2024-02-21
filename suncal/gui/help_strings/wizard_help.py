@@ -122,7 +122,7 @@ class WizardHelp:
                 'of repeated measurements. The **Edit Data** button provides an option to change '
                 'the measurement data.\n\n')
         return rpt
-    
+
     @staticmethod
     def page_units():
         rpt = report.Report()
@@ -133,7 +133,7 @@ class WizardHelp:
                 'of the output, so for example, it may suggest units of "V/A" instead of "Ω" when '
                 "computing resistance using Ohm's Law. This page allows you to change those units.")
         return rpt
-    
+
     @staticmethod
     def page_summary():
         rpt = report.Report()
@@ -143,7 +143,7 @@ class WizardHelp:
                 'if anything needs to be changed, otherwise go foward to run the calculation '
                 'and see the results.')
         return rpt
-    
+
     @staticmethod
     def page_varselect():
         rpt = report.Report()

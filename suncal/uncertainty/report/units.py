@@ -39,13 +39,13 @@ def _function_rows(model, outunits):
             msg = f'<font color="red">Undefined Unit: {model.units[funcname]}</font>'
 
         if msg:
-            rows.append([funcname, msg, '-', '-'])
+            rows.append([funcname, msg, '&nbsp;', '&nbsp;'])
         else:
             rows.append([
                 report.Math(funcname),
-                report.Unit(result.units, abbr=False, dimensionless='-'),
-                report.Unit(result.units, abbr=True, dimensionless='-'),
-                report.Unit(result.units.dimensionality, abbr=False, dimensionless='-')
+                report.Unit(result.units, abbr=False, dimensionless='&nbsp;'),
+                report.Unit(result.units, abbr=True, dimensionless='&nbsp;'),
+                report.Unit(result.units.dimensionality, abbr=False, dimensionless='&nbsp;')
             ])
     return rows
 
@@ -59,9 +59,9 @@ def _variable_rows(model):
         units = unitmgr.ureg.dimensionless if units is None else units
         rows.append([
             report.Math(varname),
-            report.Unit(units, abbr=False, dimensionless='-'),
-            report.Unit(units, abbr=True, dimensionless='-'),
-            report.Unit(units.dimensionality, abbr=False, dimensionless='-')])
+            report.Unit(units, abbr=False, dimensionless='&nbsp;'),
+            report.Unit(units, abbr=True, dimensionless='&nbsp;'),
+            report.Unit(units.dimensionality, abbr=False, dimensionless='&nbsp;')])
 
         for typeb in variable._typeb:
             typebunits = typeb.units if typeb.units else unitmgr.ureg.dimensionless
@@ -70,16 +70,16 @@ def _variable_rows(model):
             except OffsetUnitCalculusError:
                 rows.append(
                     [report.Math(typeb.name),
-                        f'<font color="red">Ambiguous unit {typeb.units}. Try "delta_{typeb.units}".</font>', '-', '-'])
+                        f'<font color="red">Ambiguous unit {typeb.units}. Try "delta_{typeb.units}".</font>', '&nbsp;', '&nbsp;'])
             except DimensionalityError:
                 rows.append(
                     [report.Math(typeb.name),
-                        f'<font color="red">Cannot convert {typeb.units} to {typeb.units}</font>', '-', '-'])
+                        f'<font color="red">Cannot convert {typeb.units} to {typeb.units}</font>', '&nbsp;', '&nbsp;'])
             else:
                 rows.append([report.Math(typeb.name),
-                            report.Unit(typebunits, abbr=False, dimensionless='-'),
-                            report.Unit(typebunits, abbr=True, dimensionless='-'),
-                            report.Unit(typebunits.dimensionality, abbr=False, dimensionless='-')])
+                            report.Unit(typebunits, abbr=False, dimensionless='&nbsp;'),
+                            report.Unit(typebunits, abbr=True, dimensionless='&nbsp;'),
+                            report.Unit(typebunits.dimensionality, abbr=False, dimensionless='&nbsp;')])
     return rows
 
 

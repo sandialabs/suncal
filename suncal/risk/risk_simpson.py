@@ -106,7 +106,14 @@ def PFR(dist_proc, dist_test, LL, UL, GBL=0, GBU=0, testbias=0, N=5001):
         d = dist_test.dist(loc=t-(test_expected-locorig), **dtest_kwds)
         return (1-d.cdf(UL-GBU)) * dist_proc.pdf(t)
 
-    x = np.linspace(LL, UL, N)
+    minus_inf, plus_inf = dist_proc.interval(1-1E-12)
+    if not np.isfinite(LL):
+        x = np.linspace(minus_inf, UL, N)
+    elif not np.isfinite(UL):
+        x = np.linspace(LL, plus_inf, N)
+    else:
+        x = np.linspace(LL, UL, N)
+
     c1 = simpson(integrand1(x), x=x)
     c2 = simpson(integrand2(x), x=x)
     return c1 + c2
@@ -140,7 +147,14 @@ def PFA_conditional(dist_proc, dist_test, LL, UL, GBL=0, GBU=0, testbias=0, N=50
         d = dist_test.dist(loc=t-(test_expected-locorig), **dtest_kwds)
         return (d.cdf(UL-GBU) - d.cdf(LL+GBL)) * dist_proc.pdf(t)
 
-    intol_procvals = np.linspace(LL, UL, N)
+    minus_inf, plus_inf = dist_proc.interval(1-1E-12)
+    if not np.isfinite(LL):
+        intol_procvals = np.linspace(minus_inf, UL, N)
+    elif not np.isfinite(UL):
+        intol_procvals = np.linspace(LL, plus_inf, N)
+    else:
+        intol_procvals = np.linspace(LL, UL, N)
+
     intol_and_accepted = simpson(integrand(intol_procvals), intol_procvals)
 
     all_procvals = np.linspace(limits.proc.lo, limits.proc.hi, N)

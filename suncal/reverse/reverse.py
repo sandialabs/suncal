@@ -121,11 +121,10 @@ class ModelReverse:
         inpts.update({funcname: targetnom})
         inpts.update(self.model.constants)
         solvefor_value = sympy.lambdify(inpts.keys(), func_reversed, 'numpy')(**inpts)
-        u_solvefor_value = u_solvefor_expr.subs(inpts)
 
         # Plug everything in
         inpts.update({str(u_forward): targetunc})
-        u_solvefor_value = sympy.lambdify(inpts.keys(), u_solvefor_value, 'numpy')(**inpts)
+        u_solvefor_value = sympy.lambdify(inpts.keys(), u_solvefor_expr, 'numpy')(**inpts)
         if not np.isreal(unitmgr.strip_units(u_solvefor_value)) or not np.isreal(unitmgr.strip_units(u_solvefor_value)):
             logging.warning('No real solution for reverse calculation.')
             u_solvefor_value = None
@@ -189,6 +188,7 @@ class ModelReverse:
                     (revmodel.var(str(vname)).uncertainty /
                      revmodel.var(funcname).uncertainty * ci))  # dimensionless
             if np.isfinite(corr):
+                corr = min(max(-1, corr), 1)  # Ensure -1 <= corr <= 1
                 revmodel.variables.correlate(str(vname), funcname, corr)
 
         # Include existing correlations between inputs

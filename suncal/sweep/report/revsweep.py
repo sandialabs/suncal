@@ -164,9 +164,9 @@ class ReportReverseSweep:
     def describe(self, idx):
         ''' Get description for a single index in the sweep '''
         slist = []
-        for i in range(len(self.sweepheader)):
-            valstrs = report.Number.number_array(self.sweepvals[i])
-            slist.append(f'{self.sweepheader_strs[i]} = {valstrs[idx].string()}')
+        for i in range(len(self._header)):
+            valstrs = report.Number.number_array(self._header_strs[i])
+            slist.append(f'{self._header_strs[i]} = {valstrs[idx].string()}')
         return '; '.join(slist).strip()
 
     def plot(self, fig=None, xindex=0):

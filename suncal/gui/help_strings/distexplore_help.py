@@ -1,6 +1,7 @@
 ''' Inline help reports for Distribution Explorer tools '''
 from ...common import report
 
+
 class DistExploreHelp:
     @staticmethod
     def disthelp():

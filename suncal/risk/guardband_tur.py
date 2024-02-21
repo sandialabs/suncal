@@ -79,7 +79,10 @@ def pfa_target(tur: float, itp: float = 0.95, pfa: float = 0.08) -> float:
                 end-of-period-reliability)
             pfa: Desired Probability of False Accept
     '''
-    return fsolve(lambda x: PFA_norm(itp, tur, GB=x)-pfa, x0=.8)[0]
+    result, _, ier, msg = fsolve(lambda x: PFA_norm(itp, tur, GB=x)-pfa, x0=.8, full_output=True)
+    if ier == 1:
+        return result[0]
+    return np.nan
 
 
 def mincost(tur: float, itp: float = 0.95, cc_over_cp: float = 10) -> float:
@@ -111,4 +114,4 @@ def minimax(tur: float, cc_over_cp: float = 10) -> float:
     '''
     conf = 1 - (1 / (1 + cc_over_cp))
     k = stats.norm.ppf(conf)
-    return 1 - k * (1/tur/2)
+    return k * (1/tur/2)

@@ -1,29 +1,32 @@
 ''' UI for calibration interval calculations '''
 
-from PyQt5 import QtWidgets, QtCore
+from PyQt6 import QtWidgets, QtCore, QtGui
 import matplotlib.dates as mdates
 import numpy as np
-from matplotlib.figure import Figure
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 
-from . import gui_common   # noqa: F401
-from . import gui_widgets
-from . import page_dataimport
+from ..common import report
+from . import widgets
+from . import gui_styles
+from .gui_common import BlockedSignals
 from .help_strings import IntervalHelp
 from ..intervals import datearray
-from ..intervals import BinomialIntervalAssets, TestIntervalAssets
+from .page_csvload import SelectCSVData
 
 from ..project import (ProjectIntervalTest, ProjectIntervalTestAssets, ProjectIntervalBinom,
                        ProjectIntervalBinomAssets, ProjectIntervalVariables, ProjectIntervalVariablesAssets)
-from ..common import report
 
 
-def get_colidx(hdr, name):
-    ''' Get index of column or None if not in list '''
-    try:
-        return hdr.index(name)
-    except ValueError:
-        return None
+def parse_dates(values):
+    ''' Convert list of ordinal date numbers (float) into strings to display in the table '''
+    parsed = []
+    for val in values:
+        try:
+            val = datearray([val])[0]
+            datestr = mdates.num2date(val).strftime('%d-%b-%Y')   # float ordinal
+            parsed.append(datestr)
+        except ValueError:
+            parsed.append(str(val))
+    return parsed
 
 
 def getNewIntervalCalc():
@@ -46,6 +49,31 @@ def getNewIntervalCalc():
         else:
             item = ProjectIntervalVariables()
     return item
+
+
+def split_assets(data, current_asset='A'):
+    ''' Take CSV data with an asset list {'Asset':..., 'Start':..., 'End'..., etc}
+        and split to nested dict {Asset: {'Start': ..., 'End'..., etc}}
+    '''
+    length = max(len(values) for values in data.values())
+    assets = np.asarray(data.get('Asset', [current_asset]*length))
+    newdata = {}
+
+    # Convert between table header and config keys
+    keylookup = {'Interval Start': 'startdates',
+                 'Interval End': 'enddates',
+                 'Pass/Fail': 'passfail',
+                 'As Found': 'asfound',
+                 'As Left': 'asleft'}
+
+    for asset in set(assets):
+        indexes = np.where(assets == asset)
+        newdata[asset] = {}
+        for key in data.keys():
+            if key == 'Asset' or len(data[key]) == 0:
+                continue
+            newdata[asset][keylookup.get(key)] = np.asarray(data.get(key))[indexes]
+    return newdata
 
 
 class NewIntDialog(QtWidgets.QDialog):
@@ -90,28 +118,26 @@ class NewIntDialog(QtWidgets.QDialog):
         self.btnok.clicked.connect(self.accept)
 
 
-class A3Params(QtWidgets.QGroupBox):
+class A3ParamsWidget(QtWidgets.QGroupBox):
     ''' Widget for entering parameters for method A3 '''
-    changed = QtCore.pyqtSignal()
-
     def __init__(self, showtol=False, parent=None):
         super().__init__('Test Interval Method (A3) Options', parent=parent)
         self.showtol = showtol
-        self.I0 = gui_widgets.IntLineEdit(low=1)
-        self.Rt = gui_widgets.FloatLineEdit(low=0.001, high=99.999)
-        self.maxchange = gui_widgets.IntLineEdit(low=1, high=999)
-        self.mindelta = gui_widgets.IntLineEdit(low=1)
-        self.minintv = gui_widgets.IntLineEdit(low=1)
-        self.maxintv = gui_widgets.IntLineEdit(low=1)
-        self.tol = gui_widgets.IntLineEdit(low=0)
-        self.I0.setValue(180)
+        self.I0 = widgets.IntLineEdit(low=1)
+        self.Rt = widgets.FloatLineEdit(low=0.001, high=99.999)
+        self.maxchange = widgets.IntLineEdit(low=1, high=999)
+        self.mindelta = widgets.IntLineEdit(low=1)
+        self.minintv = widgets.IntLineEdit(low=1)
+        self.maxintv = widgets.IntLineEdit(low=1)
+        self.tol = widgets.IntLineEdit(low=0)
+        self.I0.setValue(365)
         self.Rt.setValue(95)
         self.mindelta.setValue(5)
         self.maxchange.setValue(2)
         self.minintv.setValue(14)
         self.maxintv.setValue(1865)
-        self.tol.setValue(30)
-        self.conf = gui_widgets.FloatLineEdit(low=.001, high=99.999)
+        self.tol.setValue(56)
+        self.conf = widgets.FloatLineEdit(low=.001, high=99.999)
         self.conf.setValue(50)
         layout = QtWidgets.QFormLayout()
         layout.addRow('Current Assigned Interval (days)', self.I0)
@@ -136,57 +162,42 @@ class A3Params(QtWidgets.QGroupBox):
         self.conf.setToolTip('Confidence required before rejecting the current interval in favor of the new interval.')
         self.tol.setToolTip('Actual calibration interval must be within this many days of the assigned '
                             'interval to be used in the calculation.')
-
         self.setLayout(layout)
-        self.I0.editingFinished.connect(self.changed)
-        self.Rt.editingFinished.connect(self.changed)
-        self.mindelta.editingFinished.connect(self.changed)
-        self.maxchange.editingFinished.connect(self.changed)
-        self.minintv.editingFinished.connect(self.changed)
-        self.maxintv.editingFinished.connect(self.changed)
-        self.tol.editingFinished.connect(self.changed)
-        self.conf.editingFinished.connect(self.changed)
 
-    def get_params(self):
-        ''' Get parameters for A3 method '''
-        p = {'I0': self.I0.value(),
-             'Rt': self.Rt.value()/100,
-             'maxchange': self.maxchange.value(),
-             'conf': self.conf.value()/100,
-             'mindelta': self.mindelta.value(),
-             'minint': self.minintv.value(),
-             'maxint': self.maxintv.value()}
-        if self.showtol:
-            p['tol'] = self.tol.value()
-        return p
-
-    def set_params(self, params):
-        ''' Fill widgets with parameters '''
+    def fill(self, params):
+        ''' Fill widgets with param values '''
         self.I0.setValue(params.get('I0', 180))
-        self.Rt.setValue(params.get('Rt', .95) * 100)
+        self.Rt.setValue(params.get('target', .95) * 100)
         self.maxchange.setValue(params.get('maxchange', 2))
-        self.conf.setValue(params.get('conf', .95)*100)
+        self.conf.setValue(params.get('conf', .50)*100)
         self.mindelta.setValue(params.get('mindelta', 5))
         self.minintv.setValue(params.get('minint', 14))
         self.maxintv.setValue(params.get('maxint', 1865))
-        self.tol.setValue(params.get('tol', 30))
+        self.tol.setValue(params.get('tol', 56))
+
+    def params(self):
+        ''' Get entered parameters as dictionary '''
+        return {'I0': self.I0.value(),
+                'target': self.Rt.value()/100,
+                'maxchange': self.maxchange.value(),
+                'conf': self.conf.value()/100,
+                'mindelta': self.mindelta.value(),
+                'minint': self.minintv.value(),
+                'maxint': self.maxintv.value()}
 
 
-class S2Params(QtWidgets.QGroupBox):
+class S2ParamsWidget(QtWidgets.QGroupBox):
     ''' Widget for entering parameters for method S2 '''
-    changed = QtCore.pyqtSignal()
-
-    def __init__(self, projitem, showbins=False, parent=None):
+    def __init__(self, component, showbins=False, parent=None):
         super().__init__('Binomial Method (S2) Options', parent=parent)
-        self.projitem = projitem
+        self.component = component
         self.binlefts = None
         self.binwidth = None
-
         self.showbins = showbins
-        self.Rt = gui_widgets.FloatLineEdit(low=.001, high=99.999)
-        self.Rt.setValue(95)
-        self.conf = gui_widgets.FloatLineEdit(low=0.001, high=99.999)
-        self.conf.setValue(95)
+        self.Rt = widgets.FloatLineEdit(low=.001, high=99.999)
+        self.Rt.setValue(self.component.params.target*100)
+        self.conf = widgets.FloatLineEdit(low=0.001, high=99.999)
+        self.conf.setValue(self.component.conf*100)
         self.bins = QtWidgets.QSpinBox()
         self.bins.setRange(3, 999)
         self.bins.setValue(10)
@@ -197,40 +208,37 @@ class S2Params(QtWidgets.QGroupBox):
         if self.showbins:
             layout.addRow('Bins', self.bins)
             layout.addRow('', self.btnbin)
+            self.bins.setValue(self.component.bins)
 
         self.Rt.setToolTip('Desired end-of-period reliability as a percent')
         self.conf.setToolTip('Confidence for calculating range of intervals')
         self.bins.setToolTip('Number of bins for condensing individual calibrations into summary statistics.')
 
         self.setLayout(layout)
-        self.Rt.editingFinished.connect(self.changed)
-        self.conf.editingFinished.connect(self.changed)
-        self.bins.valueChanged.connect(self.changed)
         self.btnbin.clicked.connect(self.setbins)
 
-    def get_params(self):
+    def fill(self, params):
+        ''' Fill widgets with param values '''
+        self.Rt.setValue(params.get('Rt', .95) * 100)
+        self.conf.setValue(params.get('conf', .95)*100)
+        self.bins.setValue(params.get('bins', 10))
+
+    def params(self):
         ''' Get parameters for S2 method '''
-        p = {'Rt': self.Rt.value()/100}
+        p = {'Rt': self.Rt.value()/100,
+             'conf': self.conf.value()/100}
         if self.showbins:
             p['bins'] = self.bins.value()
             p['binlefts'] = self.binlefts
             p['binwidth'] = self.binwidth
         return p
 
-    def set_params(self, params):
-        ''' Fill widgets with parameters '''
-        self.Rt.setValue(params.get('Rt', .95)*100)
-        self.conf.setValue(params.get('conf', .95)*100)
-        self.bins.setValue(params.get('bins', 10))
-
     def setbins(self):
         ''' Set bins manually via dialog '''
-        dlg = BinData(self.projitem)
-        ok = dlg.exec_()
+        dlg = widgets.BinData(self.component)
+        ok = dlg.exec()
         if ok:
             self.binlefts, self.binwidth = dlg.getbins()
-            self.projitem.model.binlefts = self.binlefts
-            self.projitem.model.binwidth = self.binwidth
             self.bins.setEnabled(False)
         else:
             self.bins.setEnabled(True)
@@ -238,31 +246,29 @@ class S2Params(QtWidgets.QGroupBox):
             self.binwidth = None
 
 
-class VarsParams(QtWidgets.QGroupBox):
+class VarsParamsWidget(QtWidgets.QGroupBox):
     ''' Widget for entering parameters for Variables method '''
-    changed = QtCore.pyqtSignal()
-
     def __init__(self, parent=None):
         super().__init__('Variables Method Options', parent=parent)
-        self.u0 = gui_widgets.FloatLineEdit()
+        self.u0 = widgets.FloatLineEdit()
         self.u0.setValue(0)
-        self.kvalue = gui_widgets.FloatLineEdit()
+        self.kvalue = widgets.FloatLineEdit()
         self.kvalue.setValue(2)
-        self.y0 = gui_widgets.FloatLineEdit()
+        self.y0 = widgets.FloatLineEdit()
         self.y0.setValue(0)
         self.m = QtWidgets.QSpinBox()
         self.m.setRange(1, 3)
         self.utargetbox = QtWidgets.QGroupBox('Uncertainty Target')
         self.utargetbox.setCheckable(True)
-        self.utarget = gui_widgets.FloatLineEdit()
+        self.utarget = widgets.FloatLineEdit()
         self.utarget.setValue(1)
         self.rtargetbox = QtWidgets.QGroupBox('Reliability Target')
         self.rtargetbox.setCheckable(True)
-        self.rlimL = gui_widgets.FloatLineEdit()
-        self.rlimU = gui_widgets.FloatLineEdit()
+        self.rlimL = widgets.FloatLineEdit()
+        self.rlimU = widgets.FloatLineEdit()
         self.rlimL.setValue(-1)
         self.rlimU.setValue(1)
-        self.conf = gui_widgets.FloatLineEdit(low=0, high=99.999)
+        self.conf = widgets.FloatLineEdit(low=0, high=99.999)
         self.conf.setValue(95)
         flayout = QtWidgets.QFormLayout()
         flayout.addRow('Measurement Uncertainty', self.u0)
@@ -293,256 +299,78 @@ class VarsParams(QtWidgets.QGroupBox):
                               '(at below confidence level) exceeds this limit.')
         self.conf.setToolTip('Confidence level in predicted uncertainty')
 
-        self.u0.editingFinished.connect(self.changed)
-        self.y0.editingFinished.connect(self.changed)
-        self.m.valueChanged.connect(self.changed)
-        self.utarget.editingFinished.connect(self.changed)
-        self.rlimL.editingFinished.connect(self.changed)
-        self.rlimU.editingFinished.connect(self.changed)
-        self.conf.editingFinished.connect(self.changed)
-        self.utargetbox.toggled.connect(self.changed)
-        self.rtargetbox.toggled.connect(self.changed)
-
-    def get_params(self):
+    def params(self):
         ''' Get parameters for variables method '''
         p = {'u0': self.u0.value(),
              'kvalue': self.kvalue.value(),
              'y0': self.y0.value(),
              'm': self.m.value(),
              'utarget': self.utarget.value(),
-             'rlimitL': self.rlimL.value(),
-             'rlimitU': self.rlimU.value(),
+             'rlimits': (self.rlimL.value(), self.rlimU.value()),
              'rconf': self.conf.value()/100,
              'calcrel': self.rtargetbox.isChecked(),
              'calcunc': self.utargetbox.isChecked()}
         return p
 
-    def set_params(self, params):
+    def fill(self, params):
         ''' Fill widgets with parameters '''
         self.u0.setValue(params.get('u0', 0))
         self.kvalue.setValue(params.get('kvalue', 2))
         self.y0.setValue(params.get('y0', 0))
         self.m.setValue(params.get('m', 1))
         self.utarget.setValue(params.get('utarget', 1))
-        rlimits = params.get('rlimits', (-1, 1))
-        self.rlimL.setValue(rlimits[0])
-        self.rlimU.setValue(rlimits[1])
+        limits = params.get('rlimits', (-1, 1))
+        self.rlimL.setValue(limits[0])
+        self.rlimU.setValue(limits[1])
         self.conf.setValue(params.get('rconf', .95)*100)
         self.rtargetbox.setChecked(params.get('calcrel', True))
         self.utargetbox.setChecked(params.get('calcunc', True))
 
 
-class IntervalTable(gui_widgets.FloatTableWidget):
-    ''' Table widget for interval data entry '''
-    def __init__(self, parent=None):
-        super().__init__(parent=parent)
-        self.mode = 'intervaltest'
-
-    def setup_table(self, mode='testinterval', startend=True, foundleft=True):
-        ''' Configure table for the given interval mode '''
-        currentdata = self.get_data()
-        self.startend = startend
-        self.foundleft = foundleft
-        self.mode = mode
-
-        if mode in ['intervaltestasset', 'intervalbinomasset']:
-            hdrs = ['Interval End', 'Pass/Fail']
-            if startend:
-                hdrs.insert(0, 'Interval Start')
-            self.setColumnCount(len(hdrs))
-            self.setHorizontalHeaderLabels(hdrs)
-
-        elif mode == 'intervalvariablesasset':
-            hdrs = ['Interval End']
-            if startend:
-                hdrs.insert(0, 'Interval Start')
-            if self.foundleft:
-                hdrs.append('As-Found Value')
-            hdrs.append('As-Left Value')
-            self.setColumnCount(len(hdrs))
-            self.setHorizontalHeaderLabels(hdrs)
-
-        elif mode == 'intervaltest':
-            hdrs = ['Number In-Tolerance', 'Total Calibrations']
-            self.setColumnCount(len(hdrs))
-            self.setRowCount(1)
-            self.setHorizontalHeaderLabels(hdrs)
-            self.maxrows = 1
-
-        elif mode == 'intervalbinom':
-            hdrs = ['Interval Length', 'Observed Reliability', 'Total Calibrations']
-            self.setColumnCount(len(hdrs))
-            self.setHorizontalHeaderLabels(hdrs)
-
-        elif mode == 'intervalvariables':
-            hdrs = ['Interval Length', 'Deviation from Prior']
-            self.setColumnCount(len(hdrs))
-            self.setHorizontalHeaderLabels(hdrs)
-
-        else:
-            raise ValueError
-
-        self.maxcols = len(hdrs)
-        self.filldata(currentdata)
-        self.resizeColumnsToContents()
-
-    def get_data(self):
-        ''' Get interval data as dictionary '''
-        hdr = [self.horizontalHeaderItem(i).text() for i in range(self.columnCount())]
-        tabledata = self.get_table()  # Strips rows with blanks
-        if len(tabledata) == 0:
-            return {}
-
-        startcol = get_colidx(hdr, 'Interval Start')
-        endcol = get_colidx(hdr, 'Interval End')
-        pfcol = get_colidx(hdr, 'Pass/Fail')
-        if self.mode in ['intervaltestasset', 'intervalbinomasset']:
-            dat = {'startdates': tabledata[startcol] if startcol is not None else None,
-                   'enddates': tabledata[endcol] if endcol is not None else None,
-                   'passfail': tabledata[pfcol] if pfcol is not None else None}
-
-        elif self.mode == 'intervalvariablesasset':
-            asfound = get_colidx(hdr, 'As-Found Value')
-            asleft = get_colidx(hdr, 'As-Left Value')
-            dat = {'startdates': tabledata[startcol] if startcol is not None else None,
-                   'enddates': tabledata[endcol] if endcol is not None else None,
-                   'asfound': tabledata[asfound] if asfound is not None else None,
-                   'asleft': tabledata[asleft] if asleft is not None else None}
-
-        elif self.mode == 'intervaltest':
-            intol = get_colidx(hdr, 'Number In-Tolerance')
-            n = get_colidx(hdr, 'Total Calibrations')
-
-            dat = {'intol': tabledata[intol][0],
-                   'n': tabledata[n][0]}
-
-        elif self.mode == 'intervalbinom':
-            dt = get_colidx(hdr, 'Interval Length')
-            ri = get_colidx(hdr, 'Observed Reliability')
-            n = get_colidx(hdr, 'Total Calibrations')
-            dat = {'ti': tabledata[dt],
-                   'ri': tabledata[ri],
-                   'ni': tabledata[n]}
-
-        elif self.mode == 'intervalvariables':
-            t = get_colidx(hdr, 'Interval Length')
-            y = get_colidx(hdr, 'Deviation from Prior')
-            dat = {'t': tabledata[t],
-                   'deltas': tabledata[y]}
-
-        return dat
-
-    def filldata(self, dat):
-        ''' Fill table with data from dictionary '''
-        self.blockSignals(True)
-        hdr = [self.horizontalHeaderItem(i).text() for i in range(self.columnCount())]
-        startcol = get_colidx(hdr, 'Interval Start')
-        endcol = get_colidx(hdr, 'Interval End')
-        pfcol = get_colidx(hdr, 'Pass/Fail')
-        foundcol = get_colidx(hdr, 'As-Found Value')
-        leftcol = get_colidx(hdr, 'As-Left Value')
-        ticol = get_colidx(hdr, 'Interval Length')
-        ricol = get_colidx(hdr, 'Observed Reliability')
-        nicol = get_colidx(hdr, 'Total Calibrations')
-        intolcol = get_colidx(hdr, 'Number In-Tolerance')
-        deltacol = get_colidx(hdr, 'Deviation from Prior')
-
-        self.clear()
-        try:
-            rowcount = max(len(dat[k]) for k in dat.keys() if dat[k] is not None)
-            rowcount = max(rowcount, 1)
-        except (ValueError, TypeError):
-            rowcount = 1  # No values
-        self.setRowCount(rowcount)
-
-        def fillcol(colidx, vals, date=False):
-            if colidx is not None and vals is not None:
-                vals = np.atleast_1d(vals)
-                for i, val in enumerate(vals):
-                    if date:
-                        try:
-                            val = datearray([val])[0]
-                            datestr = mdates.num2date(val).strftime('%d-%b-%Y')   # float ordinal
-                            self.setItem(i, colidx, QtWidgets.QTableWidgetItem(datestr))
-                        except ValueError:
-                            self.setItem(i, colidx, QtWidgets.QTableWidgetItem())
-                    else:
-                        self.setItem(i, colidx, QtWidgets.QTableWidgetItem(str(val)))
-
-        fillcol(startcol, dat.get('startdates', None), date=True)
-        fillcol(endcol, dat.get('enddates', None), date=True)
-        fillcol(pfcol, dat.get('passfail', None))
-        fillcol(foundcol, dat.get('asfound', None))
-        fillcol(leftcol, dat.get('asleft', None))
-        fillcol(ricol, dat.get('ri', None))
-        fillcol(nicol, dat.get('ni', None))
-        fillcol(ticol, dat.get('ti', dat.get('dt', None)))
-        fillcol(intolcol, dat.get('intol', None))
-        fillcol(deltacol, dat.get('deltas', None))
-        if self.mode == 'intervaltest' and 'intol' in dat:
-            self.setItem(0, 0, QtWidgets.QTableWidgetItem(str(dat.get('intol'))))
-            self.setItem(0, 1, QtWidgets.QTableWidgetItem(str(dat.get('total'))))
-
-        self.blockSignals(False)
-
-
 class IntervalWidget(QtWidgets.QWidget):
-    ''' Widget for calibration interval calculations '''
-    def __init__(self, projitem, parent=None):
+    def __init__(self, component, parent=None):
         super().__init__(parent)
-        self.projitem = projitem
-        self.table = IntervalTable()
-        self.asset = QtWidgets.QComboBox()
-        self.asset.addItems(['A'])
-        self.asset.setToolTip('Calibration data from multiple assets can be entered. Select different assets here.')
-        self.addremasset = gui_widgets.PlusMinusButton()
-        self.addremasset.btnplus.setToolTip('Add an asset to the interval calculation')
-        self.addremasset.btnminus.setToolTip('Remove the current asset from the interval calculation')
-        self.chkStartDates = QtWidgets.QCheckBox('Enter start and end dates')
-        self.chkFoundLeft = QtWidgets.QCheckBox('Enter as-found and as-left values')
-        self.txtNotes = QtWidgets.QPlainTextEdit()
-        self.txtOutput = gui_widgets.MarkdownTextEdit()
-        self.btnCalc = QtWidgets.QPushButton('Calculate')
+        self.component = component
 
-        self.init_mode()
-        if self.mode in ['intervalvariables', 'intervalvariablesasset']:
-            self.params = VarsParams()
-        elif self.mode in ['intervaltest', 'intervaltestasset']:
-            self.params = A3Params(showtol=isinstance(projitem, ProjectIntervalTestAssets))
-        else:
-            showbins = isinstance(projitem, ProjectIntervalBinomAssets)
-            self.params = S2Params(projitem=self.projitem, showbins=showbins)
+        self.table = self._setup_history_table()
+        self.paramswidget = self._setup_params()
+        self.calc_button = QtWidgets.QPushButton('Calculate')
+        self.notes = QtWidgets.QPlainTextEdit()
+        self.output_report = widgets.MarkdownTextEdit()
 
-        clayout = QtWidgets.QVBoxLayout()
-        if 'asset' in self.mode:
-            alayout = QtWidgets.QHBoxLayout()
-            alayout.addWidget(QtWidgets.QLabel('Asset:'))
-            alayout.addWidget(self.asset, stretch=4)
-            alayout.addWidget(self.addremasset)
-            clayout.addLayout(alayout)
-        clayout.addWidget(self.table)
-        clayout.addWidget(self.chkStartDates)
-        clayout.addWidget(self.chkFoundLeft)
-        inbox = QtWidgets.QGroupBox('Calibration Data')
-        inbox.setLayout(clayout)
+        self.actLoadData = QtGui.QAction('Load Data From CSV...', self)
+        self.actSaveReport = QtGui.QAction('Save Report...', self)
+        self.actClear = QtGui.QAction('Clear Table', self)
+        self.actSaveReport.setEnabled(False)
+        self.menu = QtWidgets.QMenu('Intervals')
+        self.menu.addSeparator()
+        self.menu.addAction(self.actLoadData)
+        self.menu.addAction(self.actSaveReport)
+        self.menu.addAction(self.actClear)
+        self.menu.addSeparator()
+        self.menu.addAction(self.actSaveReport)
+
+        groupbox = QtWidgets.QGroupBox('Calibraiton Data')
+        boxlayout = QtWidgets.QVBoxLayout()
+        boxlayout.addWidget(self.table)
+        groupbox.setLayout(boxlayout)
         llayout = QtWidgets.QVBoxLayout()
-        llayout.addWidget(inbox)
-        llayout.addWidget(self.btnCalc)
+        llayout.addWidget(groupbox)
+        llayout.addWidget(self.calc_button)
         r1layout = QtWidgets.QHBoxLayout()
-        r1layout.addWidget(self.params)
-        notes = QtWidgets.QGroupBox('Notes')
+        r1layout.addWidget(self.paramswidget)
+        notesbox = QtWidgets.QGroupBox('Notes')
         nlayout = QtWidgets.QVBoxLayout()
-        nlayout.addWidget(self.txtNotes)
-        notes.setLayout(nlayout)
-        r1layout.addWidget(notes)
+        nlayout.addWidget(self.notes)
+        notesbox.setLayout(nlayout)
+        r1layout.addWidget(notesbox)
         rlayout = QtWidgets.QVBoxLayout()
         rlayout.addLayout(r1layout, stretch=1)
         outbox = QtWidgets.QGroupBox('Results')
         outlayout = QtWidgets.QVBoxLayout()
-        outlayout.addWidget(self.txtOutput)
+        outlayout.addWidget(self.output_report)
         outbox.setLayout(outlayout)
         rlayout.addWidget(outbox, stretch=3)
-
         self.leftwidget = QtWidgets.QWidget()
         self.leftwidget.setLayout(llayout)
         self.rightwidget = QtWidgets.QWidget()
@@ -556,218 +384,46 @@ class IntervalWidget(QtWidgets.QWidget):
         layout.addWidget(self.splitter)
         self.setLayout(layout)
 
-        self.actLoadData = QtWidgets.QAction('Insert Data From...', self)
-        self.actSaveReport = QtWidgets.QAction('Save Report...', self)
-        self.actClear = QtWidgets.QAction('Clear Table', self)
-        self.actSaveReport.setEnabled(False)
-        self.menu = QtWidgets.QMenu('Intervals')
-        self.menu.addSeparator()
-        self.menu.addAction(self.actLoadData)
-        self.menu.addAction(self.actSaveReport)
-        self.menu.addAction(self.actClear)
-        self.menu.addSeparator()
-        self.menu.addAction(self.actSaveReport)
-
-        self.txtNotes.setPlainText(self.projitem.longdescription)
-        self.table.setRowCount(1)
-        self.init_data()
-        self.chkStartDates.stateChanged.connect(self.setup_table)
-        self.chkFoundLeft.stateChanged.connect(self.setup_table)
-        self.asset.currentIndexChanged.connect(self.change_asset)
-        self.addremasset.plusclicked.connect(self.add_asset)
-        self.addremasset.minusclicked.connect(self.rem_asset)
-        self.btnCalc.clicked.connect(self.calculate)
-        self.table.valueChanged.connect(self.update_data)
-        self.params.changed.connect(self.update_data)
-        self.txtNotes.textChanged.connect(self.update_data)
-        self.actClear.triggered.connect(self.clear_table)
-        self.actSaveReport.triggered.connect(self.save_report)
+        self.notes.setPlainText(self.component.description)
+        self.calc_button.clicked.connect(self.calculate)
+        self.actClear.triggered.connect(self.table.clear)
         self.actLoadData.triggered.connect(self.load_data)
 
-    def init_mode(self):
-        ''' Initialize '''
-        self.chkFoundLeft.setVisible(False)
-        self.chkStartDates.setVisible(False)
-        if isinstance(self.projitem, ProjectIntervalTest):
-            self.mode = 'intervaltest'
-        elif isinstance(self.projitem, ProjectIntervalBinom):
-            self.mode = 'intervalbinom'
-        elif isinstance(self.projitem, ProjectIntervalTestAssets):
-            self.mode = 'intervaltestasset'
-        elif isinstance(self.projitem, ProjectIntervalBinomAssets):
-            self.mode = 'intervalbinomasset'
-        elif isinstance(self.projitem, ProjectIntervalVariables):
-            self.mode = 'intervalvariables'
-        elif isinstance(self.projitem, ProjectIntervalVariablesAssets):
-            self.mode = 'intervalvariablesasset'
-            self.chkFoundLeft.setVisible(True)
-        else:
-            raise ValueError
+    def _setup_history_table(self):
+        ''' Make table with appropriate data '''
+        raise NotImplementedError  # Subclass Me
 
-        if 'asset' in self.mode:
-            self.chkStartDates.setVisible(True)
-
-    def init_data(self):
-        ''' Initialize data with values from saved config '''
-        config = self.projitem.get_config()
-        self.params.set_params(config)
-        if 'asset' in self.mode:
-            assetdict = config.get('assets', {})
-            if len(assetdict) > 0:
-                self.chkFoundLeft.setChecked(any(d.get('asfound', None) is not None for d in assetdict.values()))
-                self.chkStartDates.setChecked(any(d.get('startdates', None) is not None for d in assetdict.values()))
-                self.asset.clear()
-                self.asset.addItems([str(s) for s in assetdict.keys()])
-                dat = assetdict.get(self.asset.currentText(), {})
-            self.setup_table()
-            if len(assetdict) > 0:
-                self.table.filldata(dat)
-        elif self.mode == 'intervalbinom':
-            dat = {'ri': config.get('ri', []),
-                   'ni': config.get('ni', []),
-                   'ti': config.get('ti', [])}
-            self.setup_table()
-            self.table.filldata(dat)
-        elif self.mode == 'intervaltest':
-            dat = {'intol': config.get('intol', 0),
-                   'total': config.get('total', 1)}
-            self.setup_table()
-            self.table.filldata(dat)
-        elif self.mode == 'intervalvariables':
-            dat = {'dt': config.get('dt', []),
-                   'deltas': config.get('deltas', [])}
-            self.setup_table()
-            self.table.filldata(dat)
-
-    def setup_table(self):
-        ''' Setup the data table for the data entry format '''
-        self.table.setup_table(self.mode, self.chkStartDates.isChecked(), self.chkFoundLeft.isChecked())
-
-    def clear_table(self):
-        ''' Clear the table (only for the current asset) '''
-        self.table.clear()
-
-    def update_data(self):
-        ''' Save inputs back to model '''
-        dat = self.table.get_data()  # dictionary
-        params = self.params.get_params()
-        assetname = self.asset.currentText()
-
-        if 'asset' in self.mode:
-            self.projitem.model.updateasset(assetname, **dat)
-        else:
-            self.projitem.model.update(**dat)
-
-        self.projitem.model.update_params(**params)
-        self.projitem.longdescription = self.txtNotes.toPlainText()
+    def _setup_params(self):
+        ''' Set params widget '''
+        raise NotImplementedError  # Subclass Me
 
     def update_proj_config(self):
-        self.update_data()
+        ''' Update the projects configuration with page values '''
+        raise NotImplementedError  # Subclass Me
 
-    def calculate(self):
-        ''' Run the calculation '''
-        QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
-        self.update_data()
-
-        try:
-            self.projitem.calculate()
-        except (TypeError, ValueError, RuntimeError):
-            self.txtOutput.setHtml('Error computing interval.')
-        else:
-            self.txtOutput.setReport(self.get_report())
-            self.actSaveReport.setEnabled(True)
-        QtWidgets.QApplication.restoreOverrideCursor()
-
-    def change_asset(self, idx):
-        ''' New asset selected in combobox '''
-        assetname = self.asset.currentText()
-        if assetname in self.projitem.model.assets:
-            dat = self.projitem.model.assets[assetname]
-            self.table.filldata(dat)
-        else:
-            self.table.clear()
-
-    def add_asset(self):
-        ''' Add a new asset to the dropdown '''
-        name, ok = QtWidgets.QInputDialog.getText(self, 'New Asset', 'Asset Name:')
-        if ok:
-            self.asset.addItems([name])
-            self.asset.setCurrentIndex(self.asset.count()-1)
-
-    def rem_asset(self):
-        ''' Remove current asset from dropdown '''
-        if self.asset.count() > 0:
-            mbox = QtWidgets.QMessageBox()
-            mbox.setWindowTitle('Suncal')
-            mbox.setText(f'Remove asset {self.asset.currentText()}?')
-            mbox.setStandardButtons(QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
-            ok = mbox.exec_()
-            if ok == QtWidgets.QMessageBox.Yes:
-                self.projitem.model.remasset(self.asset.currentText())
-                self.asset.removeItem(self.asset.currentIndex())
+    def fill_column(self, col, values):
+        ''' Fill a column of the table with the values '''
+        if self.table.rowCount() < len(values):
+            self.table.setRowCount(len(values))
+        for row, value in enumerate(values):
+            self.table.setItem(row, col, QtWidgets.QTableWidgetItem(str(value)))
 
     def load_data(self):
-        ''' Import data from CSV or another calculation '''
-        cols = [self.table.horizontalHeaderItem(i).text() for i in range(self.table.columnCount())]
-        if 'asset' in self.mode:
-            cols = ['Asset'] + cols
-        dlg = page_dataimport.ArraySelectWidget(project=self.projitem.project, colnames=cols)
-        ok = dlg.exec_()
-        if ok:
-            dat = dlg.get_array()
-            if len(dat) == 0:
-                QtWidgets.QMessageBox.warning(self, 'Data Import', 'No columns selected.')
-                return
-            if 'asset' in self.mode:
-                # Group by assets then repopulate entire table
-                keys = list(dat.keys())
-                rows = len(dat[keys[0]])
-                assetdat = {}
-                for row in range(rows):
-                    if 'Asset' in dat:
-                        asset = str(dat['Asset'][row])
-                    else:
-                        asset = str(self.asset.currentText())
-                    if asset not in assetdat:
-                        assetdat[asset] = {}
-                    for colname in cols:
-                        if colname != 'Asset' and colname in dat:
-                            colid = {'Interval End': 'enddates',
-                                     'Interval Start': 'startdates',
-                                     'Pass/Fail': 'passfail',
-                                     'As-Found': 'asfound',
-                                     'As-Left': 'asleft',
-                                     'As-Found Value': 'asfound',
-                                     'As-Left Value': 'asleft',
-                                     }.get(colname, None)
-                            if colid is not None:
-                                if colid not in assetdat[asset]:
-                                    assetdat[asset][colid] = []
-                                val = dat[colname][row]
-                                assetdat[asset][colid].append(val)
-                for asset, dat in assetdat.items():
-                    dat.setdefault('enddates', None)
-                    dat.setdefault('passfail', None)
-                    dat.setdefault('startdates', None)
-                    dat.setdefault('asfound', None)
-                    dat.setdefault('asleft', None)
-                    self.projitem.model.updateasset(asset, **dat)
-            elif self.mode == 'intervaltest':
-                intol = dat.get('Number In-Tolerance')
-                n = dat.get('Total Calibrations')
-                intol = intol[0] if intol is not None else None
-                n = n[0] if n is not None else None
-                self.projitem.model.update(intol, n)
-            elif self.mode == 'intervalbinom':
-                ti = dat.get('Interval Length')
-                ri = dat.get('Observed Reliability')
-                ni = dat.get('Total Calibrations')
-                self.projitem.model.update(ti, ri, ni)
-            elif self.mode == 'intervalvariables':
-                t = dat.get('Interval Length')
-                delta = dat.get('Deviation from Prior')
-                self.projitem.model.update(t, delta)
-            self.init_data()
+        ''' Import data from CSV  '''
+        fname, _ = QtWidgets.QFileDialog.getOpenFileName(caption='CSV file to load')
+        if fname:
+            dlg = SelectCSVData(fname, parent=self)
+            if dlg.exec():
+                variables = self.column_names
+                dset = dlg.dataset()
+                data = dset.model.data
+                datahdr = dset.model.colnames
+                dlg2 = widgets.AssignColumnWidget(data, datahdr, variables)
+                if dlg2.exec():
+                    data = dlg2.get_assignments()
+                    # Data comes back as np.atleast_2d. Squeeze out the extra dimension.
+                    data = {name: np.squeeze(value) for name, value in data.items()}
+                    self.insert_csvdata(data)
 
     def get_menu(self):
         ''' Get the menu for this widget '''
@@ -775,232 +431,591 @@ class IntervalWidget(QtWidgets.QWidget):
 
     def get_report(self):
         ''' Get full report of curve fit, using page settings '''
-        conf = self.params.conf.value()/100
-        conf = min(max(0, conf), .9999)
-        return self.projitem.result.report.summary(conf=conf)
+        return self.component.result.report.summary()
 
     def save_report(self):
         ''' Save full report, asking user for settings/filename '''
-        gui_widgets.savereport(self.get_report())
+        with gui_styles.LightPlotstyle():
+            widgets.savereport(self.get_report())
+
+    def calculate(self):
+        ''' Run the calculation '''
+        QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.CursorShape.WaitCursor)
+        self.update_proj_config()
+
+        try:
+            self.component.calculate()
+        except (TypeError, ValueError, RuntimeError):
+            self.output_report.setHtml('Error computing interval.')
+        else:
+            self.output_report.setReport(self.get_report())
+            self.actSaveReport.setEnabled(True)
+        QtWidgets.QApplication.restoreOverrideCursor()
 
     def help_report(self):
-        ''' Get the help report to display the current widget mode '''
-        if 'test' in self.mode:  # intervaltest, intervaltestasset
-            return IntervalHelp.test()
-        elif 'binom' in self.mode:  # intervalbinom, intervalbinomasset
-            return IntervalHelp.binomial()
-        elif 'variable' in self.mode:  # intervalvariables, intervalvariablesasset
-            return IntervalHelp.variables()
-        else:
-            return IntervalHelp.nohelp()
+        return IntervalHelp.test()
 
 
-class BinData(QtWidgets.QDialog):
-    ''' Dialog for binning historical pass/fail data for method S2 '''
-    def __init__(self, projitem, parent=None):
-        super().__init__(parent)
-        font = self.font()
-        font.setPointSize(10)
-        self.setFont(font)
-        self.projitem = projitem
-        self.selectedbinidx = None
-        self.press = None
-        self.lastclickedbin = None
-        self.binlines = []
+class IntervalA3Widget(IntervalWidget):
+    ''' Widget for A3 Interval with summarized history '''
+    COL_INTOL = 0
+    COL_TOTAL = 1
 
-        self.setWindowTitle('Select data bins')
-        self.fig = Figure()
-        self.canvas = FigureCanvas(self.fig)
-        self.txtOutput = gui_widgets.MarkdownTextEdit()
-        self.nbins = QtWidgets.QSpinBox()
-        self.nbins.setRange(2, 100)
-        self.binwidth = QtWidgets.QSpinBox()
-        self.binwidth.setRange(1, 9999)
-        self.dlgbutton = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel)
+    def _setup_history_table(self):
+        self.column_names = ['Number In-Tolerance', 'Total Calibrations']
+        table = widgets.FloatTableWidget()
+        table.setColumnCount(2)
+        table.setHorizontalHeaderLabels(self.column_names)
+        table.maxrows = 1
+        intol = self.component.params.intol
+        n = self.component.params.n
+        table.setItem(0, self.COL_INTOL, QtWidgets.QTableWidgetItem(str(intol)))
+        table.setItem(0, self.COL_TOTAL, QtWidgets.QTableWidgetItem(str(n)))
+        table.resizeColumnsToContents()
+        return table
 
+    def _setup_params(self):
+        params = A3ParamsWidget()
+        params.fill(self.component.get_config())
+        return params
+
+    def update_proj_config(self):
+        ''' Save inputs back to model '''
+        config = self.component.get_config()
+        config['params'].update(self.paramswidget.params())
+        config['params']['intol'] = self.table.get_column(self.COL_INTOL)[0]
+        config['params']['n'] = self.table.get_column(self.COL_TOTAL)[0]
+        self.component.load_config(config)
+
+    def insert_csvdata(self, data):
+        ''' Load data from CSV into table '''
+        # data is dict with keys equal to self.column_names
+        if 'Number In-Tolerance' in data:
+            self.table.item(0, self.COL_INTOL).setText(str(data['Number In-Tolerance'][0]))
+        if 'Total Calibrations' in data:
+            self.table.item(0, self.COL_TOTAL).setText(str(data['Total Calibrations'][0]))
+
+
+class IntervalS2Widget(IntervalWidget):
+    ''' Widget for S2 Interval with summarized history '''
+    COL_LENGTH = 0
+    COL_OBSERVED = 1
+    COL_TOTAL = 2
+
+    def _setup_history_table(self):
+        self.column_names = ['Interval Length', 'Observed Reliability', 'Total Calibrations']
+        table = widgets.FloatTableWidget()
+        table.setColumnCount(3)
+        table.setHorizontalHeaderLabels(self.column_names)
+        ti = self.component.params.ti
+        ri = self.component.params.ri
+        ni = self.component.params.ni
+        for row, (t, r, n) in enumerate(zip(ti, ri, ni)):
+            table.setItem(row, self.COL_LENGTH, QtWidgets.QTableWidgetItem(str(t)))
+            table.setItem(row, self.COL_OBSERVED, QtWidgets.QTableWidgetItem(str(r)))
+            table.setItem(row, self.COL_TOTAL, QtWidgets.QTableWidgetItem(str(n)))
+        table.resizeColumnsToContents()
+        return table
+
+    def _setup_params(self):
+        params = S2ParamsWidget(self.component)
+        return params
+
+    def update_proj_config(self):
+        ''' Save inputs back to model '''
+        config = self.component.get_config()
+        config.update(self.paramswidget.params())
+        config['ti'] = self.table.get_column(self.COL_LENGTH, remove_nan=True)
+        config['ri'] = self.table.get_column(self.COL_OBSERVED, remove_nan=True)
+        config['ni'] = self.table.get_column(self.COL_TOTAL, remove_nan=True)
+        self.component.load_config(config)
+
+    def insert_csvdata(self, data):
+        ''' Load data from CSV into table '''
+        # data is dict with keys equal to self.column_names
+        if (values := data.get('Interval Length')) is not None:
+            self.fill_column(self.COL_LENGTH, values)
+        if (values := data.get('Observed Reliability')) is not None:
+            self.fill_column(self.COL_OBSERVED, values)
+        if (values := data.get('Total Calibrations')) is not None:
+            self.fill_column(self.COL_TOTAL, values)
+
+    def help_report(self):
+        return IntervalHelp.binomial()
+
+
+class IntervalVariablesWidget(IntervalWidget):
+    ''' Widget for Variables Interval with summarized history '''
+    COL_LENGTH = 0
+    COL_DEVIATION = 1
+
+    def __init__(self, component, parent=None):
+        super().__init__(component=component, parent=parent)
+        self._calc_reliability = True
+        self._calc_uncertainty = True
+
+    def _setup_history_table(self):
+        self.column_names = ['Interval Length', 'Deviation from Prior']
+        table = widgets.FloatTableWidget()
+        table.setColumnCount(2)
+        table.setHorizontalHeaderLabels(self.column_names)
+        dt = self.component.data.dt
+        deltas = self.component.data.deltas
+        for row, (t, delt) in enumerate(zip(dt, deltas)):
+            table.setItem(row, self.COL_LENGTH, QtWidgets.QTableWidgetItem(str(t)))
+            table.setItem(row, self.COL_DEVIATION, QtWidgets.QTableWidgetItem(str(delt)))
+        table.resizeColumnsToContents()
+        return table
+
+    def _setup_params(self):
+        params = VarsParamsWidget()
+        params.fill(self.component.get_config())
+        return params
+
+    def update_proj_config(self):
+        ''' Save inputs back to model '''
+        config = self.component.get_config()
+        params = self.paramswidget.params()
+        self._calc_reliability = params.pop('calcrel', True)
+        self._calc_uncertainty = params.pop('calcunc', True)
+        config['dt'] = self.table.get_column(self.COL_LENGTH, remove_nan=True)
+        config['deltas'] = self.table.get_column(self.COL_DEVIATION, remove_nan=True)
+        config.update(params)
+        self.component.load_config(config)
+
+    def insert_csvdata(self, data):
+        ''' Load data from CSV into table '''
+        # data is dict with keys equal to self.column_names
+        if (values := data.get('Interval Length')) is not None:
+            self.fill_column(self.COL_LENGTH, values)
+        if (values := data.get('Deviation from Prior')) is not None:
+            self.fill_column(self.COL_DEVIATION, values)
+
+    def calculate(self):
+        ''' Run the calculation '''
+        QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.CursorShape.WaitCursor)
+        self.update_proj_config()
+        rpt = report.Report()
+
+        if self._calc_reliability:
+            try:
+                self.component.calculate_reliability_target()
+            except (TypeError, ValueError, RuntimeError):
+                rpt.txt('Error computing reliability target\n\n')
+            else:
+                rpt.append(self.component.result_reliability.report.summary())
+
+        if self._calc_uncertainty:
+            try:
+                self.component.calculate_uncertainty_target()
+            except (TypeError, ValueError, RuntimeError):
+                rpt.txt('Error computing uncertainty target\n\n')
+            else:
+                rpt.append(self.component.result_uncertainty.report.summary())
+
+        self.output_report.setReport(rpt)
+        self.actSaveReport.setEnabled(True)
+        QtWidgets.QApplication.restoreOverrideCursor()
+
+    def help_report(self):
+        return IntervalHelp.variables()
+
+
+class AssetTablePassFail(QtWidgets.QWidget):
+    ''' Widget for entering multiple assets and their pass/fail histories '''
+    COL_START = 0
+    COL_END = 1
+    COL_PASSFAIL = 2
+
+    def __init__(self, assets: dict, parent=None):
+        super().__init__(parent=parent)
+        self.assets = assets
+        self.combo_asset = widgets.ComboLabel('Asset:')
+        self.add_rem_button = widgets.PlusMinusButton()
+        self.startend = QtWidgets.QCheckBox('Enter start and end dates')
+        self.table = widgets.FloatTableWidget()
+
+        hlayout = QtWidgets.QHBoxLayout()
+        hlayout.addWidget(self.combo_asset)
+        hlayout.addStretch()
+        hlayout.addWidget(self.add_rem_button)
         layout = QtWidgets.QVBoxLayout()
-        tlayout = QtWidgets.QHBoxLayout()
-        tlayout.addWidget(self.canvas, stretch=2)
-        tlayout.addWidget(self.txtOutput, stretch=1)
-        layout.addLayout(tlayout)
-        blayout = QtWidgets.QHBoxLayout()
-        blayout.addWidget(QtWidgets.QLabel('Click and drag rectangles to adjust bin positions'))
-        blayout.addSpacing(25)
-        blayout.addWidget(QtWidgets.QLabel('Number of Bins'))
-        blayout.addWidget(self.nbins)
-        blayout.addSpacing(50)
-        blayout.addWidget(QtWidgets.QLabel('Bin Width'))
-        blayout.addWidget(self.binwidth)
-        blayout.addStretch()
-        layout.addLayout(blayout)
-        layout.addWidget(self.dlgbutton)
+        layout.addLayout(hlayout)
+        layout.addWidget(self.table)
+        layout.addWidget(self.startend)
+        self.setLayout(layout)
+        self.table.setColumnCount(3)
+        self.table.setHorizontalHeaderLabels(['Interval Start',
+                                              'Interval End',
+                                              'Pass/Fail'])
+
+        self.combo_asset.addItems(self.assets.keys())
+        self.show_startend()
+        self.filltable()
+
+        self.startend.stateChanged.connect(self.show_startend)
+        self.add_rem_button.plusclicked.connect(self.add_asset)
+        self.add_rem_button.minusclicked.connect(self.rem_asset)
+        self.table.valueChanged.connect(self.update_asset)
+        self.combo_asset.currentTextChanged.connect(self.filltable)
+
+    def show_startend(self):
+        ''' Show start/end dates when checked '''
+        self.table.setColumnHidden(self.COL_START, not self.startend.isChecked())
+
+    def rowCount(self):
+        return self.table.rowCount()
+
+    def setRowCount(self, value):
+        self.table.setRowCount(value)
+
+    def setItem(self, row, col, item):
+        self.table.setItem(row, col, item)
+
+    def filltable(self):
+        ''' Fill table with data for the selected asset '''
+        with BlockedSignals(self.table):
+            assetname = self.combo_asset.currentText()
+            asset = self.assets.get(assetname, {})
+            self.table.clear()
+            startdates = parse_dates(asset.get('startdates', []))
+            enddates = parse_dates(asset.get('enddates', []))
+            passfails = asset.get('passfail', [])
+            self.table.setRowCount(max(1, len(passfails)))
+            if len(startdates) == 0:
+                startdates = [''] * len(enddates)
+            for row, (start, end, pf) in enumerate(zip(startdates, enddates, passfails)):
+                self.table.setItem(row, self.COL_START, QtWidgets.QTableWidgetItem(str(start)))
+                self.table.setItem(row, self.COL_END, QtWidgets.QTableWidgetItem(str(end)))
+                self.table.setItem(row, self.COL_PASSFAIL, QtWidgets.QTableWidgetItem(str(pf)))
+            self.table.resizeColumnsToContents()
+
+    def clear(self):
+        ''' Clear the table '''
+        self.table.clear()
+
+    def add_asset(self):
+        ''' Add asset button was pressed '''
+        name, ok = QtWidgets.QInputDialog.getText(self, 'New Asset', 'Asset Name:')
+        if ok:
+            self.combo_asset.addItems([name])
+            self.combo_asset.setCurrentIndex(self.combo_asset.count()-1)
+
+    def rem_asset(self):
+        ''' Remove asset button was pressed  '''
+        if self.combo_asset.count() > 0:
+            asset_to_remove = self.combo_asset.currentText()
+            asset_idx = self.combo_asset.currentIndex()
+            mbox = QtWidgets.QMessageBox()
+            mbox.setWindowTitle('Suncal')
+            mbox.setText(f'Remove asset {asset_to_remove}?')
+            mbox.setStandardButtons(QtWidgets.QMessageBox.StandardButton.Yes |
+                                    QtWidgets.QMessageBox.StandardButton.No)
+            ok = mbox.exec()
+            if ok == QtWidgets.QMessageBox.StandardButton.Yes:
+                self.assets.pop(asset_to_remove, None)
+                self.combo_asset.removeItem(asset_idx)
+
+    def update_asset(self):
+        ''' Table was edited, update self.assets data '''
+        asset = self.combo_asset.currentText()
+        self.assets[asset] = {}
+        self.assets[asset]['startdates'] = self.table.get_column(self.COL_START, remove_nan=True)
+        self.assets[asset]['enddates'] = self.table.get_column(self.COL_END, remove_nan=True)
+        self.assets[asset]['passfail'] = self.table.get_column(self.COL_PASSFAIL, remove_nan=True)
+
+
+class IntervalA3WidgetAssets(IntervalWidget):
+    ''' Widget for A3 Interval with individual asset history '''
+
+    def _setup_history_table(self):
+        self.column_names = ['Asset', 'Interval Start', 'Interval End', 'Pass/Fail']
+        assets = self.component.get_config().get('assets', {'A': {}})
+        table = AssetTablePassFail(assets)
+        if len(assets) > 0 and list(assets.values())[0].get('enddates') is not None:
+            table.startend.setChecked(True)
+        return table
+
+    def _setup_params(self):
+        params = A3ParamsWidget(showtol=True)
+        params.fill(self.component.get_config())
+        return params
+
+    def update_proj_config(self):
+        ''' Save inputs back to model '''
+        config = self.component.get_config()
+        params = self.paramswidget.params()
+        params.pop('intol', None)  # These get filled in by A3Params.from_assets.
+        params.pop('n', None)
+        config['params'] = params
+        config['assets'] = self.table.assets
+        config['tolerance'] = self.paramswidget.tol.value()
+        self.component.load_config(config)
+
+    def insert_csvdata(self, data):
+        ''' Load data from CSV into table '''
+        current_asset = self.table.combo_asset.currentText()
+        assets = split_assets(data, current_asset)
+        self.table.assets.update(assets)
+
+        # Remove any empty assets
+        for assetname in list(self.table.assets.keys()):  # List it so we can change dictionary as we go
+            values = self.table.assets[assetname]
+            if assetname == '' or (len(values['enddates']) == 0 and len(values['passfail']) == 0):
+                self.table.assets.pop(assetname, None)
+
+        with BlockedSignals(self.table):
+            self.table.combo_asset.clear()
+            assetstrs = [str(a) for a in self.table.assets.keys()]
+            self.table.combo_asset.addItems(assetstrs)
+            self.table.combo_asset.setCurrentIndex(self.table.combo_asset.count()-1)
+        self.table.filltable()
+
+
+class IntervalS2WidgetAssets(IntervalWidget):
+    ''' Widget for S2 Interval with individual asset history '''
+
+    def _setup_history_table(self):
+        self.column_names = ['Asset', 'Interval Start', 'Interval End', 'Pass/Fail']
+        assets = self.component.get_config().get('assets', {'A': {}})
+        table = AssetTablePassFail(assets)
+        if len(assets) > 0 and list(assets.values())[0].get('enddates') is not None:
+            table.startend.setChecked(True)
+        return table
+
+    def _setup_params(self):
+        params = S2ParamsWidget(self.component, showbins=True)
+        params.fill(self.component.get_config().get('params', {}))
+        return params
+
+    def update_proj_config(self):
+        ''' Save inputs back to model '''
+        config = self.component.get_config()
+        config['assets'] = self.table.assets
+        params = self.paramswidget.params()
+        config.update(params)
+        self.component.load_config(config)
+
+    def insert_csvdata(self, data):
+        ''' Load data from CSV into table '''
+        current_asset = self.table.combo_asset.currentText()
+        assets = split_assets(data, current_asset)
+        self.table.assets.update(assets)
+
+        # Remove any empty assets
+        for assetname in list(self.table.assets.keys()):  # List it so we can change dictionary as we go
+            values = self.table.assets[assetname]
+            if assetname == '' or (len(values['enddates']) == 0 and len(values['passfail']) == 0):
+                self.table.assets.pop(assetname, None)
+
+        with BlockedSignals(self.table):
+            self.table.combo_asset.clear()
+            assetstrs = [str(a) for a in self.table.assets.keys()]
+            self.table.combo_asset.addItems(assetstrs)
+            self.table.combo_asset.setCurrentIndex(self.table.combo_asset.count()-1)
+        self.table.filltable()
+
+    def help_report(self):
+        return IntervalHelp.binomial()
+
+
+class AssetTableFoundLeft(QtWidgets.QWidget):
+    ''' Widget for entering multiple assets and their Found/Left values '''
+    COL_START = 0
+    COL_END = 1
+    COL_FOUND = 2
+    COL_LEFT = 3
+
+    def __init__(self, assets: dict, parent=None):
+        super().__init__(parent=parent)
+        self.assets = assets
+        self.combo_asset = widgets.ComboLabel('Asset:')
+        self.add_rem_button = widgets.PlusMinusButton()
+        self.startend = QtWidgets.QCheckBox('Enter start and end dates')
+        self.foundleft = QtWidgets.QCheckBox('Enter as-found and as-left values')
+        self.table = widgets.FloatTableWidget()
+
+        hlayout = QtWidgets.QHBoxLayout()
+        hlayout.addWidget(self.combo_asset)
+        hlayout.addStretch()
+        hlayout.addWidget(self.add_rem_button)
+        layout = QtWidgets.QVBoxLayout()
+        layout.addLayout(hlayout)
+        layout.addWidget(self.table)
+        layout.addWidget(self.startend)
+        layout.addWidget(self.foundleft)
         self.setLayout(layout)
 
-        self.init_bins()
-        self.init_plot()
-        self.draw_bins()
-        self.report_reliability()
+        self.table.setColumnCount(4)
+        self.table.setHorizontalHeaderLabels(['Interval Start',
+                                              'Interval End',
+                                              'As-Found Value',
+                                              'As-Left Value'])
 
-        self.dlgbutton.rejected.connect(self.reject)
-        self.dlgbutton.accepted.connect(self.accept)
-        self.binwidth.valueChanged.connect(self.draw_bins)
-        self.binwidth.valueChanged.connect(self.report_reliability)
-        self.nbins.valueChanged.connect(self.set_nbins)
+        self.combo_asset.addItems(self.assets.keys())
+        self.show_startend()
+        self.show_left()
+        self.filltable()
 
-        self.canvas.mpl_connect('button_press_event', self.on_press)
-        self.canvas.mpl_connect('button_release_event', self.on_release)
-        self.canvas.mpl_connect('motion_notify_event', self.on_motion)
-        self.canvas.mpl_connect('key_press_event', self.on_keypress)
-        self.canvas.setFocusPolicy(QtCore.Qt.ClickFocus)
+        self.startend.stateChanged.connect(self.show_startend)
+        self.foundleft.stateChanged.connect(self.show_left)
+        self.add_rem_button.plusclicked.connect(self.add_asset)
+        self.add_rem_button.minusclicked.connect(self.rem_asset)
+        self.table.valueChanged.connect(self.update_asset)
+        self.combo_asset.currentTextChanged.connect(self.filltable)
 
-    def init_bins(self):
-        ''' Initialize bins based on Interval Calc class '''
-        if self.projitem.model.binlefts is None:
-            self.nbins.setValue(9)
-            self.reset_bins()
-        else:
-            self.binlefts = self.projitem.model.binlefts
-            self.nbins.setValue(len(self.binlefts))
-            self.binwidth.setValue(self.projitem.model.binwidth)
+    def show_startend(self):
+        ''' Show start/end dates when checked '''
+        self.table.setColumnHidden(self.COL_START, not self.startend.isChecked())
 
-    def reset_bins(self, nbins=9):
-        ''' Reset bins to default '''
-        intmax = 0
-        for val in self.projitem.model.assets.values():
-            if val['startdates'] is None:
-                ti = np.diff(datearray(val['enddates']))
-            else:
-                ti = datearray(val['enddates']) - datearray(val['startdates'])
-            if len(ti) > 0:
-                intmax = max(intmax, max(ti))
-        if intmax == 0:
-            # No data yet
-            self.binlefts = np.array([0, 180])
-            self.binwidth.setValue(180)
-        else:
-            self.binlefts = np.linspace(0, intmax+1, num=nbins+1)[:-1]
-            self.binwidth.setValue(int(self.binlefts[1] - self.binlefts[0]))
-        self.report_reliability()
+    def show_left(self):
+        ''' Show as-left column when checked '''
+        self.table.setColumnHidden(self.COL_LEFT, not self.foundleft.isChecked())
 
-    def init_plot(self):
-        self.fig.clf()
-        self.ax = self.fig.add_subplot(1, 1, 1)
+    def rowCount(self):
+        return self.table.rowCount()
 
-        i = 0
-        for asset in self.projitem.model.assets.keys():
-            pf, ti = self.projitem.model.get_passfails(asset)
-            pf = np.asarray(pf)
-            ti = np.asarray(ti)
-            if len(ti) > 0:
-                passes = np.array(ti, dtype=float)
-                passes[pf == 0.] = np.nan
-                fails = np.array(ti, dtype=float)
-                fails[pf == 1.] = np.nan
-                self.ax.plot(passes, np.ones_like(pf)*(i+1), marker='o', color='blue', ls='')
-                self.ax.plot(fails, np.ones_like(pf)*(i+1), marker='x', color='red', ls='')
-                i += 1
-        self.ax.set_ylabel('Asset')
-        self.ax.set_xlabel('Time Since Calibration')
-        self.canvas.draw_idle()
+    def setRowCount(self, value):
+        self.table.setRowCount(value)
 
-    def set_nbins(self):
-        ''' Change the number of bins '''
-        self.reset_bins(self.nbins.value())
-        self.draw_bins()
-        self.report_reliability()
+    def setItem(self, row, col, item):
+        self.table.setItem(row, col, item)
 
-    def draw_bins(self):
-        ''' Add bin regions to plot '''
-        for b in self.binlines:
-            b.remove()
-            del b
-        self.binlines = []
-        for i, left in enumerate(self.binlefts):
-            color = 'orange' if i % 2 else 'salmon'
-            self.binlines.append(self.ax.axvspan(
-                left, left+self.binwidth.value(), alpha=.3, ls='-', facecolor=color, edgecolor='black'))
-        self.canvas.draw_idle()
+    def clear(self):
+        ''' Clear the table '''
+        self.table.clear()
+        self.table.setRowCount(1)
 
-    def on_press(self, event):
-        ''' Mouse-click. See if click was in a bin rectangle '''
-        if event.inaxes:
-            for idx, b in enumerate(self.binlines):
-                if b.contains(event)[0]:
-                    self.selectedbinidx = idx
-                    self.press = b.xy, (event.xdata, event.ydata)
-                    self.lastclickedbin = self.selectedbinidx
-                    self.canvas.setFocus()
-                    break
-            else:
-                self.selectedbinidx = None
+    def filltable(self):
+        ''' Fill table with data for the selected asset '''
+        with BlockedSignals(self.table):
+            assetname = self.combo_asset.currentText()
+            asset = self.assets.get(assetname, {})
+            self.table.clear()
+            startdates = parse_dates(asset.get('startdates', []))
+            enddates = parse_dates(asset.get('enddates', []))
+            found = asset.get('asfound', [])
+            left = asset.get('asleft', [])
+            if len(left) == 0:
+                left = found
+            if len(startdates) == 0:
+                startdates = enddates
 
-    def on_release(self, event):
-        ''' Mouse was released. Update rectangle and reliability table '''
-        self.selectedbinidx = None
+            self.table.setRowCount(max(1, len(enddates)))
+            for row, (start, end, asfound, asleft) in enumerate(zip(startdates, enddates, found, left)):
+                self.table.setItem(row, self.COL_START, QtWidgets.QTableWidgetItem(str(start)))
+                self.table.setItem(row, self.COL_END, QtWidgets.QTableWidgetItem(str(end)))
+                self.table.setItem(row, self.COL_FOUND, QtWidgets.QTableWidgetItem(str(asfound)))
+                self.table.setItem(row, self.COL_LEFT, QtWidgets.QTableWidgetItem(str(asleft)))
+            self.table.resizeColumnsToContents()
 
-        # Left edge of each rectangle
-        self.binlefts = [b.xy[:, 0].min() for b in self.binlines]
-        self.report_reliability()
+    def add_asset(self):
+        ''' Add asset button was pressed '''
+        name, ok = QtWidgets.QInputDialog.getText(self, 'New Asset', 'Asset Name:')
+        if ok:
+            self.combo_asset.addItems([name])
+            self.combo_asset.setCurrentIndex(self.combo_asset.count()-1)
 
-    def on_keypress(self, event):
-        ''' Handle key press event '''
-        if self.lastclickedbin is not None and event.key in ['left', 'right']:
-            increment = 1 if event.key == 'right' else -1
+    def rem_asset(self):
+        ''' Remove asset button was pressed  '''
+        if self.combo_asset.count() > 0:
+            asset_to_remove = self.combo_asset.currentText()
+            asset_idx = self.combo_asset.currentIndex()
+            mbox = QtWidgets.QMessageBox()
+            mbox.setWindowTitle('Suncal')
+            mbox.setText(f'Remove asset {asset_to_remove}?')
+            mbox.setStandardButtons(QtWidgets.QMessageBox.StandardButton.Yes |
+                                    QtWidgets.QMessageBox.StandardButton.No)
+            ok = mbox.exec()
+            if ok == QtWidgets.QMessageBox.StandardButton.Yes:
+                self.assets.pop(asset_to_remove, None)
+                self.combo_asset.removeItem(asset_idx)
 
-            # Don't hit another bin
-            newx = self.binlefts[self.lastclickedbin] + increment
-            if newx < 0:
-                return
-            if self.lastclickedbin < len(self.binlefts)-2:
-                if newx + self.binwidth.value() > self.binlefts[self.lastclickedbin+1]:
-                    return
-            if self.lastclickedbin > 0:
-                if newx < self.binlefts[self.lastclickedbin-1] + self.binwidth.value():
-                    return
+    def update_asset(self):
+        ''' Table was edited, update self.assets data '''
+        asset = self.combo_asset.currentText()
+        self.assets[asset] = {}
+        self.assets[asset]['startdates'] = self.table.get_column(self.COL_START, remove_nan=True)
+        self.assets[asset]['enddates'] = self.table.get_column(self.COL_END, remove_nan=True)
+        self.assets[asset]['asfound'] = self.table.get_column(self.COL_FOUND, remove_nan=True)
+        self.assets[asset]['asleft'] = self.table.get_column(self.COL_LEFT, remove_nan=True)
 
-            self.binlefts[self.lastclickedbin] = newx
-            rect = self.binlines[self.lastclickedbin]
-            poly = rect.xy
-            poly[:, 0] += increment
-            rect.set_xy(poly)
-            self.canvas.draw()
-            self.report_reliability()
 
-    def report_reliability(self):
-        ''' Update text area with reliability table '''
-        ti, ti0, ri, ni = self.projitem.model.get_reliability(self.binlefts, self.binwidth.value())
-        hdr = ['Bin Range', 'Reliability', 'Measurements']
-        rows = []
-        for t0, t, r, n in zip(ti0, ti, ri, ni):
-            rows.append([f'{t0:.0f} - {t:.0f}', f'{r:.3f}', f'{n:.0f}'])
+class IntervalVariablesWidgetAssets(IntervalWidget):
+    ''' Widget for S2 Interval with individual asset history '''
+
+    def _setup_history_table(self):
+        self.column_names = ['Asset', 'Interval Start', 'Interval End', 'As Found', 'As Left']
+        assets = self.component.get_config().get('assets', {'A': {}})
+        table = AssetTableFoundLeft(assets)
+        if len(assets) > 0 and list(assets.values())[0].get('enddates') is not None:
+            table.startend.setChecked(True)
+        return table
+
+    def _setup_params(self):
+        params = VarsParamsWidget()
+        params.fill(self.component.get_config().get('params', {}))
+        return params
+
+    def update_proj_config(self):
+        ''' Save inputs back to model '''
+        config = self.component.get_config()
+        config['assets'] = self.table.assets
+        params = self.paramswidget.params()
+        config.update(params)
+        self.component.load_config(config)
+        self._calc_reliability = params.get('calcrel', True)
+        self._calc_uncertainty = params.get('calcunc', True)
+
+    def insert_csvdata(self, data):
+        ''' Load data from CSV into table '''
+        current_asset = self.table.combo_asset.currentText()
+        assets = split_assets(data, current_asset)
+        self.table.assets.update(assets)
+
+        # Remove any empty assets
+        for assetname in list(self.table.assets.keys()):  # List it so we can change dictionary as we go
+            values = self.table.assets[assetname]
+            if assetname == '' or (len(values['enddates']) == 0 and len(values['passfail']) == 0):
+                self.table.assets.pop(assetname, None)
+
+        with BlockedSignals(self.table):
+            self.table.combo_asset.clear()
+            assetstrs = [str(a) for a in self.table.assets.keys()]
+            self.table.combo_asset.addItems(assetstrs)
+            self.table.combo_asset.setCurrentIndex(self.table.combo_asset.count()-1)
+        self.table.filltable()
+
+    def calculate(self):
+        ''' Run the calculation '''
+        QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.CursorShape.WaitCursor)
         rpt = report.Report()
-        rpt.table(rows, hdr)
-        self.txtOutput.setReport(rpt)
 
-    def on_motion(self, event):
-        ''' Mouse drag of bin. Limit so bins can't overlap '''
-        if self.selectedbinidx is not None and event.xdata is not None:
-            rect = self.binlines[self.selectedbinidx]
-            poly, (xpress, _) = self.press
-            dx = event.xdata - xpress
-            polytest = poly.copy()
-            polytest[:, 0] += dx
-            left = polytest[:, 0].min()
-            right = polytest[:, 0].max()
-            leftlim = (-np.inf if self.selectedbinidx == 0 else
-                       self.binlines[self.selectedbinidx-1].xy[:, 0].max())
-            rightlim = (np.inf if self.selectedbinidx == len(self.binlines)-1 else
-                        self.binlines[self.selectedbinidx+1].xy[:, 0].min())
-            if left < leftlim or right > rightlim:
-                if left < leftlim:
-                    dx += (leftlim-left)
-                elif right > rightlim:
-                    dx -= (right-rightlim)
-                polytest = poly.copy()
-                polytest[:, 0] += dx
-            rect.set_xy(polytest)
-            self.canvas.draw()
+        try:
+            self.update_proj_config()
+        except ValueError:
+            # Possibly no data in table
+            rpt.txt('Error computing reliability target\n\n')
+        else:
+            if self._calc_reliability:
+                try:
+                    self.component.calculate_reliability_target()
+                except (TypeError, ValueError, RuntimeError):
+                    rpt.txt('Error computing reliability target\n\n')
+                else:
+                    rpt.append(self.component.result_reliability.report.summary())
 
-    def getbins(self):
-        ''' Return list of left-edges, binwidth '''
-        return self.binlefts, self.binwidth.value()
+            if self._calc_uncertainty:
+                try:
+                    self.component.calculate_uncertainty_target()
+                except (TypeError, ValueError, RuntimeError):
+                    rpt.txt('Error computing uncertainty target\n\n')
+                else:
+                    rpt.append(self.component.result_uncertainty.report.summary())
+
+        self.output_report.setReport(rpt)
+        self.actSaveReport.setEnabled(True)
+        QtWidgets.QApplication.restoreOverrideCursor()
+
+    def help_report(self):
+        return IntervalHelp.variables()

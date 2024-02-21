@@ -13,8 +13,7 @@ from .proj_uncert import ProjectUncert
 class ProjectReverse(ProjectComponent):
     ''' Reverse Uncertainty project component '''
     def __init__(self, model=None, name='reverse'):
-        super().__init__()
-        self.name = name
+        super().__init__(name=name)
         if model is not None:
             self.model = model
         else:
@@ -23,17 +22,14 @@ class ProjectReverse(ProjectComponent):
         self.nsamples = 1000000
         self.seed = None
         self.outunits = {}
-        self.result = None
-        self.longdescription = None
-        self.project = None  # Parent project
 
     def calculate(self, mc=True):
         ''' Run the calculation '''
         if self.seed:
             np.random.seed(self.seed)
 
-        self.result = self.model.calculate(mc=mc, samples=self.nsamples)
-        return self.result
+        self._result = self.model.calculate(mc=mc, samples=self.nsamples)
+        return self._result
 
     def units_report(self, **kwargs):
         ''' Create report showing units of all parameters '''
@@ -59,7 +55,7 @@ class ProjectReverse(ProjectComponent):
             if self.result.gum:
                 name = f'{funcname} (GUM)'
                 dists[name] = {
-                    'mean': unitmgr.strip_units(self.result.gum.expected[funcname]),
+                    'median': unitmgr.strip_units(self.result.gum.expected[funcname]),
                     'std': unitmgr.strip_units(self.result.gum.uncertainty[funcname]),
                     'df': self.result.gum.degf[funcname]}
 
@@ -78,7 +74,7 @@ class ProjectReverse(ProjectComponent):
         self.outunits = {func['name']: func.get('units') for func in config.get('functions')}
         self.model.descriptions = {func['name']: func.get('desc') for func in config.get('functions')}
         self.nsamples = config.get('samples', 1000000)
-        self.longdescription = config.get('longdescription')
+        self.description = config.get('description', config.get('desc'))
         self.seed = config.get('seed')
 
         for variable in config.get('inputs', []):
@@ -110,7 +106,7 @@ class ProjectReverse(ProjectComponent):
         proj.nsamples = self.nsamples
         proj.seed = self.seed
         proj.outunits = self.outunits
-        proj.longdescription = self.longdescription
+        proj.description = self.description
         proj.model.descriptions = self.model.descriptions
         d = proj.get_config()
         d['name'] = self.name

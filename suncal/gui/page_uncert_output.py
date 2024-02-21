@@ -1,13 +1,13 @@
 ''' Uncertainty Propagation Output Page '''
 
-from PyQt5 import QtWidgets, QtCore
+from PyQt6 import QtWidgets, QtCore
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
 from pint import PintError
 
-from . import gui_common
-from . import gui_widgets
+from .gui_settings import gui_settings
+from . import widgets
 from ..common import report, distributions, unitmgr
 from .help_strings import UncertHelp
 
@@ -26,14 +26,14 @@ class OutputPlotWidget(QtWidgets.QWidget):
         self.cmbscat = QtWidgets.QComboBox()
         self.cmbscat.addItems(['Scatter', 'Contours'])
         self.cmbscat.setVisible(False)
-        self.bins = gui_widgets.SpinWidget('Bins:')
+        self.bins = widgets.SpinWidget('Bins:')
         self.bins.spin.setRange(int(3), int(1000))
         self.bins.setValue(100)
-        self.points = gui_widgets.SpinWidget('Points:')
+        self.points = widgets.SpinWidget('Points:')
         self.points.spin.setRange(int(1), int(10000))
         self.points.setValue(10000)
         self.points.setVisible(False)
-        self.flist = gui_widgets.ListSelectWidget()
+        self.flist = widgets.ListSelectWidget()
 
         self.showmc = QtWidgets.QCheckBox('Show Monte-Carlo Result')
         self.showgum = QtWidgets.QCheckBox('Show GUM Result')
@@ -45,7 +45,7 @@ class OutputPlotWidget(QtWidgets.QWidget):
         self.showleg.setChecked(True)
         self.intervals = QtWidgets.QCheckBox('Show Coverage Invervals')
         self.labeldesc = QtWidgets.QCheckBox('Label by Description')
-        self.expandedconf = gui_widgets.ExpandedConfidenceWidget()
+        self.expandedconf = widgets.ExpandedConfidenceWidget()
         self.expandedconf.setVisible(False)
 
         self.bins.valueChanged.connect(self.changed)
@@ -133,14 +133,14 @@ class OutputMCSampleWidget(QtWidgets.QWidget):
         self.cmbscat = QtWidgets.QComboBox()
         self.cmbscat.addItems(['Scatter', 'Contours'])
         self.cmbscat.setVisible(False)
-        self.bins = gui_widgets.SpinWidget('Bins:')
+        self.bins = widgets.SpinWidget('Bins:')
         self.bins.spin.setRange(int(3), int(1000))
         self.bins.setValue(100)
-        self.points = gui_widgets.SpinWidget('Points:')
+        self.points = widgets.SpinWidget('Points:')
         self.points.setValue(10000)
         self.points.spin.setRange(int(3), int(10000))
         self.points.setVisible(False)
-        self.ilist = gui_widgets.ListSelectWidget()
+        self.ilist = widgets.ListSelectWidget()
         self.labeldesc = QtWidgets.QCheckBox('Label by Description')
         self.bins.valueChanged.connect(self.changed)
         self.points.valueChanged.connect(self.changed)
@@ -188,7 +188,7 @@ class OutputMCDistributionWidget(QtWidgets.QWidget):
     def __init__(self):
         super().__init__()
         self.cmbdist = QtWidgets.QComboBox()
-        dists = gui_common.settings.getDistributions()
+        dists = gui_settings.distributions
         dists = [d for d in dists if distributions.fittable(d)]
         self.cmbdist.addItems(dists)
         self.cmbdist.currentIndexChanged.connect(self.changed)
@@ -249,7 +249,7 @@ class OutputGUMValidityWidget(QtWidgets.QWidget):
 
     def __init__(self):
         super().__init__()
-        self.ndig = gui_widgets.SpinWidget('Significant Digits')
+        self.ndig = widgets.SpinWidget('Significant Digits')
         self.ndig.spin.setRange(1, 5)
         self.ndig.setValue(1)
         self.ndig.valueChanged.connect(self.changed)
@@ -328,6 +328,8 @@ class OutputUnitsWidget(QtWidgets.QWidget):
         layout.addLayout(self.flayout)
         layout.addStretch()
         self.setLayout(layout)
+        self.unitwidgets = []
+        self.fnames = []
 
     def setresult(self, result):
         ''' Set the measurment result '''
@@ -358,7 +360,7 @@ class OutputUnitsWidget(QtWidgets.QWidget):
             unitstr = self.unitwidgets[i].text()
             try:
                 self.result.units(**{fname: unitstr})
-            except (PintError):
+            except PintError:
                 oldunit = str(oldunits.get(fname, ''))
                 self.result.units(**{fname: oldunit})
                 self.unitwidgets[i].setText(oldunit)
@@ -380,18 +382,19 @@ class PageOutput(QtWidgets.QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.outreport = None  # Cached output report
+        self.result = None
         self.outputSelect = QtWidgets.QComboBox()
         self.outputSelect.addItems(self.allitems)
         self.outputUnits = OutputUnitsWidget()
         self.outputPlot = OutputPlotWidget()
-        self.outputExpanded = gui_widgets.ExpandedConfidenceWidget()
+        self.outputExpanded = widgets.ExpandedConfidenceWidget()
         self.outputMCsample = OutputMCSampleWidget()
         self.outputMCdist = OutputMCDistributionWidget()
         self.outputMCconv = OutputMCConvergeWidget()
         self.outputGUMvalid = OutputGUMValidityWidget()
         self.outputGUMderiv = OutputGUMDerivationWidget()
         self.outputReportSetup = OutputReportGen()
-        self.txtOutput = gui_widgets.MarkdownTextEdit()
+        self.txtOutput = widgets.MarkdownTextEdit()
         self.fig = Figure()
         self.canvas = FigureCanvas(self.fig)
         self.canvas.setStyleSheet("background-color:transparent;")
@@ -454,11 +457,7 @@ class PageOutput(QtWidgets.QWidget):
         self.outputupdate()
         self.change_help.emit()
 
-    def load_proj(self, uncproj):
-        ''' Save the uncertainty calculator object used to show the output pages '''
-        self.uncproj = uncproj
-
-    def refresh_fullreport(self):
+    def generate_report(self):
         rptsetup = {
             'summary': self.outputReportSetup.chkSummary.isChecked(),
             'outputs': self.outputReportSetup.chkOutputPlot.isChecked(),
@@ -472,7 +471,7 @@ class PageOutput(QtWidgets.QWidget):
             'mchist': self.outputReportSetup.chkMChist.isChecked(),
             'mcconv': self.outputReportSetup.chkMCconverge.isChecked(),
             'mcconvnorm': self.outputMCconv.relative.isChecked(),
-            'interval': (self.outputExpanded.get_confidence(), self.outputExpanded.get_shortest()),
+            'shortest': self.outputExpanded.get_shortest(),
             'gumvalues': self.outputGUMderiv.showvalues.isChecked(),
             'mchistparams': {'joint': (self.outputMCsample.cmbjoint.currentText() == 'Joint PDF' and
                                        len(self.result.variablenames) > 1),
@@ -480,7 +479,7 @@ class PageOutput(QtWidgets.QWidget):
                              'points': self.outputMCsample.points.value(),
                              'contour': self.outputMCsample.cmbscat.currentText() == 'Contours',
                              'inpts': self.outputMCsample.ilist.getSelectedValues(),
-                             'cmap': gui_common.settings.getColormap('cmapcontour')},
+                             'cmap': gui_settings.colormap_contour},
             'outplotparams': {'joint': self.outputPlot.joint(),
                               'showgum': self.outputPlot.showgum.isChecked(),
                               'showmc': self.outputPlot.showmc.isChecked(),
@@ -490,14 +489,18 @@ class PageOutput(QtWidgets.QWidget):
                               'contour': self.outputPlot.contour(),
                               'funcs': self.outputPlot.flist.getSelectedValues(),
                               'legend': self.outputPlot.showleg.isChecked(),
-                              'cmap': gui_common.settings.getColormap('cmapcontour'),
-                              'cmapmc': gui_common.settings.getColormap('cmapscatter')}
+                              'cmap': gui_settings.colormap_contour,
+                              'cmapmc': gui_settings.colormap_scatter}
                     }
+        rptsetup.update(self.outputExpanded.get_params())
         if self.outputPlot.intervals.isChecked():
-            rptsetup['outplotparams']['interval'] = self.outputPlot.expandedconf.get_confidence()
+            kconf = self.outputPlot.expandedconf.get_params()
+            rptsetup['outplotparams'].update(kconf)
             rptsetup['outplotparams']['shortest'] = self.outputPlot.expandedconf.get_shortest()
+        return self.result.report.all(rptsetup)
 
-        self.outreport = self.result.report.all(rptsetup)  # Cache report for displaying/saving
+    def refresh_fullreport(self):
+        self.outreport = self.generate_report()  # Cache report for displaying/saving
         self.outputupdate()
         return self.outreport
 
@@ -513,11 +516,11 @@ class PageOutput(QtWidgets.QWidget):
         self.txtOutput.setReport(self.outreport)
 
     def show_expanded(self):
-        conf = self.outputExpanded.get_confidence()
+        kconf = self.outputExpanded.get_params()
         shortest = self.outputExpanded.get_shortest()
         r = report.Report()
         r.hdr('Expanded Uncertainty', level=2)
-        r.append(self.result.report.expanded(conf=conf, shortest=shortest))
+        r.append(self.result.report.expanded(shortest=shortest, **kconf))
         self.txtOutput.setReport(r)
 
     def show_budget(self):
@@ -539,9 +542,12 @@ class PageOutput(QtWidgets.QWidget):
         functions = self.outputPlot.flist.getSelectedValues()
         legend = self.outputPlot.showleg.isChecked()
         labeldesc = self.outputPlot.labeldesc.isChecked()
-        conf = shortest = None
+        shortest = None
+        kconf = {}
         if self.outputPlot.intervals.isChecked():
-            conf = self.outputPlot.expandedconf.get_confidence()
+            kconf = self.outputPlot.expandedconf.get_params()
+            if 'conf' in kconf:
+                kconf['interval'] = kconf.pop('conf')
             shortest = self.outputPlot.expandedconf.get_shortest()
 
         if self.outputPlot.joint():
@@ -549,8 +555,8 @@ class PageOutput(QtWidgets.QWidget):
                 if self.outputPlot.contour():
                     self.result.report.plot.joint_pdf(
                         fig=self.fig, functions=functions, overlay=self.outputPlot.overlay.isChecked(),
-                        cmap=gui_common.settings.getColormap('cmapcontour'),
-                        cmapmc=gui_common.settings.getColormap('cmapscatter'),
+                        cmap=gui_settings.colormap_contour,
+                        cmapmc=gui_settings.colormap_scatter,
                         labeldesc=labeldesc)
                 else:
                     self.result.report.plot.joint_scatter(
@@ -563,7 +569,7 @@ class PageOutput(QtWidgets.QWidget):
             elif self.outputPlot.contour():
                 self.result.montecarlo.report.plot.joint_pdf(
                     fig=self.fig, bins=self.outputPlot.bins.value(), functions=functions,
-                    cmap=gui_common.settings.getColormap('cmapscatter'), labeldesc=labeldesc)
+                    cmap=gui_settings.colormap_scatter, labeldesc=labeldesc)
             else:
                 self.result.montecarlo.report.plot.scatter(
                     fig=self.fig, points=self.outputPlot.points.value(), functions=functions, labeldesc=labeldesc)
@@ -572,18 +578,18 @@ class PageOutput(QtWidgets.QWidget):
             if self.outputPlot.showgum.isChecked() and self.outputPlot.showmc.isChecked():
                 self.result.report.plot.pdf(
                     fig=self.fig, functions=functions, legend=legend,
-                    mchist=not self.outputPlot.contour(), interval=conf, shortest=shortest, labeldesc=labeldesc,
+                    mchist=not self.outputPlot.contour(), **kconf, shortest=shortest, labeldesc=labeldesc,
                     bins=self.outputPlot.bins.value())
             elif self.outputPlot.showgum.isChecked():
-                self.result.gum.report.plot.pdf(fig=self.fig, interval=conf, functions=functions, labeldesc=labeldesc)
+                self.result.gum.report.plot.pdf(fig=self.fig, **kconf,  functions=functions, labeldesc=labeldesc)
             elif self.outputPlot.contour():
                 self.result.montecarlo.report.plot.pdf(
                     fig=self.fig, functions=functions, bins=self.outputPlot.bins.value(),
-                    interval=conf, shortest=shortest, labeldesc=labeldesc)
+                    **kconf, shortest=shortest, labeldesc=labeldesc)
             else:
                 self.result.montecarlo.report.plot.hist(
                     fig=self.fig, functions=functions, bins=self.outputPlot.bins.value(),
-                    interval=conf, shortest=shortest, labeldesc=labeldesc)
+                    **kconf, shortest=shortest, labeldesc=labeldesc)
         self.canvas.draw_idle()
 
     def show_mcinputs(self):

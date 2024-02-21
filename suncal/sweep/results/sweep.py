@@ -54,7 +54,6 @@ class GumSweepResults:
 
             Args:
                 conf (float): Level of confidence in the interval
-                units (dict): Dictionary of functionname: Pint units to convert
         '''
         expanded = []
         for gumresult in self.gumresults:

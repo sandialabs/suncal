@@ -3,6 +3,7 @@
 import numpy as np
 
 from .risk import PFA, PFR, PFR_norm, PFA_norm
+from . import guardband_tur
 
 
 def PFA_sweep_simple(xvar='itp', zvar='TUR', xvals=None, zvals=None,
@@ -55,6 +56,13 @@ def PFA_sweep_simple(xvar='itp', zvar='TUR', xvals=None, zvals=None,
         GBF = xx
     elif zvar.lower() == 'gbf':
         GBF = zz
+    elif isinstance(GBFdflt, str):
+        gbmethod = {'rds': guardband_tur.rss,
+                    'rss': guardband_tur.rss,
+                    'dobbert': guardband_tur.dobbert,
+                    'rp10': guardband_tur.rp10,
+                    'test': guardband_tur.test95}.get(GBFdflt)
+        GBF = np.array([[gbmethod(t) for t in turrow] for turrow in TUR])
     else:
         GBF = np.full(xx.shape, GBFdflt)
 
@@ -141,5 +149,5 @@ def PFA_sweep(xvarparam, zvarparam, xvardist=None, zvardist=None, xvals=None, zv
             else:
                 xvardist.update_kwds(**{xvarparam: x})
 
-            curves[zidx, xidx] = riskfunc(dist_proc, dist_test, LL, UL, GBL, GBU, testbias, approx=approx)
+            curves[zidx, xidx] = riskfunc(dist_proc, dist_test, LL, UL, GBL, GBU, testbias)
     return curves

@@ -7,7 +7,9 @@ block_cipher = None
 a = Analysis(['suncal/startui.py'],
              pathex=['suncal'],
              binaries=None,
-             datas=[('suncal/gui/SUNCALmanual.pdf', '.')],
+             datas=[('suncal/gui/SUNCALmanual.pdf', '.'),
+                    ('suncal/common/style/suncal_light.mplstyle', '.'),
+                    ('suncal/common/style/suncal_dark.mplstyle', '.')],
              hiddenimports=[sysconfig._get_sysconfigdata_name(True), '_sysconfigdata_m_darwin_darwin'],  # Needed to patch yet another pyinstaller bug (https://github.com/pyinstaller/pyinstaller/issues/3105)
              hookspath=[],
              hooksconfig={
@@ -36,6 +38,6 @@ exe = EXE(pyz,
           console=False )
 app = BUNDLE(exe,
              name='Suncal.app',
-             icon='suncal/gui/PSLcal_logo.icns',
+             icon='suncal/gui/icons/PSLcal_logo.icns',
              info_plist={'NSHighResolutionCapable': 'True'},
              bundle_identifier=None)

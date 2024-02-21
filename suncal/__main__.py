@@ -18,7 +18,6 @@ from suncal.common import unitmgr, distributions
 from suncal.project import Project, ProjectUncert, ProjectReverse, ProjectRisk, ProjectCurveFit
 from suncal import Model
 from suncal.reverse import ModelReverse
-from suncal.risk.risk_model import RiskModel
 from suncal import curvefit
 
 
@@ -122,12 +121,14 @@ def main_unc(args=None):
     result = u.calculate()
 
     if args.s:   # Print out short-format results
+        expanded = result.gum.expanded(.95)
+        mcexpanded = result.montecarlo.expanded(.95)
         for func in u.model.functionnames:
-            gumexp, gumk, _ = result.gum.expanded(.95)
-            mcmin, mcmax, mck, _ = result.montecarlo.expanded(.95)
-            vals = [result.gum.expected[func], result.gum.uncertainty[func], gumexp[func], gumk[func],
-                    result.montecarlo.expected[func], result.montecarlo.uncertainty[func], mcmin[func], mcmax[func], mck[func]]
-            # expanded() returns length-1 arrays
+            gumexp, gumk, _ = expanded[func]
+            mcmin, mcmax, mck, _ = mcexpanded[func]
+            vals = [result.gum.expected[func], result.gum.uncertainty[func], gumexp, gumk,
+                    result.montecarlo.expected[func], result.montecarlo.uncertainty[func],
+                    mcmin, mcmax, mck]
             args.o.write(', '.join(f'{v:.9g}' if isinstance(v, float) else f'{v:.9g}' for v in vals))
             args.o.write('\n')
 

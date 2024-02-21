@@ -39,10 +39,10 @@ class VariablesReport:
         cols = ['Variable', 'Component', 'Standard Uncertainty', 'Deg. Freedom', 'Description']
         rows = []
         for varname in self._variablenames:
-            rows.append([report.Math(varname), '-', '-', '-', self._variables.descriptions[varname]])
+            rows.append([report.Math(varname), '&nbsp;', '&nbsp;', '&nbsp;', self._variables.descriptions[varname]])
             for component in self._variables.components[varname]:
                 rows.append([
-                    '-',
+                    '&nbsp;',
                     component['name'],
                     report.Number(component['uncertainty']),
                     report.Number(component['degf']),
@@ -106,7 +106,7 @@ class ReportUncertainty:
                 report.Number(uncert),
                 expanded_range,
                 f'{mc_expanded[funcname].k:.3f}',
-                '-'
+                '&nbsp;'
                 ]
             )
 
@@ -155,19 +155,20 @@ class ReportUncertainty:
             rpt.table(rows, hdr=['Variable', 'GUM Sensitivity', 'GUM Proportion', 'MC Sensitivity', 'MC Proportion'])
         return rpt
 
-    def expanded(self, conf=.95, shortest=False, **kwargs):
+    def expanded(self, conf=.95, k=None, shortest=False, **kwargs):
         ''' Expanded uncertainties of GUM and MC
 
             Args:
                 conf (float): Level of confidence in interval
+                k (float): Coverage factor for interval, overrides conf
                 shortest (bool): Use shortest instead of symmetric interval for
                   Monte Carlo interval
         '''
         rpt = report.Report(**kwargs)
         rpt.hdr('GUM Approximation', level=3)
-        rpt.append(self.gum.expanded(conf=conf))
+        rpt.append(self.gum.expanded(conf=conf, k=k))
         rpt.hdr('Monte Carlo', level=3)
-        rpt.append(self.montecarlo.expanded(conf=conf, shortest=shortest))
+        rpt.append(self.montecarlo.expanded(conf=conf, k=k, shortest=shortest))
         return rpt
 
     def allinputs(self, **kwargs):
@@ -214,10 +215,11 @@ class ReportUncertainty:
         gumstandard, units = unitmgr.split_units(self._results.gum.uncertainty[funcname])
         units = 1 if units is None else units
 
-        if not np.isfinite(gumstandard):
+        try:
+            r = int(np.floor(np.log10(np.abs(gumstandard))) - (ndig-1))
+        except OverflowError:
             delta = r = dlow = dhi = np.nan
         else:
-            r = int(np.floor(np.log10(np.abs(gumstandard))) - (ndig-1))
             delta = 0.5 * 10.0**r * units
             dlow = abs((gumexpected - gumexpanded) - mclow)
             dhi = abs((gumexpected + gumexpanded) - mchigh)
@@ -290,8 +292,11 @@ class ReportUncertainty:
                                         cmapmc=params.get('cmapmc', 'viridis'),
                                         legend=params.get('legend'))
                 else:
-                    self.plot.pdf(fig=fig, mchist=not params.get('contour'), legend=params.get('legend'),
-                                  interval=params.get('interval'), shortest=params.get('shortest'),
+                    self.plot.pdf(fig=fig, mchist=not params.get('contour'),
+                                  legend=params.get('legend'),
+                                  interval=params.get('interval'),
+                                  k=params.get('k'),
+                                  shortest=params.get('shortest'),
                                   bins=params.get('bins', 100))
                 rpt.plot(fig)
 
@@ -312,8 +317,10 @@ class ReportUncertainty:
 
         if setup.get('expanded', True):
             rpt.hdr('Expanded Uncertainties', level=2)
-            conf, shortest = setup.get('interval', (.95, False))
-            rpt.append(self.expanded(conf=conf, shortest=shortest, **kwargs))
+            conf = setup.get('conf', .95)
+            k = setup.get('k')
+            shortest = setup.get('shortest', False)
+            rpt.append(self.expanded(conf=conf, k=k, shortest=shortest, **kwargs))
 
         if setup.get('gumderv', True):
             solve = setup.get('gumvalues', False)
@@ -368,7 +375,7 @@ class UncertaintyPlot:
         self._noutputs = len(self._functionnames)
 
     def pdf(self, functions=None, fig=None, mchist=True, legend=True,
-            interval=None, shortest=False, labeldesc=False, bins=100, **kwargs):
+            interval=None, k=None, shortest=False, labeldesc=False, bins=100, **kwargs):
         ''' Plot PDF/Histogram of results
 
             Args:
@@ -377,6 +384,7 @@ class UncertaintyPlot:
                 mchist (bool): Show MC as histogram
                 legend (bool): Show legend
                 interval (float): Show expanded interval to this level of confidence
+                k (float): Show expanded interval to this coverage factor (overrides interval argument)
                 shortest (bool): Use shortest interval for MC
                 labeldesc (bool): Use "description" as axis label instead of variable name
                 bins (int): Number of bins for histogram
@@ -396,17 +404,20 @@ class UncertaintyPlot:
         for plotid, funcname in enumerate(functions):
             ax = fig.add_subplot(rows, cols, plotid+1)
             if mchist:
-                mcline = self.montecarlo.plot.axis.hist(funcname, ax=ax, interval=interval, shortest=shortest, bins=bins, **kwargs)
+                mcline = self.montecarlo.plot.axis.hist(funcname, ax=ax, interval=interval, k=k, shortest=shortest, bins=bins, **kwargs)
             else:
-                mcline = self.montecarlo.plot.axis.pdf(funcname, ax=ax, interval=interval, shortest=shortest, **kwargs)
-            gumline = self.gum.plot.axis.pdf(funcname, ax=ax, interval=interval, **kwargs)
+                mcline = self.montecarlo.plot.axis.pdf(funcname, ax=ax, interval=interval, k=k, shortest=shortest, **kwargs)
+            gumline = self.gum.plot.axis.pdf(funcname, ax=ax, interval=interval, k=k, **kwargs)
 
             if legend:
                 # Intervals will take the default legend. Add this as secondary legend.
                 ax.add_artist(ax.legend((gumline, mcline), ('GUM Approximation', 'Monte Carlo'),
                                         fontsize=10, loc='upper right'))
-                if interval:
-                    # Put the interval legend back
+
+                # Put the interval legend back
+                if k:
+                    ax.legend(loc='lower left', title=f'k = {k:.2f}')
+                elif interval:
                     ax.legend(loc='lower left', title=f'{interval*100:.2f}% Coverage')
 
             ax.ticklabel_format(style='sci', axis='x', scilimits=(-4, 4), useOffset=False)
@@ -417,8 +428,6 @@ class UncertaintyPlot:
             else:
                 _, units = unitmgr.split_units(self._results.gum.expected[funcname])
                 ax.set_xlabel(report.mathstr_to_latex(funcname) + report.Unit(units).latex(bracket=True))
-
-        fig.tight_layout()
 
     def joint_pdf(self, functions=None, fig=None, overlay=False, cmap='viridis', cmapmc='viridis',
                   legend=True, labeldesc=False, **kwargs):

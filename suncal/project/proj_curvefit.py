@@ -1,5 +1,6 @@
 ''' CurveFit project component '''
 
+from dataclasses import dataclass
 import numpy as np
 
 from .component import ProjectComponent
@@ -8,11 +9,30 @@ from ..curvefit import CurveFit, Array
 from ..curvefit.results.curvefit import CurveFitResultsCombined
 
 
+@dataclass
+class FitOptions:
+    ''' Options for curve fit
+
+        Attribuites:
+            func: The function to fit
+            polyorder: Order of polynomial for func='poly'
+            bounds: Fit bounds
+            odr: Use Orthogonal Distance Regression
+            absolute_sigma: Treat sigma as absolute (not relative) value
+            p0: Initial guess of parameters
+    '''
+    func: str
+    polyorder: int = 1
+    bounds: tuple[float, float] = None
+    odr: bool = False
+    absolute_sigma: bool = False
+    p0: list[float] = None
+
+
 class ProjectCurveFit(ProjectComponent):
     ''' Uncertainty project component '''
-    def __init__(self, model=None, name='curvefit'):
-        super().__init__()
-        self.name = name
+    def __init__(self, model: CurveFit = None, name='curvefit'):
+        super().__init__(name=name)
         if model is not None:
             self.model = model
         else:
@@ -21,20 +41,11 @@ class ProjectCurveFit(ProjectComponent):
         self.nsamples = 5000
         self.seed = None
         self.outunits = {}
-        self.result = None
-        self.longdescription = None
-        self.odr = False
-        self.p0 = None
-        self.polyorder = 2
-        self.bounds = None
-        self.project = None  # Parent project
+        self.fitoptions = FitOptions('line')
 
     def set_fitfunc(self, func, polyorder=2, bounds=None, odr=None, p0=None):
         ''' Set the fit function '''
-        self.polyorder = polyorder
-        self.bounds = bounds
-        self.odr = odr
-        self.p0 = p0
+        self.fitoptions = FitOptions(func, polyorder=polyorder, bounds=bounds, odr=odr, p0=p0)
         self.model.set_fitfunc(func, polyorder, bounds, odr, p0)
 
     def calculate(self, lsq=True, monte=False, markov=False, gum=False):
@@ -51,36 +62,36 @@ class ProjectCurveFit(ProjectComponent):
             markovresult = self.model.markov_chain_monte_carlo(self.nsamples)
         if gum:
             gumresult = self.model.calculate_gum()
-        self.result = CurveFitResultsCombined(lsq=lsqresult, montecarlo=monteresult, markov=markovresult, gum=gumresult)
-        return self.result
+        self._result = CurveFitResultsCombined(lsq=lsqresult, montecarlo=monteresult, markov=markovresult, gum=gumresult)
+        return self._result
 
     def get_dists(self):
         ''' Get distributions in this output. '''
         dists = {}
-        for method in ['lsq', 'gum', 'montecarlo', 'markov']:
-            if getattr(self.result, method) is not None:
-                result = getattr(self.result, method)
-                for pidx, param in enumerate(self.model.pnames):
-                    if method in ['montecarlo', 'markov']:
-                        dists[f'{param} ({method})'] = {'samples': result.samples[:, pidx]}
-                    else:
-                        dists[f'{param} ({method.upper()})'] = {'mean': result.coeffs[pidx],
-                                                                'std': result.uncerts[pidx],
-                                                                'df': result.degf}
-        for method in ['lsq', 'gum', 'montecarlo', 'markov']:
-            if getattr(self.result, method) is not None:
-                result = getattr(self.result, method)
-                dists[f'Confidence ({method.upper()})'] = {
-                    'xdates': self.model.arr.xdate,
-                    'function': lambda x, result=result: {'mean': result.y(x),
-                                                          'std': result.confidence_band(x),
-                                                          'df': result.degf}}
+        for m in ['lsq', 'markov', 'montecarlo', 'gum']:
+            # Only return one calculation method, defaulting to LSQ
+            if self.result.method(m) is not None:
+                method = m
+                break
 
-                dists[f'Prediction ({method.upper()})'] = {
-                    'xdates': self.model.arr.xdate,
-                    'function': lambda x, result=result: {'mean': result.y(x),
-                                                          'std': result.prediction_band(x),
-                                                          'df': result.degf}}
+        if getattr(self.result, method) is not None:
+            result = getattr(self.result, method)
+            for pidx, param in enumerate(self.model.pnames):
+                dists[f'{param}'] = {'median': result.coeffs[pidx],
+                                     'std': result.uncerts[pidx],
+                                     'df': result.degf}
+
+            dists['Confidence Band'] = {
+                'xdates': self.model.arr.xdate,
+                'function': lambda x, result=result: {'median': result.y(x),
+                                                      'std': result.confidence_band(x),
+                                                      'df': result.degf}}
+
+            dists['Prediction Band'] = {
+                'xdates': self.model.arr.xdate,
+                'function': lambda x, result=result: {'median': result.y(x),
+                                                      'std': result.prediction_band(x),
+                                                      'df': result.degf}}
         return dists
 
     def get_config(self):
@@ -89,19 +100,19 @@ class ProjectCurveFit(ProjectComponent):
         d['mode'] = 'curvefit'
         d['curve'] = setup.modelname
         d['name'] = self.name
-        d['desc'] = self.longdescription
-        d['odr'] = self.odr
+        d['desc'] = self.description
+        d['odr'] = self.fitoptions.odr
         d['xname'] = setup.xname
         d['yname'] = setup.yname
         d['xdates'] = setup.points.xdate
         d['abssigma'] = self.model.absolute_sigma
         if setup.modelname == 'poly':
-            d['order'] = self.polyorder
-        if self.p0 is not None:
-            d['p0'] = self.p0
-        if self.bounds is not None:
-            d['bound0'] = self.bounds[0]
-            d['bound1'] = self.bounds[1]
+            d['order'] = self.fitoptions.polyorder
+        if self.fitoptions.p0 is not None:
+            d['p0'] = self.fitoptions.p0
+        if self.fitoptions.bounds is not None:
+            d['bound0'] = self.fitoptions.bounds[0]
+            d['bound1'] = self.fitoptions.bounds[1]
 
         d['arrx'] = setup.points.x.astype('float').tolist()  # Can't yaml numpy arrays, use list
         d['arry'] = setup.points.y.astype('float').tolist()
@@ -115,7 +126,7 @@ class ProjectCurveFit(ProjectComponent):
         ''' Load configuration into the model '''
         self.name = config.get('name', '')
         self.seed = config.get('seed', None)
-        self.longdescription = config.get('desc', '')
+        self.description = config.get('desc', '')
         arr = Array(np.asarray(config.get('arrx'), dtype=float),
                     np.asarray(config.get('arry'), dtype=float),
                     ux=config.get('arrux', 0.),

@@ -768,8 +768,6 @@ class Report:
             inline (bool): Render Mardkown images inline (True) or as references in footer
             unicode (bool): Allow unicode characters (True) or only ascii (False)
     '''
-    apply_css = True
-
     def __init__(self, **kwargs):
         self._s = ''
         self._plots = []
@@ -784,10 +782,6 @@ class Report:
     def _repr_markdown_(self):
         ''' Markdown representation for Jupyter '''
         return self.get_md()
-
-    def _repr_html_(self):
-        ''' HTML representation '''
-        return self.get_html()
 
     def hdr(self, text, level=1):
         ''' Add a header to the report
@@ -837,15 +831,6 @@ class Report:
                 end (string): Characters to print (such as newline) after the expression
         '''
         self._s += self._insert_obj(Math.from_sympy(sympyexpr), end=end)
-
-    def mathexpr(self, mathstr, end=''):
-        ''' Add a math expression to the report
-
-            Args:
-                mathstr (string): Math expression, must be sympify-able
-                end (string): Characters to print (such as newline) after the expression
-        '''
-        self._s += self._insert_obj(Math(mathstr), end=end)
 
     def mathtex(self, mathstr, end=''):
         ''' Add a math latex expression to the report
@@ -925,11 +910,18 @@ class Report:
         '''
         s = '\n'
         if hdr is None:
-            hdr = ['-'] * len(rows[0])  # PyMarkdown must have a header row, with non-empty strings
+            hdr = ['&nbsp;'] * len(rows[0])  # PyMarkdown must have a header row, with non-empty strings
+
+        def length(value):
+            try:
+                length = len(value)
+            except TypeError:
+                length = 1
+            return length
 
         widths = np.array([len(str(h))+1 for h in hdr], dtype=int)
         for row in rows:
-            widths = np.maximum(widths, np.array([len(c) if hasattr(c, '__len__') else 1 for c in row]))
+            widths = np.maximum(widths, np.array([length(c) for c in row]))
         widths = widths + 1
         widths = np.maximum(widths, 9)
 
@@ -1080,7 +1072,7 @@ class Report:
 
         return s.strip()
 
-    def get_html(self, **kwargs):
+    def get_html(self, apply_css=True, **kwargs):
         ''' Get report in HTML format, including CSS and mathjax header if needed.
 
             Args:
@@ -1088,7 +1080,7 @@ class Report:
                 instantiation override arguments given here.
         '''
         css = ''
-        if self.apply_css:
+        if apply_css:
             css = f'<style type="text/css">\n{REPORT_CSS}\n</style>'
 
             if kwargs.get('mathfmt', 'latex') == 'latex':
@@ -1098,11 +1090,6 @@ class Report:
         # Convert markdown to HTML
         html = markdown.markdown(self.get_md(**kwargs), extensions=['markdown.extensions.tables'])
         html = html.encode('ascii', 'xmlcharrefreplace').decode('utf-8')
-
-        # Some table styles can't go in CSS, at least as rendered by QTextWidget, so must go in table tags
-        html = html.replace('<table>', '<table border="0.5" cellpadding="0" cellspacing="0">')
-        html = html.replace('<th>', '<th align="center" bgcolor="lightgray">')
-
         bodyhead = kwargs.get('header', '')
         bodyfoot = kwargs.get('footer', '')
         return f'{HTML_HEAD}{css}\n{HTML_END_HEAD}\n{bodyhead}{html}{bodyfoot}\n{HTML_FOOTER}'

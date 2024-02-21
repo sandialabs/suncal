@@ -1,13 +1,18 @@
 ''' Widget for converting units and showing dimensionality '''
-
-from PyQt5 import QtWidgets
+from PyQt6 import QtWidgets
 from pint import DimensionalityError, UndefinedUnitError
 
-from . import gui_common
+from . import gui_math
 from ..common import unitmgr, report
 
 
 CHR_X_RED = '<font color="Red" size=5>✗</font>'
+
+
+def label_tex(label, tex):
+    ''' Set QLabel to math-image of tex expression '''
+    px = gui_math.pixmap_from_latex(tex)
+    label.setPixmap(px)
 
 
 class UnitsConverter(QtWidgets.QDialog):
@@ -80,9 +85,9 @@ class UnitsConverter(QtWidgets.QDialog):
             self.dimin.setText('---')
             uin = None
         else:
-            gui_common.setLabelTex(self.namein, report.Unit(uin, abbr=False).latex(escape=False))
-            gui_common.setLabelTex(self.abbrin, report.Unit(uin, abbr=True).latex(escape=False))
-            gui_common.setLabelTex(self.dimin, report.Unit(uin.dimensionality).latex(escape=False))
+            label_tex(self.namein, report.Unit(uin, abbr=False).latex(escape=False))
+            label_tex(self.abbrin, report.Unit(uin, abbr=True).latex(escape=False))
+            label_tex(self.dimin, report.Unit(uin.dimensionality).latex(escape=False))
 
         try:
             uout = unitmgr.parse_units(self.unitout.text())
@@ -93,9 +98,9 @@ class UnitsConverter(QtWidgets.QDialog):
             self.abbrout.setText('---')
             self.dimout.setText('---')
         else:
-            gui_common.setLabelTex(self.nameout, report.Unit(uout, abbr=False).latex(escape=False))
-            gui_common.setLabelTex(self.abbrout, report.Unit(uout, abbr=True).latex(escape=False))
-            gui_common.setLabelTex(self.dimout, report.Unit(uout.dimensionality).latex(escape=False))
+            label_tex(self.nameout, report.Unit(uout, abbr=False).latex(escape=False))
+            label_tex(self.abbrout, report.Unit(uout, abbr=True).latex(escape=False))
+            label_tex(self.dimout, report.Unit(uout.dimensionality).latex(escape=False))
 
         if uin is not None and uout is not None:
             try:

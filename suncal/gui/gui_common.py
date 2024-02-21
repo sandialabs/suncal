@@ -1,40 +1,12 @@
-''' Functionality shared by gui pages. ALL pages should import this file to get exception handler
-    if run independently of gui_main.
-'''
+''' System-level GUI functions '''
 
 import os
 import sys
 import traceback
-from PyQt5 import QtWidgets, QtCore, QtGui
-import matplotlib as mpl
-
-from . import configmgr
-from . import icons
-from . import logo
-from ..common import report, plotting
+from PyQt6 import QtWidgets, QtCore, QtGui
 
 
-COLOR_INVALID = QtGui.QBrush(QtCore.Qt.red)
-COLOR_OK = QtGui.QBrush(QtCore.Qt.white)
-COLOR_TEXT_OK = QtGui.QBrush(QtCore.Qt.black)
-COLOR_UNUSED = QtGui.QBrush(QtGui.QColor(236, 236, 236, 255))
-COLOR_SELECTED = QtGui.QBrush(QtGui.QColor(204, 255, 204, 255))
-COLOR_HIGHLIGHT = QtGui.QBrush(QtGui.QColor(255, 0, 0, 127))
-
-settings = configmgr.Settings()
-
-# Icon names for each calculation method
-iconname = {'uncertainty': 'target',
-            'curvefit': 'curvefit',
-            'risk': 'risk',
-            'sweep': 'targetlist',
-            'reverse': 'calipers',
-            'reversesweep': 'rulersweep',
-            'data': 'boxplot',
-            'wizard': 'wizard'}
-
-
-# Breakpoint handler (for Python 3.7+) for breakpoint() function to disable QT problems when breaking
+# Breakpoint handler for breakpoint() function to disable QT problems when breaking
 def _qtbreakpoint(*args, **kwargs):
     from pdb import set_trace
     QtCore.pyqtRemoveInputHook()
@@ -55,19 +27,20 @@ def handle_exception(exc_type, exc_value, exc_traceback):
     msgbox.setWindowTitle('Suncal')
     msgbox.setText('The following exception occurred.')
     msgbox.setInformativeText(msg)
-    msgbox.exec_()
+    msgbox.exec()
 
 
 sys.excepthook = handle_exception
 
 
-# Load Pandoc/Latex paths from settings into report module
-pandoc = settings.getPandocPath()
-latex = settings.getLatexPath()
-if pandoc and os.path.exists(pandoc):
-    report.pandoc_path = pandoc
-if latex and os.path.exists(latex):
-    report.latex_path = latex
+def centerWindow(window, w, h):
+    ''' Set window geometry so it appears centered in the window
+        If window size is too big, maximize it
+    '''
+    desktopsize = QtGui.QGuiApplication.primaryScreen().availableGeometry()
+    window.setGeometry(desktopsize.width()//2 - w//2, desktopsize.height()//2 - h//2, w, h)  # Center window on screen
+    if h >= desktopsize.height() or w >= desktopsize.width():
+        window.showMaximized()
 
 
 class InfValidator(QtGui.QDoubleValidator):
@@ -75,26 +48,10 @@ class InfValidator(QtGui.QDoubleValidator):
     def validate(self, s, pos):
         ''' Validate the string '''
         if s.lower() in ['inf', '-inf']:
-            return QtGui.QValidator.Acceptable, s, pos
+            return QtGui.QValidator.State.Acceptable, s, pos
         elif s.lower() in '-inf':
-            return QtGui.QValidator.Intermediate, s, pos
+            return QtGui.QValidator.State.Intermediate, s, pos
         return super().validate(s, pos)
-
-
-def set_plot_style():
-    ''' Configure matplotlib with plot style from saved settings '''
-    mpl.rcParams.update(mpl.rcParamsDefault)
-    try:
-        mpl.style.use(settings.getStyle())
-    except OSError:
-        pass  # Maybe matplotlib version changed and style is not available
-
-    for k, v in settings.getCustomStyle().items():
-        try:
-            mpl.style.use({k: v})  # Override anything in base style
-        except ValueError:
-            print('Bad parameter {} for key {}'.format(v, k))
-    plotting.setup_mplparams()  # Override some font things always
 
 
 # This function allows switching file path when run from pyInstaller.
@@ -107,43 +64,20 @@ def resource_path(relative):
     return os.path.join(base, relative)
 
 
-def load_icon(name):
-    ''' Load an icon from the icons file by name '''
-    img = QtGui.QPixmap()
-    img.loadFromData(QtCore.QByteArray.fromBase64(getattr(icons, name)), format='SVG')
-    return QtGui.QIcon(img)
+class BlockedSignals:
+    ''' Context manager for blocking pyqt signals that
+        restores the signal block to its previous state when done.
 
+        with BlockedSignal(widget):
+            ...
+    '''
+    def __init__(self, widget):
+        self.widget = widget
+        self._saved_state = self.widget.signalsBlocked()
 
-def get_logo(pixmap=False):
-    ''' Load the app icon/logo '''
-    img = QtGui.QPixmap()
-    img.loadFromData(QtCore.QByteArray.fromBase64(logo.logo), format='PNG')
-    if pixmap:
-        return img
-    return QtGui.QIcon(img)
+    def __enter__(self):
+        self._saved_state = self.widget.signalsBlocked()
+        self.widget.blockSignals(True)
 
-
-def get_snllogo(pixmap=False):
-    ''' Load the SNL thunderbird icon/logo '''
-    img = QtGui.QPixmap()
-    img.loadFromData(QtCore.QByteArray.fromBase64(logo.logosnl), format='PNG')
-    if pixmap:
-        return img
-    return QtGui.QIcon(img)
-
-
-def get_rptargs():
-    ''' Get arguments to pass to reports from settings dialog '''
-    return {'n': settings.getSigfigs(),
-            'fmt': settings.getNumformat()}
-
-
-def setLabelTex(label, tex):
-    ''' Set QLabel to math-image of tex expression '''
-    ratio = QtWidgets.QApplication.instance().devicePixelRatio()
-    imgbuf = report.Math.from_latex(tex).svg_buf(fontsize=16*ratio)
-    ratio = QtWidgets.QApplication.instance().devicePixelRatio()
-    px = QtGui.QPixmap()
-    px.loadFromData(imgbuf.getvalue())
-    px.setDevicePixelRatio(ratio)
-    label.setPixmap(px)
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.widget.blockSignals(self._saved_state)

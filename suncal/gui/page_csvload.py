@@ -5,11 +5,11 @@ import csv
 import numpy as np
 from dateutil.parser import parse
 
-from PyQt5 import QtWidgets, QtCore
+from PyQt6 import QtWidgets, QtCore
 
 from ..datasets.dataset_model import DataSet
 from ..project import ProjectDataSet
-from . import gui_widgets
+from . import gui_common
 
 
 def _gettype(val):
@@ -34,13 +34,14 @@ class SelectCSVData(QtWidgets.QDialog):
         font = self.font()
         font.setPointSize(10)
         self.setFont(font)
-        gui_widgets.centerWindow(self, 900, 600)
+        gui_common.centerWindow(self, 900, 600)
         self.table = QtWidgets.QTableWidget()
         self.transpose = QtWidgets.QCheckBox('Transpose')
-        self.dlgbutton = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel)
+        self.dlgbutton = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.StandardButton.Ok |
+                                                    QtWidgets.QDialogButtonBox.StandardButton.Cancel)
         self.dlgbutton.rejected.connect(self.reject)
         self.dlgbutton.accepted.connect(self.checkdatarange)
-        self.dlgbutton.button(QtWidgets.QDialogButtonBox.Ok).setEnabled(False)
+        self.dlgbutton.button(QtWidgets.QDialogButtonBox.StandardButton.Ok).setEnabled(False)
         layout = QtWidgets.QVBoxLayout()
         hlayout = QtWidgets.QHBoxLayout()
         hlayout.addWidget(QtWidgets.QLabel('Select data range(s) to import'))
@@ -88,8 +89,8 @@ class SelectCSVData(QtWidgets.QDialog):
             for col, val in enumerate(columns):
                 self.table.setItem(row, col, QtWidgets.QTableWidgetItem(val.strip()))
                 if self.table.item(row, col) is not None:
-                    self.table.item(row, col).setFlags(QtCore.Qt.ItemIsSelectable |
-                                                       QtCore.Qt.ItemIsEnabled)  # No editable
+                    self.table.item(row, col).setFlags(QtCore.Qt.ItemFlag.ItemIsSelectable |
+                                                       QtCore.Qt.ItemFlag.ItemIsEnabled)  # No editable
         self.table.resizeColumnsToContents()
         self.table.setRangeSelected(
             QtWidgets.QTableWidgetSelectionRange(0, 0, self.table.rowCount()-1, self.table.columnCount()-1), True)
@@ -98,7 +99,7 @@ class SelectCSVData(QtWidgets.QDialog):
     def selection_change(self):
         ''' Selection has changed '''
         rng = self.table.selectedRanges()
-        self.dlgbutton.button(QtWidgets.QDialogButtonBox.Ok).setEnabled(len(rng) > 0)
+        self.dlgbutton.button(QtWidgets.QDialogButtonBox.StandardButton.Ok).setEnabled(len(rng) > 0)
 
     def checkdatarange(self):
         ''' Convert selected data into an array, with header if a header is detected '''
@@ -140,7 +141,7 @@ class SelectCSVData(QtWidgets.QDialog):
         datcolumns = []
         for col in columns:
             try:
-                datcol = [float(v) for v in col]
+                datcol = [float(v) if v != '' else np.nan for v in col]
             except ValueError:
                 try:
                     datcol = [parse(v) for v in col]

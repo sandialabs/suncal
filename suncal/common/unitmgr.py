@@ -84,9 +84,14 @@ def split_units(u):
 
 
 def make_quantity(value, unit):
-    ''' Make a Pint Quantity with the value and (possibly None) unit string '''
-    if unit is not None:
+    ''' Make a Pint Quantity with the value and (possibly None) unit or unit string '''
+    if unit is not None and has_units(value):
+        return convert(value, unit)
+
+    if isinstance(unit, str):
         return value * parse_units(unit)
+    elif unit is not None:
+        return value * unit
     return value
 
 
@@ -95,10 +100,7 @@ def convert(value, units):
     if units is None:
         return value
 
-    if hasattr(value, 'units'):
-        if value._get_delta_units() and value._has_compatible_delta(str(units)):
-            # value.to(unit) loses delta_ on value.units if unit is not delta
-            units = 'delta_' + str(units)
+    if has_units(value):
         return value.to(units)
 
     return make_quantity(value, units)

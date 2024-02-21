@@ -43,10 +43,10 @@ def PFA(dist_proc, dist_test, LL, UL, GBL=0, GBU=0, testbias=0):
 
     c1, _ = quad(integrand, limits.proc.lo, LL, epsabs=.001, epsrel=.001)
     if (dist_test.mean() == dist_test.median()
-        and dist_proc.mean() == dist_proc.median()
-        and np.isclose(dist_proc.mean(), (UL+LL)/2)):
-            # Integration is symmetric
-            c2 = c1
+            and dist_proc.mean() == dist_proc.median()
+            and np.isclose(dist_proc.mean(), (UL+LL)/2)):
+        # Integration is symmetric
+        c2 = c1
     else:
         c2, _ = quad(integrand, UL, limits.proc.hi, epsabs=.001, epsrel=.001)
 

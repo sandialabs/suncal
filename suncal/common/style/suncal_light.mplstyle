@@ -1,0 +1,44 @@
+lines.linewidth : 2.0
+lines.color: 222222
+text.color: 222222
+
+patch.linewidth: 0.5
+patch.facecolor: eeeeee
+patch.edgecolor: 222222
+patch.antialiased: True
+
+axes.facecolor: eeeeee
+axes.edgecolor: 222222
+axes.labelcolor: 222222
+axes.titlecolor: 222222
+axes.grid : True
+axes.titlesize: x-large
+axes.labelsize: large
+
+axes.prop_cycle: cycler('color', ['007a86', 'ba0c2f', 'ffc600', '8a387c', 'ed8b00', 'a8aa19', '63666a', 'c05131', 'd6a461', 'a7a8aa'])
+xtick.color: 222222
+ytick.color: 222222
+xtick.direction: in
+ytick.direction: in
+
+grid.color: dddddd
+grid.linestyle: --
+grid.linewidth: 0.5
+
+legend.fancybox: True
+legend.labelcolor: 222222
+
+figure.facecolor: 00000000
+figure.subplot.left: .12
+figure.subplot.right: .95
+figure.subplot.top: .95
+figure.subplot.bottom: .12
+figure.subplot.hspace: .4
+figure.subplot.wspace: .4
+
+axes.formatter.use_mathtext: True
+axes.formatter.limits: -4, 4
+axes.formatter.useoffset: False
+mathtext.fontset: stixsans
+mathtext.default: regular
+

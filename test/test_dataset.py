@@ -13,12 +13,12 @@ def test_dsetsummary():
     ynom = 3*x + 2
     samples = 8
     y = np.random.normal(loc=ynom, scale=.4, size=(samples, len(ynom))).T
-    dset = DataSet(y, colnames=x)
+    dset = DataSet(y, column_names=x)
     arr = dset.summarize()
 
     assert np.allclose(arr._pcolnames, x)
-    assert np.allclose(arr._means(), y.mean(axis=1))
-    assert np.allclose(arr._stds(), y.std(axis=1, ddof=1))
+    assert np.allclose(arr.means, y.mean(axis=1))
+    assert np.allclose(arr.stdevs, y.std(axis=1, ddof=1))
 
 
 def test_anova():
@@ -34,35 +34,29 @@ def test_anova():
           1.000785761, 0.999307039, 1.000469276, 1.000654864, 1.000987112]
     dat = np.vstack((x1, x2, x3, x4))
 
-    g = DataSet(dat)
-    result = g.anova()
-    gstats = g.group_stats()
-    pstats = g.pooled_stats()
-    assert np.isclose(result.F, .0850416)
-    assert np.isclose(result.Fcrit, 2.866266)
-    assert np.isclose(result.P, .96777478)
-    assert np.isclose(pstats.reproducibility, 57.6E-6, atol=.01E-5)
-    assert np.isclose(pstats.repeatability, 624.4E-6, atol=.1E-6)
-    assert np.allclose(gstats.degf, [9, 9, 9, 9])
-    assert np.allclose(gstats.mean, [1.000100682, 1.000013659, 0.999983787, 1.000091265])
-    assert np.allclose(gstats.standarddev, [0.000646229, 0.00057407, 0.000542976, 0.000719539])
-    assert pstats.reproducibility_degf == 3
-    assert pstats.repeatability_degf == 36
+    result = DataSet(dat).calculate()
+    assert np.isclose(result.anova.f, .0850416)
+    assert np.isclose(result.anova.fcrit, 2.866266)
+    assert np.isclose(result.anova.p, .96777478)
+    assert np.isclose(result.pooled.reproducibility, 57.6E-6, atol=.01E-5)
+    assert np.isclose(result.pooled.repeatability, 624.4E-6, atol=.1E-6)
+    assert np.allclose(result.groups.degfs, [9, 9, 9, 9])
+    assert np.allclose(result.groups.means, [1.000100682, 1.000013659, 0.999983787, 1.000091265])
+    assert np.allclose(result.groups.std_devs, [0.000646229, 0.00057407, 0.000542976, 0.000719539])
+    assert result.pooled.reprod_degf == 3
+    assert result.pooled.repeat_degf == 36
 
     # Also try groups of uneven lengths, use excel anova function to verify
     dat[1, 8:] = np.nan
     dat[2, 9:] = np.nan
     dat[3, 6:] = np.nan
-    g = DataSet(dat)
-    gstats = g.group_stats()
-    pstats = g.pooled_stats()
-    assert np.allclose(gstats.degf, [9, 7, 8, 5])
-    assert pstats.reproducibility_degf == 3
-    assert pstats.repeatability_degf == 29
-    result = g.anova()
-    assert np.isclose(result.F, .23239)
-    assert np.isclose(result.Fcrit, 2.93403)
-    assert np.isclose(result.P, .873061)
+    result = DataSet(dat).calculate()
+    assert np.allclose(result.groups.degfs, [9, 7, 8, 5])
+    assert result.pooled.reprod_degf == 3
+    assert result.pooled.repeat_degf == 29
+    assert np.isclose(result.anova.f, .23239)
+    assert np.isclose(result.anova.fcrit, 2.93403)
+    assert np.isclose(result.anova.p, .873061)
 
 
 def test_anovameans():
@@ -72,29 +66,25 @@ def test_anovameans():
                   10.000031, 10.000060, 10.000125, 10.000163, 10.000041])
     ystd = np.array([60, 77, 111, 101, 67, 93, 80, 73, 88, 86]) * 1E-6
     nmeas = np.full(len(y), 5)
-    a = DataSetSummary(x, y, ystd, nmeas)
-    gstats = a.group_stats()
-    pstats = a.pooled_stats()
-    assert np.isclose(pstats.mean, 10.000097, atol=.0000005)  # From GUM Table H.9
-    assert np.isclose(pstats.reproducibility, 57E-6, atol=.5E-6)
-    assert np.isclose(pstats.repeatability, 85E-6, atol=.5E-6)
-    result = a.anova()
-    assert np.isclose(result.F, 2.25, atol=.02)  # Equation H.27
-    assert a.ncolumns() == 10
+    result = DataSetSummary(y, ystd, nmeas, column_names=x).calculate()
+    assert np.isclose(result.pooled.mean, 10.000097, atol=.0000005)  # From GUM Table H.9
+    assert np.isclose(result.pooled.reproducibility, 57E-6, atol=.5E-6)
+    assert np.isclose(result.pooled.repeatability, 85E-6, atol=.5E-6)
+    assert np.isclose(result.anova.f, 2.25, atol=.02)  # Equation H.27
+    assert result.ncolumns == 10
 
     # Data from Glantz Table 7-4, results in table 7-5
     x = ['Healthy', 'Nonmelancholic', 'Melancholoc']  # Check with x as strings too
     y = np.array([9.2, 10.7, 13.5])
     ystd = np.array([2.9, 2.8, 4.7])
     nmeas = np.array([16, 22, 18])
-    a = DataSetSummary(x, y, ystd, nmeas)
-    result = a.anova()
-    assert np.isclose(result.SSbet, 164.7, atol=.1)
-    assert np.isclose(result.SSwit, 666.02, atol=1)  # Rounding error in table, large atol
-    assert np.isclose(result.MSbet, 82.3, atol=.1)
-    assert np.isclose(result.MSwit, 12.5, atol=.1)
-    assert np.isclose(result.F, 6.612, atol=.1)
-    assert np.isclose(result.P, .003, atol=.001)
+    result = DataSetSummary(y, ystd, nmeas, column_names=x).calculate()
+    assert np.isclose(result.anova.sumsq_between, 164.7, atol=.1)
+    assert np.isclose(result.anova.sumsq_within, 666.02, atol=1)  # Rounding error in table, large atol
+    assert np.isclose(result.anova.mean_sumsq_between, 82.3, atol=.1)
+    assert np.isclose(result.anova.mean_sumsq_within, 12.5, atol=.1)
+    assert np.isclose(result.anova.f, 6.612, atol=.1)
+    assert np.isclose(result.anova.p, .003, atol=.001)
 
 
 def test_autocorrelation():
@@ -117,8 +107,8 @@ def test_autocorrelation():
         -351,  -463,   174,  -125,  -570,    15,    72,  -550,  -190,   172,  -424,  -385,   198,  -218,  -536,    96])
 
     # Suncal Autocorrelation calculation
-    d = DataSet(lewdata)
-    acorr = d.autocorrelation()[:50]  # Compare first 50 lag values
+    result = DataSet(lewdata).calculate()
+    acorr = result.autocorrelation[0].rho[:50]  # Compare first 50 lag values
 
     # NIST's autocorrelation values
     nistacorr = np.array([1.00, -0.31, -0.74, 0.77, 0.21, -0.90, 0.38, 0.63, -0.77, -0.12, 0.82, -0.40, -0.55,
@@ -174,12 +164,11 @@ def test_autocorrelation2():
                        449.9938931,447.9603053,449.4625954,448.070229,448.5282443,448.1435115,448.6564885,448.5465649,449.5541985,448.5465649,
                        448.4,448.4916031,450.8732824,450.8,450.7267176,452.1740458,449.3160305,450.7816794,449.6641221,451.1114504,
                        450.0671756,451.5694656,452.2839695,449.4442748,])
-    d = DataSet(zhang1)
-    acorr = d.autocorrelation_uncert()
+    result = DataSet(zhang1).calculate()
     # Compare with Zhang's results (Section 4)
-    assert acorr.nc == 13
-    assert np.isclose(acorr.uncert, 0.3776, atol=.001)  # Relaxed tolerance since data points are estimated from image.
-    assert np.isclose(acorr.r_unc, 3.9, atol=.05)
+    assert result.autocorrelation[0].nc == 13
+    assert np.isclose(result.autocorrelation[0].uncert, 0.3776, atol=.001)  # Relaxed tolerance since data points are estimated from image.
+    assert np.isclose(result.autocorrelation[0].r_unc, 3.9, atol=.05)
 
     zhang3 = np.array([-19.518744,-19.498219,-19.478113,-19.492563,-19.527327,-19.501986,-19.492142,-19.469103,-19.497375,-19.467844,-19.521456,-19.526062,
     -19.438942,-19.499044,-19.501556,-19.507002,-19.439775,-19.468466,-19.46281,-19.438934,-19.45841,-19.47244,-19.440607,-19.512857,-19.520187,
@@ -198,9 +187,8 @@ def test_autocorrelation2():
     -19.444435,-19.464539,-19.465166,-19.420767,-19.43417,-19.428722,-19.483591,-19.4438,-19.467464,-19.447567,-19.414268,-19.391022,-19.44191,
     -19.426413,-19.405258,-19.441908,-19.410912,-19.412376,-19.431433,-19.457819,-19.47227,-19.462006,-19.458027,-19.452162,-19.462631,-19.500956,
     -19.431425,-19.44755,-19.438963,-19.415297,-19.394564,-19.434563,-19.413828,-19.447964,-19.43016,-19.438955])
-    d = DataSet(zhang3)
-    acorr = d.autocorrelation_uncert()
+    result = DataSet(zhang3).calculate()
     # Compare with Zhang's results (Section 4)
-    assert acorr.nc == 17
-    assert np.isclose(acorr.uncert, 0.0067, atol=.00005)
-    assert np.isclose(acorr.r_unc, 2.8, atol=.05)
+    assert result.autocorrelation[0].nc == 17
+    assert np.isclose(result.autocorrelation[0].uncert, 0.0067, atol=.00005)
+    assert np.isclose(result.autocorrelation[0].r_unc, 2.8, atol=.05)

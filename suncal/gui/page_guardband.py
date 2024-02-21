@@ -1,7 +1,7 @@
 ''' Guardband Finder Widgets '''
-from PyQt5 import QtWidgets, QtCore
+from PyQt6 import QtWidgets
 
-from .gui_widgets import SpinBoxLabelWidget
+from .widgets import SpinBoxLabelWidget
 
 
 class TabTur(QtWidgets.QWidget):
@@ -79,6 +79,28 @@ class TabPfa(QtWidgets.QWidget):
         return kargs
 
 
+class TabPfr(QtWidgets.QWidget):
+    ''' PFR-based guardband options tab '''
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.pfrval = SpinBoxLabelWidget(label='Target PFR', value=0.8)
+        self.pfrval.setValue(2.0)  # in percent
+        self.pfrval.setRange(.01, 99.99)
+        self.pfrval.setDecimals(2)
+        self.pfrval.setSingleStep(0.1)
+        layout = QtWidgets.QVBoxLayout()
+        layout.addWidget(self.pfrval)
+        layout.addStretch()
+        self.setLayout(layout)
+
+    def get_method(self):
+        ''' Get guardbanding method '''
+        kargs = {}
+        kargs['pfr'] = self.pfrval.value() / 100
+        kargs['method'] = 'pfr'
+        return kargs
+
+
 class TabCost(QtWidgets.QWidget):
     ''' Cost-based guardband options tab '''
     def __init__(self, parent=None):
@@ -91,8 +113,8 @@ class TabCost(QtWidgets.QWidget):
         self.frcost.setSingleStep(1)
         self.facost.setValue(100)
         self.frcost.setValue(10)
-        self.optMincost = QtWidgets.QRadioButton('Mincost')
-        self.optMinimax = QtWidgets.QRadioButton('Minimax')
+        self.optMincost = QtWidgets.QRadioButton('Minimize Expected/Average Cost')
+        self.optMinimax = QtWidgets.QRadioButton('Minimize Maximum Cost')
         self.optMincost.setChecked(True)
         layout = QtWidgets.QVBoxLayout()
         layout.addWidget(self.facost)
@@ -143,15 +165,18 @@ class GuardBandFinderWidget(QtWidgets.QDialog):
         self.setFont(font)
         self.setWindowTitle('Calculate Guardband')
         self.tabPfa = TabPfa()
+        self.tabPfr = TabPfr()
         self.tabTur = TabTur()
         self.tabCost = TabCost()
         self.tabSpecific = TabSpecific()
         self.tab = QtWidgets.QTabWidget()
         self.tab.addTab(self.tabPfa, 'PFA')
+        self.tab.addTab(self.tabPfr, 'PFR')
         self.tab.addTab(self.tabTur, 'TUR')
         self.tab.addTab(self.tabCost, 'Cost')
         self.tab.addTab(self.tabSpecific, 'Specific')
-        self.buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel)
+        self.buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.StandardButton.Ok |
+                                                  QtWidgets.QDialogButtonBox.StandardButton.Cancel)
         self.buttons.accepted.connect(self.accept)
         self.buttons.rejected.connect(self.reject)
         layout = QtWidgets.QVBoxLayout()

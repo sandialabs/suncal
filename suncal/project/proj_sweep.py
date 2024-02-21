@@ -8,14 +8,12 @@ from ..sweep import UncertSweep
 from ..uncertainty import Model
 from ..uncertainty.report.units import units_report
 from ..common import unitmgr
-from ..datasets.dataset_model import DataSet
 
 
 class ProjectSweep(ProjectComponent):
     ''' Uncertainty project component '''
     def __init__(self, model=None, name='sweep'):
-        super().__init__()
-        self.name = name
+        super().__init__(name=name)
         if model is not None:
             self.model = model
         else:
@@ -24,64 +22,42 @@ class ProjectSweep(ProjectComponent):
         self.nsamples = 1000000
         self.seed = None
         self.outunits = {}
-        self.result = None
-        self.longdescription = None
-        self.project = None  # Parent project
 
     def calculate(self):
         ''' Run the calculation '''
         if self.seed:
             np.random.seed(self.seed)
-        self.result = self.model.calculate(samples=self.nsamples)
-        return self.result
+        self._result = self.model.calculate(samples=self.nsamples)
+        return self._result
 
     def units_report(self, **kwargs):
         ''' Create report showing units of all parameters '''
         return units_report(self.model, self.outunits)
 
-    def get_dataset(self, name=None):
-        ''' Get DataSet object from sweep output with the given name. If name is None, return a list
-            of array names available.
-        '''
-        names = []
-        for n in self.model.model.functionnames:
-            if self.result is not None and self.result.gum is not None:
-                names.append(f'{n} (GUM)')
-            if self.result is not None and self.result.montecarlo is not None:
-                names.append(f'{n} (MC)')
-
-        if name is None:
-            return names
-
-        if name in names:
-            name, method = name.split(' ')
-            dset = self.to_array(gum=(method == '(GUM)'), funcname=name)
-        else:
-            raise ValueError(f'{name} not found in output')
-        return dset
+    def get_arrays(self):
+        d = {}
+        for name in self.model.model.functionnames:
+            if self._result is not None and self.result.gum is not None:
+                d[f'{name} (GUM)'] = self.to_array(gum=True, funcname=name)
+            if self._result is not None and self.result.montecarlo is not None:
+                d[f'{name} (MC)'] = self.to_array(gum=False, funcname=name)
+        return d
 
     def to_array(self, gum=True, funcname=None):
-        ''' Return DataSet object of swept data and uncertainties
+        ''' Return dictionary {x: y: uy:} of swept data and uncertainties
 
             Args:
                 gum (bool): Use gum (True) or monte carlo (False) values
                 funcidx (int): Index of function in calculator as y values
-
-            Returns:
-                dset: DataSet containing mean and uncertainties of each sweep point
         '''
-        xvals = [unitmgr.strip_units(x) for x in self.result.report._sweepvals]
-        names = self.result.report._header_strs.copy()
-
+        xvals = unitmgr.strip_units(self.result.report._sweepvals[0])  # Only first x value
         if gum:
             yvals = unitmgr.strip_units(self.result.gum.expected()[funcname])
             uyvals = unitmgr.strip_units(self.result.gum.uncertainties()[funcname])
         else:
             yvals = unitmgr.strip_units(self.result.montecarlo.expected()[funcname])
             uyvals = unitmgr.strip_units(self.result.montecarlo.uncertainties()[funcname])
-        names.append(funcname)
-        names.append(f'u({funcname})')
-        return DataSet(np.vstack((xvals, yvals, uyvals)), colnames=names)
+        return {'x': xvals, 'y': yvals, 'u(y)': uyvals}
 
     def load_config(self, config):
         ''' Load configuration into this project '''
@@ -91,7 +67,7 @@ class ProjectSweep(ProjectComponent):
         self.name = puncert.name
         self.outunits = puncert.outunits
         self.nsamples = puncert.nsamples
-        self.longdescription = puncert.longdescription
+        self.description = puncert.description
         self.seed = puncert.seed
         self.model.sweeplist = []
 
@@ -114,7 +90,7 @@ class ProjectSweep(ProjectComponent):
         ''' Get configuration dictionary '''
         puncert = ProjectUncert(self.model.model)
         puncert.outunits = self.outunits
-        puncert.longdescription = self.longdescription
+        puncert.description = self.description
         puncert.seed = self.seed
         puncert.nsamples = self.nsamples
         d = puncert.get_config()

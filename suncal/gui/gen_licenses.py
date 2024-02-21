@@ -13,7 +13,7 @@ import pkg_resources
 
 
 # For pulling version numbers
-from PyQt5.QtCore import QT_VERSION_STR, PYQT_VERSION_STR
+from PyQt6.QtCore import QT_VERSION_STR, PYQT_VERSION_STR
 
 
 CONTRIBUTORS = ('Collin Delker, Otis Solomon, Ricky Sandoval, Renee Jerome, Nick Haythorn, Katherine Sanchez, '

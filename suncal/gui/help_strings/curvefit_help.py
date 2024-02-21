@@ -1,6 +1,7 @@
 ''' Inline help reports for CUrveFit tools '''
 from ...common import report
 
+
 class CurveHelp:
     @staticmethod
     def nohelp():

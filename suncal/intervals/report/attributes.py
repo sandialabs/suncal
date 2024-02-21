@@ -23,8 +23,9 @@ class ReportIntervalA3:
         rows = [['Suggested Interval', report.Number(self._results.interval, fmin=0)],
                 ['Calculated Interval', report.Number(self._results.calculated, fmin=0)],
                 ['Current Interval Rejection Confidence', f'{self._results.rejection*100:.2f}%'],
-                ['True reliability range', f'{self._results.RL*100:.2f}% - {self._results.RU*100:.2f}%'],
-                ['Observed Reliability', f'{self._results.Robserved*100:.2f}% '
+                ['True reliability range', f'{self._results.reliability_range[0]*100:.2f}%'
+                                           f' - {self._results.reliability_range[1]*100:.2f}%'],
+                ['Observed Reliability', f'{self._results.reliability_observed*100:.2f}% '
                                          f'({self._results.intol} / {self._results.n})'],
                 ['Number of calibrations used', f'{self._results.n:.0f}']
                 ]
@@ -52,11 +53,11 @@ class ReportIntervalS2:
     def _repr_markdown_(self):
         return self.summary().get_md()
 
-    def summary(self, conf=0.95, **kwargs):
+    def summary(self, **kwargs):
         ''' Report the results '''
         rpt = report.Report(**kwargs)
         rpt.hdr('Best Fit Reliability Model', level=2)
-        rpt.append(self.model(conf=conf))
+        rpt.append(self.model(conf=self._allresults.conf))
         with plotting.plot_figure() as fig:
             self.plot.model(fig=fig.gca(), **kwargs)
             rpt.plot(fig)

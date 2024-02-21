@@ -3,38 +3,37 @@
 '''
 import pytest
 
-import suncal.gui.configmgr as cfg
+from suncal.gui.gui_settings import gui_settings
 
-s = cfg.Settings()
-s.setDefaults()
+gui_settings.set_defaults()
 
 
 def test_color():
-    s.setColormap('cmapcontour', 'red')
-    s.setColormap('cmapscatter', 'yellow')
-    assert s.getColormap('cmapcontour') == 'red'
-    assert s.getColormap('cmapscatter') == 'yellow'
+    gui_settings.colormap_contour = 'red'
+    gui_settings.colormap_scatter = 'yellow'
+    assert gui_settings.colormap_contour == 'red'
+    assert gui_settings.colormap_scatter == 'yellow'
 
 
 def test_dist():
     dlist = ['normal', 'uniform', 'alpha']
-    s.setDistributions(dlist)
-    assert s.getDistributions() == dlist
+    gui_settings.distributions = dlist
+    assert gui_settings.distributions == dlist
 
 
 def test_samples():
-    s.setSamples(1000)
-    assert s.getSamples() == 1000
+    gui_settings.samples = 1000
+    assert gui_settings.samples == 1000
 
-    s.setSamples('abc')  # Invalid values go to default
-    assert s.getSamples() == 1000000
+    gui_settings.samples = 'abc'  # Invalid values go to default
+    assert gui_settings.samples == 1000000
 
-    s.setSamples(-10)  # Negative values become 1
-    assert s.getSamples() == 1
+    gui_settings.samples = -10  # Negative values become 1
+    assert gui_settings.samples == 1
 
 
 def test_default():
-    s.setDefaults()
-    assert s.getColormap('cmapscatter') == 'viridis'
-    assert s.getColormap('cmapcontour') == 'viridis'
-    assert s.getSamples() == 1000000
+    gui_settings.set_defaults()
+    assert gui_settings.colormap_scatter == 'viridis'
+    assert gui_settings.colormap_contour == 'viridis'
+    assert gui_settings.samples == 1000000

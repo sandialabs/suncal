@@ -2,14 +2,12 @@
 
 css = '''
 body {
-  color: #444;
-  font-family: Georgia, Palatino, 'Palatino Linotype', Times, 'Times New Roman', serif;
+  font-family: sans-serif;
   font-size: 16px;
   line-height: 1.7;
   padding: 1em;
   margin: auto;
   max-width: 56em;
-  background: #fefefe;
 }
 
 a {
@@ -39,6 +37,7 @@ a:focus {
 }
 
 p {
+  font-family: sans-serif;
   margin: 1em 0;
 }
 
@@ -47,7 +46,7 @@ img {
 }
 
 h1, h2, h3, h4, h5, h6 {
-  color: #111;
+  font-family: sans-serif;
   line-height: 125%;
   margin-top: 2em;
   font-weight: normal;
@@ -82,23 +81,27 @@ h6 {
 }
 
 table {
-  margin-bottom: 2em;
-  border-bottom: 1px solid #ddd;
-  border-right: 1px solid #ddd;
-  border-spacing: 0;
-  border-collapse: collapse;
+    margin: 10px 5px;
+    border-collapse: collapse;
+ }
+
+th {
+    background-color: #eee;
+    font-weight: bold;
 }
 
-table th {
-  padding: .2em 1em;
-  background-color: #eee;
-  border-top: 1px solid #ddd;
-  border-left: 1px solid #ddd;
-}
-
-table td {
-  padding: .2em 1em;
-  border-top: 1px solid #ddd;
-  border-left: 1px solid #ddd;
-  vertical-align: top;
+th, td {
+    border: 1px solid lightgray;
+    padding: .2em 1em;
 }'''
+
+
+css_dark = '''
+th {
+    background-color: #444;
+}
+
+th, td {
+    border: 1px solid darkgray;
+}
+'''

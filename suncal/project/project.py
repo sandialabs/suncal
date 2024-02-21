@@ -13,7 +13,6 @@ from .proj_reverse import ProjectReverse
 from .proj_sweep import ProjectSweep
 from .proj_revsweep import ProjectReverseSweep
 from .proj_curvefit import ProjectCurveFit
-from .proj_wizard import ProjectUncertWizard
 from .proj_interval import (ProjectIntervalTest, ProjectIntervalTestAssets, ProjectIntervalBinom,
                             ProjectIntervalBinomAssets, ProjectIntervalVariables, ProjectIntervalVariablesAssets)
 from ..common import report
@@ -43,11 +42,9 @@ class Project:
         elif isinstance(item, ProjectReverse):
             mode = 'reverse'
         elif isinstance(item, ProjectUncert):
-            mode = 'uncertainty'
+            mode = 'wizard' if item.iswizard else 'uncertainty'
         elif isinstance(item, ProjectRisk):
             mode = 'risk'
-        elif isinstance(item, ProjectUncertWizard):
-            mode = 'wizard'
         elif isinstance(item, ProjectCurveFit):
             mode = 'curvefit'
         elif isinstance(item, ProjectDataSet):
@@ -133,7 +130,7 @@ class Project:
             return None
 
         try:
-            config = yaml.safe_load(yml)
+            config = yaml.load(yml, Loader=yaml.Loader)
         except yaml.YAMLError:
             return None  # Can't read YAML
 
@@ -151,7 +148,8 @@ class Project:
                 if item is None:
                     return None  # Could have loaded valid YAML that isn't suncal data
             elif mode == 'wizard':
-                item = ProjectUncertWizard.from_config(configdict)
+                item = ProjectUncert.from_config(configdict)
+                item.iswizard = True
             elif mode == 'sweep':
                 item = ProjectSweep.from_config(configdict)
             elif mode == 'reverse':

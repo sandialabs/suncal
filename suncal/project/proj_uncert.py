@@ -1,5 +1,5 @@
 ''' Uncertainty propagation project component '''
-
+from enum import IntEnum, auto
 import numpy as np
 
 from .component import ProjectComponent
@@ -10,26 +10,83 @@ from ..uncertainty.report.units import units_report
 from ..uncertainty.results.uncertainty import UncertaintyResults
 
 
+class MeasuredDataType(IntEnum):
+    ''' Type of measured data for variable '''
+    SINGLE = auto()
+    REPEATABILITY = auto()
+    REPRODUCIBILITY = auto()
+
+
 class ProjectUncert(ProjectComponent):
     ''' Uncertainty project component '''
     def __init__(self, model=None, name='uncertainty'):
-        super().__init__()
-        self.name = name
+        super().__init__(name=name)
         if model is not None:
             self.model = model
         else:
-            self.model = Model('f=x')
-            self.model.var('x').typeb(dist='normal', unc=1, k=2, name='u(x)')
+            self.model = Model()
         self.nsamples = 1000000
         self.seed = None
-        self.outunits = {}
-        self.result = None
-        self.longdescription = None
-        self.project = None  # Parent project
+        self.outunits: dict[str, str] = {}  # {varname: unitstring}
+        self.variablesdone: list[str] = []  # List of variable names defined in the wizard
+        self.iswizard = False  # Use wizard GUI interface
 
-    def clear_sweeps(self):
-        ''' Clear sweeps from model '''
-        self.model.sweeplist = []
+    def setdefault_model(self):
+        ''' Set a default measurement model '''
+        self.model = Model('f=x')
+        self.model.var('x').typeb(dist='normal', unc=1, k=2, name='u(x)')
+
+    @property
+    def missingvars(self):
+        ''' Get list of variable names that have not yet been defined '''
+        return sorted(list(set(self.model.varnames).difference(self.variablesdone)))
+
+    def variable_type(self, varname: str) -> MeasuredDataType:
+        ''' Get measured type of the variable '''
+        variable = self.model.var(varname)
+        value = np.asarray(variable.value)
+        if value.ndim > 1:
+            return MeasuredDataType.REPRODUCIBILITY
+        if len(value) > 1:
+            return MeasuredDataType.REPEATABILITY
+        return MeasuredDataType.SINGLE
+
+    def set_function(self, *funcs):
+        ''' Change the model function, without changing variable definitions '''
+        if len(self.model.exprs) == 0 or self.model.exprs[0] != funcs[0]:
+            definedvars = self.model.variables.variables
+            self.model = Model(*funcs)
+
+            # Restore any variables already defined
+            varnames = self.model.variables.names
+            for varname, var in definedvars.items():
+                if varname in varnames:
+                    self.model.variables.variables[varname] = var
+
+    def measure_variable(self, name, data, units=None, num_newmeas=None, autocor=True):
+        ''' Set measured value of the variable '''
+        data = np.asarray(data)
+        dimension = len(data.shape)
+        if dimension == 0:
+            data = unitmgr.make_quantity(float(data), units)
+            self.model.var(name).measure(data)
+        elif dimension == 1:
+            if units:
+                data = unitmgr.make_quantity(data, units)
+            self.model.var(name).measure(data, num_new_meas=num_newmeas, autocor=autocor)
+        elif dimension == 2:
+            if units:
+                data = unitmgr.make_quantity(data, units)
+            self.model.var(name).measure(data, num_new_meas=num_newmeas)
+        else:
+            raise NotImplementedError
+
+        if units is not None:
+            for typeb in self.model.var(name)._typeb:
+                if data.dimensionality != typeb.units.dimensionality:
+                    typeb.units = data.units
+
+        self.variablesdone.append(name)
 
     def calculate(self, mc=True):
         ''' Run the calculation '''
@@ -38,12 +95,12 @@ class ProjectUncert(ProjectComponent):
         gumresult = self.model.calculate_gum()
         if mc:
             mcresult = self.model.monte_carlo(samples=self.nsamples)
-            self.result = UncertaintyResults(gumresult, mcresult)
+            self._result = UncertaintyResults(gumresult, mcresult)
         else:
-            self.result = UncertaintyResults(gumresult, None)
+            self._result = UncertaintyResults(gumresult, None)
         if self.outunits is not None:
-            self.result.units(**self.outunits)
-        return self.result
+            self._result.units(**self.outunits)
+        return self._result
 
     def get_dists(self):
         ''' Get distributions resulting from this calculation. If name is none,
@@ -62,14 +119,21 @@ class ProjectUncert(ProjectComponent):
             if self.result.gum is not None:
                 name = f'{funcname} (GUM)'
                 dists[name] = {
-                    'mean': unitmgr.strip_units(self.result.gum.expected[funcname]),
+                    'median': unitmgr.strip_units(self.result.gum.expected[funcname]),
                     'std': unitmgr.strip_units(self.result.gum.uncertainty[funcname]),
                     'df': self.result.gum.degf[funcname]}
         return dists
 
     def units_report(self, **kwargs):
         ''' Create report showing units of all parameters '''
-        return units_report(self.model, self.outunits)
+        return units_report(self.model, self.outunits, **kwargs)
+
+    def clear_uncertainties(self):
+        ''' Clear uncertainties from the project '''
+        for varname in self.model.varnames:
+            variable = self.model.var(varname)
+            variable.clear_typeb()
+            variable._typea = None
 
     def save_samples_csv(self, fname):
         ''' Save Monte Carlo samples to CSV file '''
@@ -83,7 +147,7 @@ class ProjectUncert(ProjectComponent):
 
     def _build_samples_table(self, inputs=True, outputs=True):
         if not (outputs or inputs):
-            return
+            return None, None
 
         hdr = []
         if inputs:
@@ -132,14 +196,21 @@ class ProjectUncert(ProjectComponent):
         for varname in self.model.varnames:
             variable = self.model.var(varname)
             _, units = unitmgr.split_units(variable.expected)
+            typea = variable.typea
             vardict = {
                 'name': varname,
                 'mean': unitmgr.strip_units(variable.expected),
-                'numnewmeas': variable.num_new_meas,
+                'numnewmeas': variable.num_new_meas if variable._typea else None,
+                'autocorrelate': variable._autocor,
                 'desc': variable.description,
                 'units': str(units) if units else None,
-                'typea': unitmgr.strip_units(variable.value).tolist()
             }
+            if typea is not None and typea > 0:
+                vardict['typea'] = unitmgr.strip_units(variable.value).tolist()
+
+            if variable._typea is not None:
+                vardict['typea_uncert'] = variable._typea
+
             uncertlist = []
             for typeb in variable._typeb:
                 uncdict = {
@@ -167,8 +238,8 @@ class ProjectUncert(ProjectComponent):
                         if corr != 0:
                             d['correlations'].append({'var1': var1, 'var2': var2, 'cor': f'{corr:.4f}'})
 
-        if self.longdescription is not None and self.longdescription != '':
-            d['description'] = self.longdescription
+        if self.description is not None and self.description != '':
+            d['description'] = self.description
         return d
 
     def load_config(self, config):
@@ -180,14 +251,13 @@ class ProjectUncert(ProjectComponent):
             names = [func.get('name') for i, func in enumerate(config.get('functions'))]
             names = [name if name else f'f_{i}' for i, name in enumerate(names)]
             exprs = [f'{names[i]}={func["expr"]}' for i, func in enumerate(config.get('functions'))]
-            model = Model(*exprs)
-            self.model = model
+            self.model = Model(*exprs)
 
         self.name = config.get('name', 'uncertainty')
         self.outunits = {func['name']: func.get('units') for func in config.get('functions')}
         self.model.descriptions = {func['name']: func.get('desc') for func in config.get('functions')}
         self.nsamples = config.get('samples', 1000000)
-        self.longdescription = config.get('description')
+        self.description = config.get('description', config.get('desc'))
         self.seed = config.get('seed')
 
         for variable in config.get('inputs', []):
@@ -195,8 +265,14 @@ class ProjectUncert(ProjectComponent):
             modelvar._typeb = []
             modelvar.description = variable.get('desc', '')
             units = variable.get('units')
-            value = unitmgr.make_quantity(variable.get('mean'), units)
+            typea = variable.get('typea', None)
+            if typea is not None:
+                value = unitmgr.make_quantity(typea, units)
+            else:
+                value = unitmgr.make_quantity(variable.get('mean'), units)
             modelvar.measure(value, num_new_meas=variable.get('numnewmeas'),
+                             typea=variable.get('typea_uncert'),
+                             autocor=variable.get('autocorrelate', True),
                              description=variable.get('desc', ''))
             for uncert in variable.get('uncerts', []):
                 desc = uncert.pop('desc', None)

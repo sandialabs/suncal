@@ -1,13 +1,14 @@
 ''' Curve Fit Model '''
 
 from collections import namedtuple
+import warnings
 import inspect
 import numpy as np
 import sympy
 
-from ..common import uparser
 from . import uncertarray
 from .curvefit import fit, linefit
+from .fitparse import fit_callable
 from .results.curvefit import CurveFitResults, CurveFitResultsCombined
 
 
@@ -56,93 +57,53 @@ class CurveFit:
         ''' Get setup parameters. See class for arguments '''
         return FitSetup(self.arr, self.expr, self.func, self.modelname, self.pnames, self.xname, self.yname)
 
+    def _initial_guess(self):
+        ''' Make a reasonable initial guess based on the model and data '''
+        x, y = self.arr.x, self.arr.y
+        if self.modelname == 'decay':
+            b, a = np.polyfit(x, np.log(abs(y)), deg=1)   # Fit line to (x, log(y))
+            p0 = [np.exp(a), -1/b]
+        elif self.modelname == 'decay2':
+            b, a = np.polyfit(x, np.log(abs(y)), deg=1)
+            p0 = [np.exp(a), -b]
+        elif self.modelname == 'exp':
+            b, a = np.polyfit(x, np.log(abs(y)), deg=1)
+            p0 = [np.exp(a), -1/b, 0]
+        elif self.modelname == 'log':
+            if all(np.sign(x)):
+                b, a = np.polyfit(np.log(x), y, deg=1)
+                p0 = [a, b, 0]
+            else:
+                b, a = np.polyfit(np.log(x-x.min()+1), y, deg=1)
+                p0 = [a, b, x.min()]
+        elif self.modelname == 'logisitic':
+            p0 = [y.max()-y.min(), (x[-1]-x[0])/2, x.mean(), y.min()]
+        else:
+            p0 = np.ones(self.numparams)
+        return p0
+
     def set_fitfunc(self, func, polyorder=2, bounds=None, odr=None, p0=None):
         ''' Set up fit function '''
         self.modelname = func
         self.polyorder = polyorder
         self.odr = odr
         self.bounds = bounds
-        self.p0 = p0
 
         if callable(func):
             self.modelname = 'callable'
-
-        elif self.modelname == 'line':
-            self.expr = sympy.sympify('a + b*x')
-
-            def func(x, b, a):
-                return a + b*x
-
-        elif self.modelname == 'exp':  # Full exponential
-            self.expr = sympy.sympify('c + a * exp(x/b)')
-
-            def func(x, a, b, c):
-                return c + a * np.exp(x/b)
-
-        elif self.modelname == 'decay':  # Exponential decay to zero (no c parameter)
-            self.expr = sympy.sympify('a * exp(-x/b)')
-
-            def func(x, a, b):
-                return a * np.exp(-x/b)
-
-        elif self.modelname == 'decay2':  # Exponential decay, using rate lambda rather than time constant tau
-            self.expr = sympy.sympify('a * exp(-x*b)')
-
-            def func(x, a, b):
-                return a * np.exp(-x*b)
-
-        elif self.modelname == 'log':
-            self.expr = sympy.sympify('a + b * log(x-c)')
-
-            def func(x, a, b, c):
-                return a + b * np.log(x-c)
-
-        elif self.modelname == 'logistic':
-            self.expr = sympy.sympify('a / (1 + exp((x-c)/b)) + d')
-
-            def func(x, a, b, c, d):
-                return d + a / (1 + np.exp((x-c)/b))
-
-        elif self.modelname == 'quad' or (func == 'poly' and polyorder == 2):
-            self.expr = sympy.sympify('a + b*x + c*x**2')
-
-            def func(x, a, b, c):
-                return a + b*x + c*x*x
-
-        elif self.modelname == 'cubic' or (func == 'poly' and polyorder == 3):
-            self.expr = sympy.sympify('a + b*x + c*x**2 + d*x**3')
-
-            def func(x, a, b, c, d):
-                return a + b*x + c*x*x + d*x*x*x
-
-        elif self.modelname == 'poly':
-            def func(x, *p):
-                return np.poly1d(p[::-1])(x)  # Coeffs go in reverse order (...e, d, c, b, a)
-
-            polyorder = int(polyorder)
-            if polyorder < 1 or polyorder > 12:
-                raise ValueError('Polynomial order out of range')
-            varnames = [chr(ord('a')+i) for i in range(polyorder+1)]
-            self.expr = sympy.sympify('+'.join(f'{v}*x**{i}' for i, v in enumerate(varnames)))
-
-            # variable *args must have initial guess for scipy
-            if self.p0 is None:
-                self.p0 = np.ones(polyorder+1)
-        else:
-            # actual expression as string
-            func, self.expr, _ = self.parse_math(self.modelname)
-
-        self.func = func
-
-        if self.modelname == 'poly' and polyorder > 3:
-            # poly def above doesn't have named arguments, so the inspect won't find them. Name them here.
-            self.pnames = varnames
-        else:
+            self.func = func
             self.pnames = list(inspect.signature(self.func).parameters.keys())[1:]
-        self.numparams = len(self.pnames)
-
-        if self.modelname == 'callable':
             self.expr = sympy.sympify('f(x, ' + ', '.join(self.pnames) + ')')
+        else:
+            self.func, self.expr = fit_callable(self.modelname, self.polyorder)
+
+            if self.modelname == 'poly' and self.polyorder > 3:
+                # poly def above doesn't have named arguments, so the inspect won't find them. Name them here.
+                self.pnames = [chr(ord('a')+i) for i in range(self.polyorder+1)]
+            else:
+                self.pnames = list(inspect.signature(self.func).parameters.keys())[1:]
+
+        self.numparams = len(self.pnames)
 
         if self.bounds is None:
             bounds = (-np.inf, np.inf)
@@ -150,6 +111,11 @@ class CurveFit:
             bounds = self.bounds
             self.set_mcmc_priors(
                 [lambda x, a=blow, b=bhi: (x > a) & (x <= b) for blow, bhi in zip(bounds[0], bounds[1])])
+
+        if p0 is None:
+            self.p0 = self._initial_guess()
+        else:
+            self.p0 = p0
 
         if self.modelname == 'line' and not odr:
             # use generic LINE fit for lines with no odr
@@ -159,30 +125,6 @@ class CurveFit:
             self.fitcalc = (lambda x, y, ux, uy, absolute_sigma=self.absolute_sigma:
                             fit(self.func, x, y, ux, uy, p0=self.p0, bounds=bounds,
                                 odr=odr, absolute_sigma=absolute_sigma))
-
-        return self.expr
-
-    def parse_math(self, expr):
-        ''' Check expr string for a valid curvefit function including an x variable
-            and at least one fit parameter.
-
-            Args:
-                func (callable): Lambdified function of expr
-                symexpr (sympy): Sympy expression of function
-                argnames (list of strings): Names of arguments (except x) to function
-        '''
-        uparser.parse_math(expr)  # Will raise if not valid expression
-        symexpr = sympy.sympify(expr)
-        argnames = sorted(str(s) for s in symexpr.free_symbols)
-        if 'x' not in argnames:
-            raise ValueError('Expression must contain "x" variable.')
-        argnames.remove('x')
-        if len(argnames) == 0:
-            raise ValueError('Expression must contain one or more parameters to fit.')
-        # Make sure to specify 'numpy' so nans are returned instead of complex numbers
-        func = sympy.lambdify(['x'] + argnames, symexpr, 'numpy')
-        ParsedMath = namedtuple('ParsedMath', ['function', 'sympyexpr', 'argnames'])
-        return ParsedMath(func, symexpr, argnames)
 
     def clear(self):
         ''' Clear the sampled points '''
@@ -292,9 +234,9 @@ class CurveFit:
         uy = self.arr.uy if self.arr.uy_estimate is None else self.arr.uy_estimate
 
         if self.arr.has_ux():
-            print('WARNING - MCMC algorithm ignores u(x) != 0')
+            warnings.warn('MCMC algorithm ignores u(x) != 0')
         if np.max(uy) != np.min(uy):
-            print('WARNING - MCMC algorithm with non-constant u(y). Using mean.')
+            warnings.warn('MCMC algorithm with non-constant u(y). Using mean.')
 
         # Find initial guess/sigmas
         p, cov = self.fitcalc(self.arr.x, self.arr.y, self.arr.ux, uy)

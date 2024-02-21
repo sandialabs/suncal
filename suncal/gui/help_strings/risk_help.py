@@ -42,7 +42,8 @@ def outputs():
             'common root-difference-of-squares method, or the Managed 2% PFA method '
             'sometimes referred to as "Method 6".\n'
             '- Cost Guardbands: Enter the cost of a false accept and false reject, '
-            'then the guardband is computed to achieve the minimum total expected cost.\n'
+            'then the guardband is computed to achieve the minimum total expected cost or '
+            'the worst-case maximum cost.\n'
             '- Specific Risk: Set the guardband to achieve maximum worst-case specific risk.\n\n')
     rpt.hdr('Calculations', level=3)
     hdr = ['Value', 'Definition']
@@ -58,8 +59,8 @@ def outputs():
         [report.Math.from_latex('U_{95}'), 'Measurement uncertainty at 95% level of confidence'],
         [report.Math.from_latex('t'), 'Measurement result'],
         [report.Math.from_latex('y'), 'True DUT value'],
-        [report.Math.from_latex('\mu'), 'Average DUT value'],
-        [report.Math.from_latex('\sigma_0'), 'Standard deviation of DUT distribution'],
+        [report.Math.from_latex(r'\mu'), 'Average DUT value'],
+        [report.Math.from_latex(r'\sigma_0'), 'Standard deviation of DUT distribution'],
         ]
     rpt.table(rows, hdr)
     return rpt

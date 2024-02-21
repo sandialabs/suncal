@@ -1,32 +1,32 @@
 ''' Page for propagating uncertainty calculations '''
 
 import re
-import numpy as np
 from pint import DimensionalityError, UndefinedUnitError, OffsetUnitCalculusError
-from PyQt5 import QtWidgets, QtCore
+from PyQt6 import QtWidgets, QtCore, QtGui
 
-from . import gui_common
-from . import gui_widgets
+from . import widgets
+from . import gui_styles
+from .gui_settings import gui_settings
 from . import page_uncert_input, page_uncert_output
-from . import page_dataimport
 from .help_strings import UncertHelp
 
 
 class UncertPropWidget(QtWidgets.QWidget):
     ''' Uncertainty propagation widget '''
-    openconfigfolder = QtCore.QStandardPaths.standardLocations(QtCore.QStandardPaths.HomeLocation)[0]
+    openconfigfolder = QtCore.QStandardPaths.standardLocations(
+        QtCore.QStandardPaths.StandardLocation.HomeLocation)[0]
     newtype = QtCore.pyqtSignal(dict, str)
     change_help = QtCore.pyqtSignal()
 
     PG_INPUT = 0
     PG_OUTPUT = 1
 
-    def __init__(self, projitem=None, parent=None):
+    def __init__(self, component=None, parent=None):
         super().__init__(parent)
-        self.projitem = projitem
-        self.pginput = page_uncert_input.PageInput(projitem)
+        self.component = component
+        self.pginput = page_uncert_input.PageInput(component)
         self.pgoutput = page_uncert_output.PageOutput()
-        self.stack = gui_widgets.SlidingStackedWidget()
+        self.stack = widgets.SlidingStackedWidget()
         self.stack.addWidget(self.pginput)
         self.stack.addWidget(self.pgoutput)
 
@@ -36,18 +36,20 @@ class UncertPropWidget(QtWidgets.QWidget):
 
         # Menu
         self.menu = QtWidgets.QMenu('&Uncertainty')
-        self.actChkUnits = QtWidgets.QAction('Check Units...', self)
-        self.actSweep = QtWidgets.QAction('New uncertainty sweep from model', self)
-        self.actReverse = QtWidgets.QAction('New reverse calculation from model', self)
-        self.actImportDists = QtWidgets.QAction('Import uncertainty distributions...', self)
-        self.actClear = QtWidgets.QAction('Clear inputs', self)
-        self.actSaveReport = QtWidgets.QAction('Save Report...', self)
-        self.actSaveSamplesCSV = QtWidgets.QAction('Text (CSV)...', self)
-        self.actSaveSamplesNPZ = QtWidgets.QAction('Binary (NPZ)...', self)
+        self.actChkUnits = QtGui.QAction('Check Units...', self)
+        self.actSweep = QtGui.QAction('New uncertainty sweep from model', self)
+        self.actReverse = QtGui.QAction('New reverse calculation from model', self)
+        self.actMeasuredData = QtGui.QAction('Type A measurement data...', self)
+        self.actClearComponents = QtGui.QAction('Clear uncertainty components', self)
+        self.actClear = QtGui.QAction('Clear inputs', self)
+        self.actSaveReport = QtGui.QAction('Save Report...', self)
+        self.actSaveSamplesCSV = QtGui.QAction('Text (CSV)...', self)
+        self.actSaveSamplesNPZ = QtGui.QAction('Binary (NPZ)...', self)
 
         self.menu.addAction(self.actChkUnits)
         self.menu.addSeparator()
-        self.menu.addAction(self.actImportDists)
+        self.menu.addAction(self.actMeasuredData)
+        self.menu.addAction(self.actClearComponents)
         self.menu.addAction(self.actClear)
         self.menu.addSeparator()
         self.menu.addAction(self.actSweep)
@@ -61,7 +63,8 @@ class UncertPropWidget(QtWidgets.QWidget):
         self.actSaveReport.setEnabled(False)
         self.mnuSaveSamples.setEnabled(False)
 
-        self.actImportDists.triggered.connect(self.importdistributions)
+        self.actMeasuredData.triggered.connect(self.enter_typea_data)
+        self.actClearComponents.triggered.connect(self.clearcomponents)
         self.actClear.triggered.connect(self.clearinput)
         self.actSweep.triggered.connect(lambda event: self.newtype.emit(self.pginput.get_config(), 'sweep'))
         self.actReverse.triggered.connect(lambda event: self.newtype.emit(self.pginput.get_config(), 'reverse'))
@@ -73,18 +76,18 @@ class UncertPropWidget(QtWidgets.QWidget):
         self.pginput.calculate.connect(self.calculate)
         self.pgoutput.back.connect(self.backbutton)
         self.pgoutput.change_help.connect(self.change_help)
-        gui_common.set_plot_style()
 
     def get_menu(self):
         ''' Get menu for this widget '''
         return self.menu
 
     def get_config(self):
+        ''' Get component configuration from values entered in page '''
         return self.pginput.get_config()
 
     def update_proj_config(self):
         ''' Save page setup back to project item configuration '''
-        self.projitem.load_config(self.get_config())
+        self.component.load_config(self.get_config())
 
     def backbutton(self):
         ''' Back button pressed. '''
@@ -93,14 +96,20 @@ class UncertPropWidget(QtWidgets.QWidget):
         self.mnuSaveSamples.setEnabled(False)
         self.change_help.emit()
 
+    def clearcomponents(self):
+        ''' Clear uncertianty components '''
+        self.update_proj_config()
+        self.component.clear_uncertainties()
+        self.pginput.load_config(self.component.get_config())
+
     def clearinput(self):
         ''' Clear all the input/output values '''
         self.pginput.funclist.clear()
         self.pginput.meastable.clear()
         self.pginput.corrtable.clear()
         self.pginput.description.setPlainText('')
-        self.pginput.settings.setvalue('Random Seed', gui_common.settings.getRandomSeed())
-        self.pginput.settings.setvalue('Monte Carlo Samples', gui_common.settings.getSamples())
+        self.pginput.settings.setvalue('Random Seed', gui_settings.randomseed)
+        self.pginput.settings.setvalue('Monte Carlo Samples', gui_settings.samples)
         self.actSweep.setEnabled(False)
         self.actReverse.setEnabled(False)
         self.stack.slideInRight(self.PG_INPUT)
@@ -108,51 +117,14 @@ class UncertPropWidget(QtWidgets.QWidget):
     def checkunits(self):
         ''' Show units/dimensionality report '''
         self.update_proj_config()
-        dlg = gui_widgets.MarkdownTextEdit()
+        dlg = widgets.MarkdownTextEdit()
         dlg.setMinimumSize(800, 600)
-        dlg.setReport(self.projitem.units_report())
+        dlg.setReport(self.component.units_report())
         dlg.show()
 
-    def importdistributions(self):
-        ''' Load uncertainty components from data for multiple input variables '''
-        self.update_proj_config()
-        varnames = self.projitem.model.variables.names
-        dlg = page_dataimport.DistributionSelectWidget(
-            singlecol=False, project=self.projitem.project, coloptions=varnames)
-        if dlg.exec_():
-            dists = dlg.get_dist()
-
-            config = self.projitem.get_config()
-
-            for varname, params in dists.items():
-                if varname == '_correlation_':
-                    self.pginput.panel.expand('Correlations')
-                    config.setdefault('correlations', [])
-                    for (v1, v2), corr in params.items():
-                        if corr != 0.:
-                            self.pginput.corrtable.addRow()
-                            self.pginput.corrtable.setRow(self.pginput.corrtable.rowCount()-1, v1, v2, corr)
-                            config['correlations'].append({'var1': v1, 'var2': v2, 'cor': corr})
-
-                else:
-                    # Don't pass along median, it's handled by Variable
-                    nom = params.pop('expected', params.pop('median', params.pop('mean', None)))
-                    varconfigs = config.get('inputs', [])
-                    cfgnames = [v.get('name') for v in varconfigs]
-                    varconfig = varconfigs[cfgnames.index(varname)]
-                    units = varconfig.get('units', None)
-                    params.setdefault('name', f'u({varname})')
-                    params.setdefault('degf', params.pop('df', np.inf))
-                    params.setdefault('units', str(units) if units else None)
-                    varconfig['mean'] = nom
-                    uncnames = [u.get('name') for u in varconfig.get('uncerts')]
-                    if params.get('name') in uncnames:
-                        varconfig['uncerts'][uncnames.index(params.get('name'))] = params
-                    else:
-                        varconfig['uncerts'].append(params)
-
-                self.pginput.meastable.load_config(config)
-                self.backbutton()
+    def enter_typea_data(self):
+        ''' Show dialog for entering Type A measurement data '''
+        self.pginput.meastable.enter_typea_data()
 
     def calculate(self):
         ''' Run the calculation '''
@@ -165,6 +137,7 @@ class UncertPropWidget(QtWidgets.QWidget):
             err_msg('Invalid input parameter!')
             return
 
+        self.update_proj_config()
         config = self.get_config()
 
         if len(config.get('functions', [])) < 1:
@@ -172,7 +145,7 @@ class UncertPropWidget(QtWidgets.QWidget):
             return
 
         try:
-            self.projitem.load_config(config)
+            self.component.load_config(config)
         except RecursionError:
             err_msg('Circular reference in function definitions')
             return
@@ -180,7 +153,7 @@ class UncertPropWidget(QtWidgets.QWidget):
         if not self.pginput.symbolicmode:
             # Check units/dimensionality
             try:
-                self.projitem.model.eval()
+                self.component.model.eval()
             except OffsetUnitCalculusError as exc:
                 badunit = re.findall(r'\((.+ )', str(exc))[0].split()[0].strip(', ')
                 err_msg(f'Ambiguous unit {badunit}. Try "delta_{badunit}".')
@@ -193,18 +166,18 @@ class UncertPropWidget(QtWidgets.QWidget):
                 return
 
         try:
-            result = self.projitem.calculate(mc=not self.pginput.symbolicmode)
-        except (TypeError, DimensionalityError, UndefinedUnitError) as exc:
-            err_msg(f'Units Error: {exc}')
-            return
+            result = self.component.calculate(mc=not self.pginput.symbolicmode)
         except OffsetUnitCalculusError as exc:
             badunit = re.findall(r'\((.+ )', str(exc))[0].split()[0].strip(', ')
             err_msg(f'Ambiguous unit {badunit}. Try "delta_{badunit}".')
             return
+        except (TypeError, DimensionalityError, UndefinedUnitError) as exc:
+            err_msg(f'Units Error: {exc}')
+            return
         except RecursionError:
             err_msg('Error - possible circular reference in function definitions')
             return
-        except (TypeError, ValueError):
+        except ValueError:
             err_msg('No Solution Found!\n\n')
             return
 
@@ -224,14 +197,15 @@ class UncertPropWidget(QtWidgets.QWidget):
 
     def save_report(self):
         ''' Save full output report to file, using user's GUI settings '''
-        gui_widgets.savereport(self.get_report())
+        with gui_styles.LightPlotstyle():
+            widgets.savereport(self.pgoutput.generate_report())
 
     def save_samples_csv(self):
         ''' Save Monte-Carlo samples (inputs and outputs) to CSV file. This file can get big fast! '''
         fname, _ = QtWidgets.QFileDialog.getSaveFileName(
             caption='Select file to save', directory=self.openconfigfolder, filter='CSV (*.csv)')
         if fname:
-            self.projitem.save_samples_csv(fname)
+            self.component.save_samples_csv(fname)
 
     def save_samples_npz(self):
         ''' Save Monte-Carlo samples to NPZ (compressed numpy) file.
@@ -242,7 +216,7 @@ class UncertPropWidget(QtWidgets.QWidget):
         fname, _ = QtWidgets.QFileDialog.getSaveFileName(
             caption='Select file to save', directory=self.openconfigfolder, filter='Numpy NPZ (*.npz)')
         if fname:
-            self.projitem.save_samples_npz(fname)
+            self.component.save_samples_npz(fname)
 
     def help_report(self):
         ''' Get the help report to display the current widget mode '''

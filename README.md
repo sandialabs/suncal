@@ -62,4 +62,7 @@ To launch the user interface from a command line, run:
 
 `suncalui`
 
-A shortcut to this can be put on your desktop, etc.
+or 
+
+`python -m suncal.gui`
+

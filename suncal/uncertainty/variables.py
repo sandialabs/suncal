@@ -28,15 +28,17 @@ class RandomVariable:
     '''
     def __init__(self, value=0):
         self.value = np.atleast_1d(value)
+        self._typea = None  # Explicit Type A uncertainty when value is scalar
         self._typeb = []  # List of Type B components
         self.description = ''
         self.num_new_meas = self.value.size
-        self._autocorr = True
+        self._autocor = True
 
     def __repr__(self):
         return f'<RandomVariable {self.expected} ± {self.uncertainty} (k = 1)>'
 
-    def measure(self, values, units=None, num_new_meas=None, autocor=True, description=None):
+    def measure(self, values, units=None, typea=None, num_new_meas=None,
+                autocor=True, description=None):
         ''' Add measurement to the random variable.
 
             Args:
@@ -44,6 +46,9 @@ class RandomVariable:
                   this RandomVariable will have a Type A uncertainty.
                   May also be a Pint Quantity with units.
                 units (str): units to apply to value
+                typea (float): Type A uncertainty to apply if values is
+                  scalar and an uncertainty is known. Ignored when values
+                  is array.
                 num_new_meas (int): Number of new measurements to apply
                   this uncertainty to. N in stddev/sqrt(N).
                 autocor (bool): Adjust for autocorrelation in 1D data (if
@@ -54,6 +59,8 @@ class RandomVariable:
                 The same RandomVariable object (use for chaining function calls)
         '''
         self.value = np.atleast_1d(values)
+        self._typea = typea
+
         self._autocor = autocor
         if units:
             self.value = unitmgr.make_quantity(self.value, units)
@@ -81,29 +88,34 @@ class RandomVariable:
             Returns:
                 The same RandomVariable object (use for chaining multiple typeb function calls)
         '''
+        kwargs.pop('nominal', None)
         self._typeb.append(Typeb(dist=dist, nominal=self.expected, description=description, **kwargs))
         return self   # for chaining
 
     def _typea_variance_ofmean(self):
         ''' Calculate Type A variance of the mean '''
-        if self.value.size < 2:
-            units = unitmgr.split_units(self.value)[1]
+        values, units = unitmgr.split_units(self.value)
+        if values.size < 2:
+            unc = self._typea**2 if self._typea is not None else 0
             if units:
-                return unitmgr.make_quantity(0, str(units**2))
-            return 0
+                return unitmgr.make_quantity(unc, str(units**2))
+            return unc
 
         if len(self.value.shape) == 1:  # 1D, use regular variance
             autocor_factor = 1  # Autocorrelation multiplier
             if len(self.value) > 50 and self._autocor:
-                unc = uncert_autocorrelated(self.value)
+                unc = uncert_autocorrelated(values)
                 if unc.r > 1.3:
                     autocor_factor = unc.r
             return autocor_factor * self.value.var(ddof=1) / self.num_new_meas
 
         if self.num_new_meas != self.value.size:
-            return DataSet(self.value).standarderror().standarddeviation**2 / self.num_new_meas
-
-        return DataSet(self.value).standarderror().standarderror**2
+            unc = DataSet(values).result.uncertainty.stdev**2 / self.num_new_meas
+        else:
+            unc = DataSet(values).result.uncertainty.stderr**2
+        if units:
+            return unitmgr.make_quantity(unc, str(units**2))
+        return unc
 
     @property
     def units(self):
@@ -113,7 +125,7 @@ class RandomVariable:
     @property
     def expected(self):
         ''' Expected value of the RandomVariable '''
-        return self.value.mean()
+        return np.nanmean(self.value)
 
     @property
     def variance(self):
@@ -130,6 +142,11 @@ class RandomVariable:
     def uncertainty(self):
         ''' Combined standard uncertainty of the RandomVariable '''
         return np.sqrt(self.variance)
+
+    @property
+    def typea(self):
+        ''' Type A uncertainty '''
+        return np.sqrt(self._typea_variance_ofmean())
 
     @property
     def degrees_freedom(self):
@@ -156,14 +173,14 @@ class RandomVariable:
     def info(self):
         ''' Information about the RandomVariable uncertainty components '''
         uncerts = []
-        typeaunc = self._typea_variance_ofmean()
+        typeaunc = self.typea
         if typeaunc != 0:
             uncerts.append({
                 'name': 'Type A',
                 'description': f'Type A uncertainty from {self.value.size} measurements',
                 'data': self.value,
                 'num_newmeas': self.num_new_meas,
-                'uncertainty': np.sqrt(self._typea_variance_ofmean()),
+                'uncertainty': typeaunc,
                 'degf': self.value.size - 1
             })
 
@@ -201,8 +218,8 @@ class RandomVariable:
         '''
         samples = 0
         units = None
-        if self.value.size > 1:
-            mean = self.value.mean()
+        if self.value.size > 1 or self._typea is not None:
+            mean = np.nanmean(self.value)
             unc = self.uncertainty
             if unitmgr.has_units(mean):
                 units = mean.units
@@ -212,7 +229,7 @@ class RandomVariable:
             if units:
                 samples = samples * units
         else:
-            samples = self.value.mean()
+            samples = np.nanmean(self.value)
             if unitmgr.has_units(samples):
                 units = samples.units
 
@@ -236,8 +253,8 @@ class RandomVariable:
          '''
         samples = 0
         units = None
-        if self.value.size > 1:
-            mean = self.value.mean()
+        if self.value.size > 1 or self._typea is not None:
+            mean = np.nanmean(self.value)
             unc = self.uncertainty
             if unitmgr.has_units(mean):
                 units = mean.units
@@ -247,7 +264,7 @@ class RandomVariable:
             if units:
                 samples = samples * units
         else:
-            samples = self.value.mean()
+            samples = np.nanmean(self.value)
 
         for typeb in self._typeb:
             b_samples = typeb.sample_correlated(norm_samples)
@@ -456,18 +473,6 @@ class Variables:
                     symbols[f'sigma_{name1}{name2}'] = self._correlation[idx1, idx2]
                     symbols[f'sigma_{name2}{name1}'] = self._correlation[idx2, idx1]
         return symbols
-
-    @property
-    def correlation_list(self):
-        ''' Get parseable dictionary of correlation coefficients
-            in the form {(v1, v2): correlation}
-        '''
-        coeffs = {}
-        for idx1, name1 in enumerate(self.names):
-            for idx2, name2 in enumerate(self.names):
-                if name1 < name2:
-                    coeffs[(name1, name2)] = self._correlation[idx1, idx2]
-        return coeffs
 
     @property
     def info(self):

@@ -1,7 +1,8 @@
 ''' Page for fitting curve to experimental data '''
 
 from contextlib import suppress
-from PyQt5 import QtWidgets, QtGui, QtCore
+import logging
+from PyQt6 import QtWidgets, QtGui, QtCore
 import numpy as np
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
@@ -9,36 +10,21 @@ from matplotlib.figure import Figure
 import matplotlib.dates as mdates
 
 from ..common import report, plotting
-from . import gui_common  # noqa: F401
-from . import gui_widgets
+from ..curvefit import fitparse
+from . import gui_styles
+from .gui_common import BlockedSignals
+from . import gui_math
+from . import widgets
 from . import page_dataimport
+from .page_csvload import SelectCSVData
 from .help_strings import CurveHelp
-
-
-class OrderWidget(QtWidgets.QWidget):
-    ''' Widget for showing label and spinbox for polynomial order '''
-    def __init__(self, parent=None):
-        super().__init__(parent=parent)
-        self.label = QtWidgets.QLabel('Order:')
-        self.order = QtWidgets.QSpinBox()
-        self.order.setRange(2, 12)  # 12 is arbitrary limit
-        layout = QtWidgets.QHBoxLayout()
-        layout.addSpacing(15)
-        layout.addWidget(self.label)
-        layout.addWidget(self.order)
-        layout.addStretch()
-        self.setLayout(layout)
-
-    def value(self):
-        ''' Get spinbox value '''
-        return self.order.value()
 
 
 class ModelWidget(QtWidgets.QWidget):
     ''' Widget for configuring the fit model (line, poly, etc.) '''
-    def __init__(self, projitem, parent=None):
+    def __init__(self, component, parent=None):
         super().__init__(parent=parent)
-        self.projitem = projitem
+        self.component = component
         self.use_ux = False
         self.customfunc = None
         self.customargs = []
@@ -46,7 +32,8 @@ class ModelWidget(QtWidgets.QWidget):
         self.cmbModel = QtWidgets.QComboBox()
         self.cmbModel.addItems(['Line', 'Polynomial', 'Exponential', 'Exponential Decay',
                                 'Exponential Decay (rate)', 'Log', 'Logistic Growth', 'Custom'])
-        self.polyorder = OrderWidget()
+        self.polyorder = widgets.SpinWidget(label='Order:  ')
+        self.polyorder.spin.setRange(2, 12)
         self.polyorder.setVisible(False)
         self.lblEquation = QtWidgets.QLabel()  # To show rendered equation describing model
         self.custom = QtWidgets.QLineEdit('a + b*x')
@@ -85,7 +72,7 @@ class ModelWidget(QtWidgets.QWidget):
         self.cmbModel.currentIndexChanged.connect(self.modelchange)
         self.btnODR.toggled.connect(self.modelchange)
         self.btnVert.toggled.connect(self.modelchange)
-        self.polyorder.order.valueChanged.connect(self.modelchange)
+        self.polyorder.valueChanged.connect(self.modelchange)
         self.chkGuess.toggled.connect(self.modelchange)
         self.custom.editingFinished.connect(self.update_custom)
         self.showhide()
@@ -125,7 +112,7 @@ class ModelWidget(QtWidgets.QWidget):
                                            'Polynomial': self.polyorder.value()+1,
                                            'Custom': len(self.customargs)}[self.cmbModel.currentText()])
                 for i in range(self.tblGuess.rowCount()):
-                    self.tblGuess.setItem(i, 0, gui_widgets.ReadOnlyTableItem(chr(ord('a')+i)))
+                    self.tblGuess.setItem(i, 0, widgets.ReadOnlyTableItem(chr(ord('a')+i)))
             else:
                 self.tblGuess.clear()  # For automatic guess
                 self.tblGuess.setVisible(False)
@@ -133,18 +120,13 @@ class ModelWidget(QtWidgets.QWidget):
             self.chkGuess.setVisible(False)
             self.tblGuess.setVisible(False)
 
-        expr = self.projitem.model.expr
-        ratio = QtWidgets.QApplication.instance().devicePixelRatio()
-        imgbuf = report.Math.from_sympy(expr).svg_buf(fontsize=16*ratio)
-        px = QtGui.QPixmap()
-        px.loadFromData(imgbuf.getvalue())
-        px.setDevicePixelRatio(ratio)
-        self.lblEquation.setPixmap(px)
+        expr = self.component.model.expr
+        self.lblEquation.setPixmap(gui_math.pixmap_from_sympy(expr))
 
     def update_custom(self, showhide=True):
         ''' Update the custom curve-fit model expression '''
         try:
-            self.customfunc, _, self.customargs = self.projitem.model.parse_math(self.custom.text())
+            self.customfunc, _, self.customargs = fitparse.parse_fit_expr(self.custom.text())
         except ValueError:
             self.customfunc, _, self.customargs = None, None, []
             self.lblEquation.setText('<font color="red">Invalid Expression. Must contain "x" '
@@ -186,8 +168,8 @@ class ModelWidget(QtWidgets.QWidget):
 
         elif func in ['exp', 'decay', 'decay2', 'log', 'logistic']:
             # Attempt to come up with a reasonable initial guess based on the model and data
-            x = self.projitem.model.arr.x
-            y = self.projitem.model.arr.y
+            x = self.component.model.arr.x
+            y = self.component.model.arr.y
             if len(x) > 0:
                 if func == 'decay':
                     b, a = np.polyfit(x, np.log(abs(y)), deg=1)   # Fit line to (x, log(y))
@@ -212,7 +194,7 @@ class ModelWidget(QtWidgets.QWidget):
             # ODR requires a guess even for basic polynomials
             p0 = np.ones(numparams)
 
-        self.projitem.set_fitfunc(func, polyorder=self.polyorder.value(), odr=self.btnODR.isChecked(), p0=p0)
+        self.component.set_fitfunc(func, polyorder=self.polyorder.value(), odr=self.btnODR.isChecked(), p0=p0)
 
     def enable_ux(self, enable):
         ''' Enable/Disable x-uncertainties. '''
@@ -226,9 +208,9 @@ class SettingsWidget(QtWidgets.QWidget):
     xdatechange = QtCore.pyqtSignal()
     absolutesigmachange = QtCore.pyqtSignal()
 
-    def __init__(self, projitem, parent=None):
+    def __init__(self, component, parent=None):
         super().__init__(parent=parent)
-        self.projitem = projitem
+        self.component = component
         self.chkLSQ = QtWidgets.QCheckBox('Least Squares Analytical')
         self.chkMC = QtWidgets.QCheckBox('Monte Carlo')
         self.chkMCMC = QtWidgets.QCheckBox('Markov-Chain Monte Carlo')
@@ -263,31 +245,31 @@ class SettingsWidget(QtWidgets.QWidget):
 
     def abssigmaupdate(self):
         ''' Absolute sigma checkbox was changed. Save state and notify for update_model '''
-        self.projitem.model.absolute_sigma = not self.chkAbsoluteSigma.isChecked()
+        self.component.model.absolute_sigma = not self.chkAbsoluteSigma.isChecked()
         self.absolutesigmachange.emit()
 
     def calcupdate(self):
         ''' Save settings to model object '''
         with suppress(ValueError):
             samp = int(self.txtSamples.text())
-            self.projitem.nsamples = samp
+            self.component.nsamples = samp
 
         with suppress(ValueError):
             seed = int(self.txtSeed.text())
-            self.projitem.seed = seed
+            self.component.seed = seed
 
 
 class PageInputCurveFit(QtWidgets.QWidget):
     ''' Input page for curve fit window '''
     COLWIDTH = 75
 
-    def __init__(self, projitem, parent=None):
+    def __init__(self, component, parent=None):
         super().__init__(parent)
-        self.projitem = projitem
+        self.component = component
         self.useUX = False
         self.btnCalculate = QtWidgets.QPushButton('Calculate')
-        self.btnCalculate.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
-        self.table = gui_widgets.FloatTableWidget(headeredit='str')
+        self.btnCalculate.setSizePolicy(QtWidgets.QSizePolicy.Policy.Fixed, QtWidgets.QSizePolicy.Policy.Fixed)
+        self.table = widgets.FloatTableWidget(headeredit='str')
         self.table.setColumnCount(3)
         self.table.setHorizontalHeaderLabels(['x', 'y', 'u(y)'])
         self.table.setColumnWidth(0, self.COLWIDTH)
@@ -297,10 +279,9 @@ class PageInputCurveFit(QtWidgets.QWidget):
         self.ax = self.fig.add_subplot(1, 1, 1)
         self.canvas = FigureCanvas(self.fig)
         self.canvas.setStyleSheet("background-color:transparent;")
-        self.plotline = None
 
-        self.settings = SettingsWidget(projitem)
-        self.model = ModelWidget(projitem)
+        self.settings = SettingsWidget(component)
+        self.model = ModelWidget(component)
         self.notes = QtWidgets.QTextEdit()
         self.tab = QtWidgets.QTabWidget()
         self.tab.addTab(self.model, 'Model')
@@ -315,7 +296,7 @@ class PageInputCurveFit(QtWidgets.QWidget):
         rlayout.addLayout(clayout)
         self.rwidget = QtWidgets.QWidget()
         self.rwidget.setLayout(rlayout)
-        self.rsplitter = QtWidgets.QSplitter(QtCore.Qt.Vertical)
+        self.rsplitter = QtWidgets.QSplitter(QtCore.Qt.Orientation.Vertical)
         self.rsplitter.addWidget(self.canvas)
         self.rsplitter.addWidget(self.rwidget)
         self.splitter = QtWidgets.QSplitter()
@@ -340,8 +321,8 @@ class PageInputCurveFit(QtWidgets.QWidget):
         self.update_table()
 
     def savenotes(self):
-        ''' Store the notes field to the projitem object '''
-        self.projitem.longdescription = self.notes.toPlainText()
+        ''' Store the notes field to the component object '''
+        self.component.description = self.notes.toPlainText()
 
     def clear_table(self):
         ''' Clear the data table '''
@@ -369,67 +350,86 @@ class PageInputCurveFit(QtWidgets.QWidget):
         x = x[mask]
         y = y[mask]
 
-        self.projitem.model.arr.xdate = self.table.has_dates()
-        self.projitem.model.arr.x = x
-        self.projitem.model.arr.y = y
-        self.projitem.model.arr.clear_uyestimate()
-        self.projitem.model.arr.clear()  # Clear MC samples
+        self.component.model.arr.xdate = self.table.has_dates()
+        self.component.model.arr.x = x
+        self.component.model.arr.y = y
+        self.component.model.arr.clear_uyestimate()
+        self.component.model.arr.clear()  # Clear MC samples
 
         uy = self.table.get_column(2)[mask]
         if all(~np.isfinite(uy)):
-            self.projitem.model.arr.uy = np.zeros(len(y))
-            self.projitem.model.arr.uy_estimate = None
+            self.component.model.arr.uy = np.zeros(len(y))
+            self.component.model.arr.uy_estimate = None
         else:
-            self.projitem.model.arr.uy = uy
+            self.component.model.arr.uy = uy
             # Prevent inf/nan values.. use a really small uncertainty
-            self.projitem.model.arr.uy[~np.isfinite(self.projitem.model.arr.uy)] = 1E-20
+            self.component.model.arr.uy[~np.isfinite(self.component.model.arr.uy)] = 1E-20
 
         if self.useUX:
             ux = self.table.get_column(3)[mask]
             if all(~np.isfinite(ux)):
                 ux = None
-                self.projitem.model.arr.ux = np.zeros(len(x))
+                self.component.model.arr.ux = np.zeros(len(x))
             else:
-                self.projitem.model.arr.ux = ux
-                self.projitem.model.arr.ux[~np.isfinite(self.projitem.model.arr.ux)] = 1E-20
+                self.component.model.arr.ux = ux
+                self.component.model.arr.ux[~np.isfinite(self.component.model.arr.ux)] = 1E-20
         else:
             ux = None
-            self.projitem.model.arr.ux = np.zeros(len(x))
-        self.projitem.model.xname = self.table.horizontalHeaderItem(0).text()
-        self.projitem.model.yname = self.table.horizontalHeaderItem(1).text()
+            self.component.model.arr.ux = np.zeros(len(x))
+        self.component.model.xname = self.table.horizontalHeaderItem(0).text()
+        self.component.model.yname = self.table.horizontalHeaderItem(1).text()
         self.updateplot()
 
     def updateplot(self):
         ''' Update the plot '''
-        if len(self.projitem.model.arr.x) == len(self.projitem.model.arr.y):
+        if len(self.component.model.arr.x) == len(self.component.model.arr.y):
             xdates = self.table.has_dates()
             self.ax.cla()
-            x = self.projitem.model.arr.x
-            xerr = self.projitem.model.arr.ux
+            x = self.component.model.arr.x
+            xerr = self.component.model.arr.ux
             if xdates:
                 x = mdates.num2date(x)
                 xerr = None
-            self.ax.errorbar(x, self.projitem.model.arr.y, yerr=self.projitem.model.arr.uy,
+            self.ax.errorbar(x, self.component.model.arr.y, yerr=self.component.model.arr.uy,
                              xerr=xerr, marker='o', ls='')
-            self.ax.set_xlabel(self.projitem.model.xname)
-            self.ax.set_ylabel(self.projitem.model.yname)
+            self.ax.set_xlabel(self.component.model.xname)
+            self.ax.set_ylabel(self.component.model.yname)
             if xdates and len(x) > 0:
                 # MPL will crash when attempting to autoscale dates if the date range falls below 0
                 self.ax.set_xlim(min(x).toordinal(), max(x).toordinal())
         self.canvas.draw_idle()
 
     def load_data(self):
-        ''' Load data from a data set or a file '''
-        dlg = page_dataimport.ArraySelectWidget(project=self.projitem.project)
-        ok = dlg.exec_()
+        ''' Load data from a project component '''
+        dlg = page_dataimport.ArraySelectWidget(project=self.component.project)
+        ok = dlg.exec()
         if ok:
             arrvals = dlg.get_array()
-            self.table.blockSignals(True)
+            self._load_data(arrvals)
 
-            xvals = arrvals.get('x', None)
-            yvals = arrvals.get('y', None)
-            uxvals = arrvals.get('u(x)', None)
-            uyvals = arrvals.get('u(y)', None)
+    def load_csv(self):
+        ''' Load data from a CSV file '''
+        fname, _ = QtWidgets.QFileDialog.getOpenFileName(caption='CSV file to load')
+        if fname:
+            dlg = SelectCSVData(fname, parent=self)
+            if dlg.exec():
+                dset = dlg.dataset()
+                data = dset.model.data
+                datahdr = ['x', 'y', 'u(y)']
+                dlg2 = widgets.AssignColumnWidget(data, datahdr, ['x', 'y', 'u(y)', 'u(x)'])
+                if dlg2.exec():
+                    array = dlg2.get_assignments()
+                    # Data comes back as np.atleast_2d. Squeeze out the extra dimension.
+                    array = {name: np.squeeze(value) for name, value in array.items()}
+                    self._load_data(array)
+
+    def _load_data(self, array: dict[str, list[float]]):
+        ''' Process the array data to load into table '''
+        with BlockedSignals(self.table):
+            xvals = array.get('x', None)
+            yvals = array.get('y', None)
+            uxvals = array.get('u(x)', None)
+            uyvals = array.get('u(y)', None)
 
             def checkrow(i):
                 if i >= self.table.rowCount():
@@ -459,15 +459,14 @@ class PageInputCurveFit(QtWidgets.QWidget):
                 for i, ux in enumerate(uxvals):
                     checkrow(i)
                     self.table.setItem(i, 3, QtWidgets.QTableWidgetItem(str(ux)))
-            self.table.blockSignals(False)
-            self.table.resizeColumnsToContents()
-            self.update_arr()
+        self.table.resizeColumnsToContents()
+        self.update_arr()
 
     def save_data(self):
         ''' Save the data table to a file '''
         fname, _ = QtWidgets.QFileDialog.getSaveFileName(caption='Select file to save')
         if fname:
-            self.projitem.model.arr.save_file(fname)
+            self.component.model.arr.save_file(fname)
 
 
 class IntervalWidget(QtWidgets.QWidget):
@@ -480,7 +479,7 @@ class IntervalWidget(QtWidgets.QWidget):
         self.x1 = QtWidgets.QLineEdit(str(x1))
         self.x2 = QtWidgets.QLineEdit(str(x2))
         validator = QtGui.QDoubleValidator(-1E99, 1E99, 4)
-        validator.setNotation(QtGui.QDoubleValidator.StandardNotation | QtGui.QDoubleValidator.ScientificNotation)
+        validator.setNotation(QtGui.QDoubleValidator.Notation.ScientificNotation)
         self.x1.setValidator(validator)
         self.x2.setValidator(validator)
         self.xdate1 = QtWidgets.QDateEdit()
@@ -567,6 +566,7 @@ class PageOutputCurveFit(QtWidgets.QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.result = None
+        self.methodcnt = 0
         self.btnBack = QtWidgets.QPushButton('Back')
 
         self.outSelect = QtWidgets.QComboBox()
@@ -578,7 +578,7 @@ class PageOutputCurveFit(QtWidgets.QWidget):
         self.chkPredBand = QtWidgets.QCheckBox('Show Prediction Band')
         self.chkPredBand.setChecked(True)
         self.chkConfBand.setChecked(True)
-        self.xvals = gui_widgets.FloatTableWidget()
+        self.xvals = widgets.FloatTableWidget()
         self.xvals.setVisible(False)
         self.xvals.setColumnCount(1)
         self.xvals.setHorizontalHeaderLabels(['X Values'])
@@ -587,35 +587,35 @@ class PageOutputCurveFit(QtWidgets.QWidget):
         self.cmbMCplot = QtWidgets.QComboBox()
         self.cmbMCplot.addItems(['Histograms', 'Samples'])
         self.cmbMCplot.setVisible(False)
-        self.paramlist = gui_widgets.ListSelectWidget()
+        self.paramlist = widgets.ListSelectWidget()
         self.paramlist.setVisible(False)
-        self.kvalue = gui_widgets.ExpandedConfidenceWidget(label='Expanded:', showshortest=False)
+        self.kconf = widgets.ExpandedConfidenceWidget(showshortest=False)
         self.predictlabel = QtWidgets.QLabel('Prediction Band Uncertainty of New Measurement:')
         self.predictmode = QtWidgets.QComboBox()
         self.predictmode.addItems(['Syx (Residuals)', 'Interpolate u(y)', 'Last u(y)'])
         self.predictmode.setItemData(
             0, 'Use the average of residuals for all x values. Does not consider any user-entered u(y)',
-            QtCore.Qt.ToolTipRole)
+            QtCore.Qt.ItemDataRole.ToolTipRole)
         self.predictmode.setItemData(
-            1, 'Extrapolate user-entered u(y) between x data points', QtCore.Qt.ToolTipRole)
+            1, 'Extrapolate user-entered u(y) between x data points', QtCore.Qt.ItemDataRole.ToolTipRole)
         self.predictmode.setItemData(
             2, 'Use the last user-entered u(y) for all predictions. Choose this option,\nfor example, '
             'when predicting into the future assuming the most recent\nmeasurement uncertainty '
-            'applies to all new measurements.', QtCore.Qt.ToolTipRole)
+            'applies to all new measurements.', QtCore.Qt.ItemDataRole.ToolTipRole)
         self.reportoptions = FullReportSetup()
 
         self.fig = Figure()
         self.canvas = FigureCanvas(self.fig)
         self.canvas.setStyleSheet("background-color:transparent;")
         self.toolbar = NavigationToolbar(self.canvas, self, coordinates=True)
-        self.txtOutput = gui_widgets.MarkdownTextEdit()
+        self.txtOutput = widgets.MarkdownTextEdit()
 
         llayout = QtWidgets.QVBoxLayout()
         llayout.addWidget(self.outSelect)
         llayout.addWidget(self.cmbMethod)
         llayout.addWidget(self.chkConfBand)
         llayout.addWidget(self.chkPredBand)
-        llayout.addWidget(self.kvalue)
+        llayout.addWidget(self.kconf)
         llayout.addWidget(self.xvals)
         llayout.addWidget(self.interval)
         llayout.addWidget(self.cmbMCplot)
@@ -630,7 +630,7 @@ class PageOutputCurveFit(QtWidgets.QWidget):
         rlayout.addWidget(self.toolbar)
         self.topwidget = QtWidgets.QWidget()
         self.topwidget.setLayout(rlayout)
-        self.rightsplitter = QtWidgets.QSplitter(QtCore.Qt.Vertical)
+        self.rightsplitter = QtWidgets.QSplitter(QtCore.Qt.Orientation.Vertical)
         self.rightsplitter.addWidget(self.topwidget)
         self.rightsplitter.addWidget(self.txtOutput)
         self.leftwidget = QtWidgets.QWidget()
@@ -652,7 +652,7 @@ class PageOutputCurveFit(QtWidgets.QWidget):
         self.cmbMethod.currentIndexChanged.connect(self.update)
         self.cmbMCplot.currentIndexChanged.connect(self.update)
         self.paramlist.checkChange.connect(self.update)
-        self.kvalue.changed.connect(self.update)
+        self.kconf.changed.connect(self.update)
         self.predictmode.currentIndexChanged.connect(self.update)
         self.reportoptions.changed.connect(self.update)
 
@@ -670,7 +670,7 @@ class PageOutputCurveFit(QtWidgets.QWidget):
             self.chkPredBand.setVisible(True)
             self.paramlist.setVisible(False)
             self.cmbMCplot.setVisible(False)
-            self.kvalue.setVisible(True)
+            self.kconf.setVisible(True)
             self.predictlabel.setVisible(showpredict)
             self.predictmode.setVisible(showpredict)
             self.reportoptions.setVisible(False)
@@ -683,7 +683,7 @@ class PageOutputCurveFit(QtWidgets.QWidget):
             self.xvals.setVisible(True)
             self.interval.setVisible(False)
             self.cmbMCplot.setVisible(False)
-            self.kvalue.setVisible(True)
+            self.kconf.setVisible(True)
             self.predictlabel.setVisible(showpredict)
             self.predictmode.setVisible(showpredict)
             self.reportoptions.setVisible(False)
@@ -696,7 +696,7 @@ class PageOutputCurveFit(QtWidgets.QWidget):
             self.xvals.setVisible(False)
             self.interval.setVisible(True)
             self.cmbMCplot.setVisible(False)
-            self.kvalue.setVisible(True)
+            self.kconf.setVisible(True)
             self.predictlabel.setVisible(showpredict)
             self.predictmode.setVisible(showpredict)
             self.reportoptions.setVisible(False)
@@ -708,7 +708,7 @@ class PageOutputCurveFit(QtWidgets.QWidget):
             self.paramlist.setVisible(False)
             self.xvals.setVisible(False)
             self.interval.setVisible(False)
-            self.kvalue.setVisible(False)
+            self.kconf.setVisible(False)
             self.cmbMCplot.setVisible(False)
             self.predictlabel.setVisible(False)
             self.predictmode.setVisible(False)
@@ -722,7 +722,7 @@ class PageOutputCurveFit(QtWidgets.QWidget):
             self.xvals.setVisible(False)
             self.interval.setVisible(False)
             self.cmbMCplot.setVisible(False)
-            self.kvalue.setVisible(False)
+            self.kconf.setVisible(False)
             self.predictlabel.setVisible(False)
             self.predictmode.setVisible(False)
             self.reportoptions.setVisible(False)
@@ -735,7 +735,7 @@ class PageOutputCurveFit(QtWidgets.QWidget):
             self.xvals.setVisible(False)
             self.interval.setVisible(False)
             self.cmbMCplot.setVisible(True)
-            self.kvalue.setVisible(False)
+            self.kconf.setVisible(False)
             self.reportoptions.setVisible(False)
 
         elif 'Full Report' in self.outSelect.currentText():
@@ -746,7 +746,7 @@ class PageOutputCurveFit(QtWidgets.QWidget):
             self.xvals.setVisible(False)
             self.interval.setVisible(False)
             self.cmbMCplot.setVisible(False)
-            self.kvalue.setVisible(False)
+            self.kconf.setVisible(False)
             self.reportoptions.setVisible(True)
             self.canvas.setVisible(False)
             self.toolbar.setVisible(False)
@@ -770,7 +770,7 @@ class PageOutputCurveFit(QtWidgets.QWidget):
         out = self.result.method(method)
 
         predmode = self.get_predmode()
-        conf = self.kvalue.get_confidence()
+        kconf = self.kconf.get_params()
 
         if self.outSelect.currentText() == 'Fit Plot':
             r.hdr('Fit Parameters', level=3)
@@ -779,17 +779,16 @@ class PageOutputCurveFit(QtWidgets.QWidget):
             r.hdr('Goodness of Fit', level=3)
             r.append(out.report.goodness_fit(), end='\n\n')
 
-            fig, ax = plotting.initplot(self.fig)
+            _, ax = plotting.initplot(self.fig)
             out.report.plot.points(ax=ax, ls='', marker='o')
             out.report.plot.fit(ax=ax, label='Fit')
             if self.chkConfBand.isChecked():
-                out.report.plot.conf(ax=ax, conf=conf, ls='--', color='C2')
+                out.report.plot.conf(ax=ax, ls='--', color='C2', **kconf)
             if self.chkPredBand.isChecked():
-                out.report.plot.pred(ax=ax, conf=conf, ls='--', color='C3', mode=predmode)
+                out.report.plot.pred(ax=ax, ls='--', color='C3', mode=predmode, **kconf)
             ax.legend(loc='best')
             ax.set_xlabel(out.setup.xname)
             ax.set_ylabel(out.setup.yname)
-            self.fig.tight_layout()
 
         elif self.outSelect.currentText() == 'Prediction':
             ax = self.fig.add_subplot(1, 1, 1)
@@ -801,18 +800,18 @@ class PageOutputCurveFit(QtWidgets.QWidget):
                 xmin = min(np.nanmin(xdata), np.nanmin(xvalues))
                 xmax = max(np.nanmax(xdata), np.nanmax(xvalues))
                 x = np.linspace(xmin, xmax, num=200)
-                r.append(out.report.confpred_xval(xval=self.xvals.get_columntext(0), conf=conf, mode=predmode))
+                r.append(out.report.confpred_xval(xval=self.xvals.get_columntext(0), mode=predmode, **kconf))
             else:
                 x = np.linspace(min(xdata), max(xdata), num=200)
 
             out.report.plot.points(ax=ax, ls='', marker='o')
             out.report.plot.fit(ax=ax, x=x, label='Fit')
             if self.chkConfBand.isChecked():
-                out.report.plot.conf(ax=ax, x=x, conf=conf, ls='--', color='C2')
+                out.report.plot.conf(ax=ax, x=x, ls='--', color='C2', **kconf)
             if self.chkPredBand.isChecked():
-                out.report.plot.pred(ax=ax, x=x, conf=conf, ls='--', color='C3', mode=predmode)
+                out.report.plot.pred(ax=ax, x=x, ls='--', color='C3', mode=predmode, **kconf)
             if len(xvalues) > 0:
-                out.report.plot.pred_value(xvalues, ax=ax, conf=conf, mode=predmode)
+                out.report.plot.pred_value(xvalues, ax=ax, mode=predmode, **kconf)
 
             ax.legend(loc='best')
             ax.set_xlabel(out.setup.xname)
@@ -827,8 +826,8 @@ class PageOutputCurveFit(QtWidgets.QWidget):
                 t2 = float(self.interval.x2.text())
             ax = self.fig.add_subplot(1, 1, 1)
             if t1 != t2:
-                out.report.plot.interval_uncert(t1, t2, ax=ax, conf=conf, mode=predmode)
-                r.append(out.report.interval_uncert(t1, t2, conf=conf, plot=False, mode=predmode), end='\n\n')
+                out.report.plot.interval_uncert(t1, t2, ax=ax, mode=predmode, **kconf)
+                r.append(out.report.interval_uncert(t1, t2, plot=False, mode=predmode, **kconf), end='\n\n')
                 r.div()
             r.append(out.report.interval_uncert_eqns())
 
@@ -856,7 +855,7 @@ class PageOutputCurveFit(QtWidgets.QWidget):
             ax4.set_xlabel('Theoretical quantiles')
             ax4.set_ylabel('Ordered sample values')
             self.fig.tight_layout()
-            r.append(out.report.residual_table(conf=conf))
+            r.append(out.report.residual_table(**kconf))
 
         elif self.outSelect.currentText() == 'Correlations':
             if len(out.setup.coeffnames) == 2:
@@ -894,7 +893,7 @@ class PageOutputCurveFit(QtWidgets.QWidget):
 
     def get_report(self):
         ''' Get full report of curve fit, using page settings '''
-        conf = self.kvalue.get_confidence()
+        kconf = self.kconf.get_params()
         xvals = self.xvals.get_columntext(0)
         x1 = (float(self.interval.x1.text()) if not self.result.setup.points.xdate else
               self.interval.xdate1.date().toPyDate().strftime('%d-%b-%Y'))
@@ -914,7 +913,7 @@ class PageOutputCurveFit(QtWidgets.QWidget):
             'mode': self.get_predmode(),
             'interval': interval if self.reportoptions.chkInterval.isChecked() else None
             }
-        r = self.result.report.all(conf=conf, **args)
+        r = self.result.report.all(**kconf, **args)
         return r
 
     def set_output(self, result):
@@ -924,40 +923,38 @@ class PageOutputCurveFit(QtWidgets.QWidget):
                    'montecarlo': result.montecarlo is not None,
                    'gum': result.gum is not None,
                    'markov': result.markov is not None}
-        self.blockSignals(True)
-        self.cmbMethod.clear()
-        self.cmbMethod.addItems(self.namelookup[i] for i, v in methods.items() if v)
-        self.paramlist.addItems(self.result.setup.coeffnames)
-        self.paramlist.selectAll()
-        self.outSelect.blockSignals(True)
-        self.outSelect.clear()
-        self.outSelect.addItems(['Fit Plot', 'Prediction', 'Interval', 'Residuals', 'Correlations', 'Full Report'])
-        if methods['montecarlo']:
-            self.outSelect.addItem('Monte Carlo')
-        if methods['markov']:
-            self.outSelect.addItem('Markov-Chain Monte Carlo')
+        with BlockedSignals(self):
+            self.cmbMethod.clear()
+            self.cmbMethod.addItems(self.namelookup[i] for i, v in methods.items() if v)
+            self.paramlist.addItems(self.result.setup.coeffnames)
+            self.paramlist.selectAll()
+            with BlockedSignals(self.outSelect):
+                self.outSelect.clear()
+                self.outSelect.addItems(['Fit Plot', 'Prediction', 'Interval', 'Residuals', 'Correlations', 'Full Report'])
+                if methods['montecarlo']:
+                    self.outSelect.addItem('Monte Carlo')
+                if methods['markov']:
+                    self.outSelect.addItem('Markov-Chain Monte Carlo')
 
-        self.interval.set_datemode(self.result.setup.points.xdate)
-        self.xvals.clear()
-        self.xvals.setHorizontalHeaderLabels(['X Values'])
-        xval = self.result.setup.points.x[-1]
-        if self.result.setup.points.xdate:
-            xval = mdates.num2date(xval).strftime('%d-%b-%Y')
-        self.xvals.setItem(0, 0, QtWidgets.QTableWidgetItem(str(xval)))
-        if self.result.setup.points.xdate:
-            # Must add 1721424.5 to account for difference in Julian day (QT) and proleptic Gregorian day (datetime)
-            lastdate1 = QtCore.QDate.fromJulianDay(int(self.result.setup.points.x[-1] + 1721424.5))
-            lastdate2 = QtCore.QDate.fromJulianDay(int(self.result.setup.points.x[-2] + 1721424.5))
-            self.interval.xdate1.setDate(lastdate2)
-            self.interval.xdate2.setDate(lastdate1)
-        else:
-            lastx1 = str(self.result.setup.points.x[-1])
-            lastx2 = str(self.result.setup.points.x[-2])
-            self.interval.x1.setText(lastx2)
-            self.interval.x2.setText(lastx1)
+                self.interval.set_datemode(self.result.setup.points.xdate)
+                self.xvals.clear()
+                self.xvals.setHorizontalHeaderLabels(['X Values'])
+                xval = self.result.setup.points.x[-1]
+                if self.result.setup.points.xdate:
+                    xval = mdates.num2date(xval).strftime('%d-%b-%Y')
+                self.xvals.setItem(0, 0, QtWidgets.QTableWidgetItem(str(xval)))
+                if self.result.setup.points.xdate:
+                    # Must add 1721424.5 to account for difference in Julian day (QT) and proleptic Gregorian day (datetime)
+                    lastdate1 = QtCore.QDate.fromJulianDay(int(self.result.setup.points.x[-1] + 1721424.5))
+                    lastdate2 = QtCore.QDate.fromJulianDay(int(self.result.setup.points.x[-2] + 1721424.5))
+                    self.interval.xdate1.setDate(lastdate2)
+                    self.interval.xdate2.setDate(lastdate1)
+                else:
+                    lastx1 = str(self.result.setup.points.x[-1])
+                    lastx2 = str(self.result.setup.points.x[-2])
+                    self.interval.x1.setText(lastx2)
+                    self.interval.x2.setText(lastx1)
 
-        self.outSelect.blockSignals(False)
-        self.blockSignals(False)
         self.methodcnt = list(methods.values()).count(True)
         self.changeview()
         self.update()
@@ -968,33 +965,35 @@ class CurveFitWidget(QtWidgets.QWidget):
 
     change_help = QtCore.pyqtSignal()
 
-    def __init__(self, projitem, parent=None):
+    def __init__(self, component, parent=None):
         super().__init__(parent)
-        self.projitem = projitem
-        self.pginput = PageInputCurveFit(self.projitem)
+        self.component = component
+        self.pginput = PageInputCurveFit(self.component)
         self.pgoutput = PageOutputCurveFit()
-        self.stack = gui_widgets.SlidingStackedWidget()
+        self.stack = widgets.SlidingStackedWidget()
         self.stack.addWidget(self.pginput)
         self.stack.addWidget(self.pgoutput)
         self.stack.setCurrentIndex(0)
         layout = QtWidgets.QVBoxLayout()
         layout.addWidget(self.stack)
         self.setLayout(layout)
-        self.actEnableUX = QtWidgets.QAction('Enable X Uncertainty', self)
+        self.actEnableUX = QtGui.QAction('Enable X Uncertainty', self)
         self.actEnableUX.setCheckable(True)
-        self.actClear = QtWidgets.QAction('Clear Table', self)
-        self.actLoadData = QtWidgets.QAction('Insert Data From...', self)
-        self.actSaveData = QtWidgets.QAction('Save Data Table...', self)
-        self.actSaveReport = QtWidgets.QAction('Save Report...', self)
+        self.actClear = QtGui.QAction('Clear Table', self)
+        self.actLoadData = QtGui.QAction('Import Data From Project...', self)
+        self.actLoadCSV = QtGui.QAction('Import Data From CSV...', self)
+        self.actSaveData = QtGui.QAction('Save Data Table...', self)
+        self.actSaveReport = QtGui.QAction('Save Report...', self)
         self.actSaveReport.setEnabled(False)
-        self.actFillUx = QtWidgets.QAction('Fill u(x)...', self)
-        self.actFillUy = QtWidgets.QAction('Fill u(y)...', self)
+        self.actFillUx = QtGui.QAction('Fill u(x)...', self)
+        self.actFillUy = QtGui.QAction('Fill u(y)...', self)
 
         self.menu = QtWidgets.QMenu('&Curve Fit')
         self.menu.addAction(self.actEnableUX)
         self.menu.addAction(self.actFillUx)
         self.menu.addAction(self.actFillUy)
         self.menu.addSeparator()
+        self.menu.addAction(self.actLoadCSV)
         self.menu.addAction(self.actLoadData)
         self.menu.addAction(self.actSaveData)
         self.menu.addAction(self.actClear)
@@ -1006,6 +1005,7 @@ class CurveFitWidget(QtWidgets.QWidget):
         self.pgoutput.btnBack.clicked.connect(self.goback)
         self.actEnableUX.triggered.connect(self.pginput.toggle_ux)
         self.actClear.triggered.connect(self.pginput.clear_table)
+        self.actLoadCSV.triggered.connect(self.load_csv)
         self.actLoadData.triggered.connect(self.load_data)
         self.actSaveData.triggered.connect(self.pginput.save_data)
         self.actSaveReport.triggered.connect(self.save_report)
@@ -1029,39 +1029,39 @@ class CurveFitWidget(QtWidgets.QWidget):
         self.pginput.model.custom.blockSignals(True)
         self.pginput.settings.chkAbsoluteSigma.blockSignals(True)
 
-        self.pginput.notes.setPlainText(self.projitem.longdescription)
-        self.pginput.settings.chkAbsoluteSigma.setChecked(not self.projitem.model.absolute_sigma)
-        if self.projitem.model.modelname == 'line':
+        self.pginput.notes.setPlainText(self.component.description)
+        self.pginput.settings.chkAbsoluteSigma.setChecked(not self.component.model.absolute_sigma)
+        if self.component.model.modelname == 'line':
             self.pginput.model.cmbModel.setCurrentIndex(self.pginput.model.cmbModel.findText('Line'))
-        elif self.projitem.model.modelname == 'exp':
+        elif self.component.model.modelname == 'exp':
             self.pginput.model.cmbModel.setCurrentIndex(self.pginput.model.cmbModel.findText('Exponential'))
-        elif self.projitem.model.modelname == 'decay':
+        elif self.component.model.modelname == 'decay':
             self.pginput.model.cmbModel.setCurrentIndex(self.pginput.model.cmbModel.findText('Exponential Decay'))
-        elif self.projitem.model.modelname == 'decay2':
+        elif self.component.model.modelname == 'decay2':
             self.pginput.model.cmbModel.setCurrentIndex(self.pginput.model.cmbModel.findText('Exponential Decay (rate)'))
-        elif self.projitem.model.modelname == 'log':
+        elif self.component.model.modelname == 'log':
             self.pginput.model.cmbModel.setCurrentIndex(self.pginput.model.cmbModel.findText('Log'))
-        elif self.projitem.model.modelname == 'logistic':
+        elif self.component.model.modelname == 'logistic':
             self.pginput.model.cmbModel.setCurrentIndex(self.pginput.model.cmbModel.findText('Logistic Growth'))
-        elif self.projitem.model.modelname == 'poly':
+        elif self.component.model.modelname == 'poly':
             self.pginput.model.cmbModel.setCurrentIndex(self.pginput.model.cmbModel.findText('Polynomial'))
-            self.pginput.model.polyorder.order.setValue(self.projitem.polyorder)
+            self.pginput.model.polyorder.setValue(self.component.fitoptions.polyorder)
         else:
             self.pginput.model.cmbModel.setCurrentIndex(self.pginput.model.cmbModel.findText('Custom'))
-            self.pginput.model.custom.setText(self.projitem.model.modelname)
+            self.pginput.model.custom.setText(self.component.model.modelname)
             self.pginput.model.update_custom(showhide=False)
 
-        if self.projitem.odr:
+        if self.component.fitoptions.odr:
             self.pginput.model.btnODR.setChecked(True)
         else:
             self.pginput.model.btnVert.setChecked(True)
         self.pginput.model.showhide()
 
-        if self.projitem.p0 is not None:
+        if self.component.fitoptions.p0 is not None:
             self.pginput.model.chkGuess.setChecked(True)
             self.pginput.model.tblGuess.setVisible(True)
             self.pginput.model.showhide()
-            for i, val in enumerate(self.projitem.p0):
+            for i, val in enumerate(self.component.fitoptions.p0):
                 self.pginput.model.tblGuess.setItem(i, 1, QtWidgets.QTableWidgetItem(str(val)))
         else:
             self.pginput.model.update_model()  # Generate reasonable p0
@@ -1071,8 +1071,8 @@ class CurveFitWidget(QtWidgets.QWidget):
 
         self.pginput.table.blockSignals(True)
         self.pginput.table.setRowCount(0)  # Clear stuff first
-        self.pginput.table.setRowCount(max(1, len(self.projitem.model.arr)))
-        arr = self.projitem.model.arr
+        self.pginput.table.setRowCount(max(1, len(self.component.model.arr)))
+        arr = self.component.model.arr
         uy = any(arr.uy != 0)
         ux = any(arr.ux != 0)
         for i in range(len(arr)):
@@ -1087,12 +1087,12 @@ class CurveFitWidget(QtWidgets.QWidget):
             if ux:
                 self.pginput.table.setItem(i, 3, QtWidgets.QTableWidgetItem(str(arr.ux[i])))
 
-        if self.projitem.longdescription != '':
+        if self.component.description != '':
             self.pginput.tab.setCurrentIndex(
                 [self.pginput.tab.tabText(i) for i in range(self.pginput.tab.count())].index('Notes'))
 
         self.pginput.table.setHorizontalHeaderLabels(
-            [self.projitem.model.xname, self.projitem.model.yname, 'u(y)', 'u(x)'])
+            [self.component.model.xname, self.component.model.yname, 'u(y)', 'u(x)'])
         self.pginput.table.blockSignals(False)
         self.pginput.model.cmbModel.blockSignals(False)
         self.pginput.model.btnODR.blockSignals(False)
@@ -1110,10 +1110,14 @@ class CurveFitWidget(QtWidgets.QWidget):
 
     def load_data(self):
         ''' Load Data menu item was selected '''
-        self.blockSignals(True)
-        self.pginput.load_data()
+        with BlockedSignals(self):
+            self.pginput.load_data()
+            self.actEnableUX.setChecked(self.pginput.useUX)
+
+    def load_csv(self):
+        ''' Load Data from CSV '''
+        self.pginput.load_csv()
         self.actEnableUX.setChecked(self.pginput.useUX)
-        self.blockSignals(False)
 
     def fillux(self):
         ''' Fill all u(x) values '''
@@ -1140,12 +1144,12 @@ class CurveFitWidget(QtWidgets.QWidget):
         mcmc = self.pginput.settings.chkMCMC.isChecked()
         gum = self.pginput.settings.chkGUM.isChecked()
 
-        if len(self.projitem.model.arr.x) < 2 or len(self.projitem.model.arr.y) < 2:
+        if len(self.component.model.arr.x) < 2 or len(self.component.model.arr.y) < 2:
             QtWidgets.QMessageBox.warning(self, 'Curve Fit', 'Need at least 2 (x,y) points to calculate a curve.')
             return
 
         try:
-            output = self.projitem.calculate(lsq=lsq, gum=gum, monte=mc, markov=mcmc)
+            output = self.component.calculate(lsq=lsq, gum=gum, monte=mc, markov=mcmc)
         except ZeroDivisionError:
             QtWidgets.QMessageBox.warning(self, 'Curve Fit', 'Could not compute solution! '
                                           'Ensure x and y data are entered in the table.')
@@ -1155,19 +1159,19 @@ class CurveFitWidget(QtWidgets.QWidget):
                                               'Try updating the initial guess or use a different method.')
             else:
                 QtWidgets.QMessageBox.warning(self, 'Curve Fit', 'Could not compute solution!')
-                print(str(e))
+                logging.warn(str(e))
         except TypeError as e:
             if 'Improper input' in str(e):
                 QtWidgets.QMessageBox.warning(self, 'Curve Fit', 'Polynomial is overfit. Reduce order.')
             else:
                 QtWidgets.QMessageBox.warning(self, 'Curve Fit', 'Could not compute solution!')
-                print(str(e))
+                logging.warn(str(e))
         except ValueError as e:
             if 'beta0' in str(e):
                 QtWidgets.QMessageBox.warning(self, 'Curve Fit', 'Please provide initial guess.')
             else:
                 QtWidgets.QMessageBox.warning(self, 'Curve Fit', 'Could not compute solution!')
-                print(str(e))
+                logging.warn(str(e))
         else:
             self.pgoutput.set_output(output)
             self.stack.slideInLeft(1)
@@ -1183,7 +1187,8 @@ class CurveFitWidget(QtWidgets.QWidget):
 
     def save_report(self):
         ''' Save full report of curve fit, asking user for settings/filename '''
-        gui_widgets.savereport(self.get_report())
+        with gui_styles.LightPlotstyle():
+            widgets.savereport(self.get_report())
 
     def help_report(self):
         ''' Get the help report to display the current widget mode '''

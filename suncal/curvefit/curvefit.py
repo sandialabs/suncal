@@ -1,6 +1,6 @@
 ''' Functions for fitting curves with uncertainties in parameters and prediction '''
-
 from collections import namedtuple
+import warnings
 import numpy as np
 import scipy.odr
 import scipy.optimize
@@ -242,7 +242,7 @@ def odrfit(func, x, y, ux, uy, p0=None, absolute_sigma=True):
     modr = scipy.odr.ODR(mdata, model, beta0=p0)
     mout = modr.run()
     if mout.info != 1:
-        print('Warning - ODR failed to converge')
+        warnings.warn('ODR failed to converge')
 
     if absolute_sigma:
         # SEE: https://github.com/scipy/scipy/issues/6842.

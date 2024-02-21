@@ -9,23 +9,32 @@ from ..datasets.dataset_model import DataSet, DataSetSummary
 class ProjectDataSet(ProjectComponent):
     ''' DataSet project component '''
     def __init__(self, model=None, name='dataset'):
-        super().__init__()
-        self.name = name
+        super().__init__(name=name)
         if model is None:
             self.model = DataSet()
         else:
             self.model = model
-        self.description = ''
-        self.project = None  # Parent project
-        self.result = self.model
 
     def issummary(self):
         ''' Is the data in DataSetSummary form? '''
         return isinstance(self.model, DataSetSummary)
 
+    def setdata(self, data):
+        self.model.data = data
+        self._result = None
+
+    def setcolnames(self, names):
+        self.model.colnames = names
+        self._result = None
+
+    def clear(self):
+        self._result = None
+        self.model.clear()
+
     def calculate(self):
         ''' Run calculation '''
-        return self.model
+        self._result = self.model.calculate()
+        return self._result
 
     def get_dists(self):
         ''' Get dictionary of distributions in this dataset '''
@@ -35,21 +44,20 @@ class ProjectDataSet(ProjectComponent):
         # Pooled stats returned as mean/std/df dictionary
         if len(colnames) > 1:
             # Get pooled statistics
-            pstats = self.model.pooled_stats()
-            stderr = self.model.standarderror()
+            pstats = self.model.result.pooled
+            stderr = self.model.result.uncertainty
             d['Stdev of Mean'] = {
-                'mean': pstats.mean,
-                'sem': stderr.standarderror,
-                'std': stderr.standarddeviation,
-                'df': stderr.degf}
+                'median': pstats.mean,
+                'std': stderr.stderr,
+                'df': stderr.stderr_degf}
             d['Repeatability Stdev'] = {
-                'mean': pstats.mean,
+                'median': pstats.mean,
                 'std': pstats.repeatability,
-                'df': pstats.repeatability_degf}
+                'df': pstats.repeat_degf}
             d['Reproducibility Stdev'] = {
-                'mean': pstats.mean,
+                'median': pstats.mean,
                 'std': pstats.reproducibility,
-                'df': pstats.reproducibility_degf}
+                'df': pstats.reprod_degf}
 
         # Individual columns are returned as sampled data
         for col in colnames:
@@ -57,23 +65,9 @@ class ProjectDataSet(ProjectComponent):
 
         return d
 
-    def get_dataset(self, name=None):
-        ''' Get a DataSet from this calculation. If name is None, return list of available datasets. '''
-        names = ['Columns']
-        if len(self.model.colnames) > 1:
-            names.append('Summarized Array')
-
-        if name is None:
-            return names
-
-        if name in names:
-            if name == 'Summarized Array':
-                return self.model.to_array()
-            return self.model
-
-        else:
-            raise ValueError(f'{name} not found in output')
-        return names
+    def get_arrays(self):
+        d = {'Group Means': self.model.to_array()}
+        return d
 
     def get_config(self):
         ''' Get the dataset configuration dictionary '''
@@ -85,9 +79,9 @@ class ProjectDataSet(ProjectComponent):
         d['desc'] = self.description
 
         if isinstance(self.model, DataSetSummary):
-            d['nmeas'] = self.model._nmeas().astype('float').tolist()
-            d['means'] = self.model._means().astype('float').tolist()
-            d['stds'] = self.model._stds().astype('float').tolist()
+            d['nmeas'] = self.model.nmeas.astype('float').tolist()
+            d['means'] = self.model.means.astype('float').tolist()
+            d['stds'] = self.model.stdevs.astype('float').tolist()
             d['summary'] = True
         return d
 
@@ -100,7 +94,7 @@ class ProjectDataSet(ProjectComponent):
             means = config.get('means')
             stds = config.get('stds')
             nmeas = config.get('nmeas')
-            self.model = DataSetSummary(colnames, means, stds, nmeas)
+            self.model = DataSetSummary(means, stds, nmeas, column_names=colnames)
         else:
-            self.model = DataSet(np.array(config['data']), colnames=colnames)
-        self.result = self.model
+            self.model = DataSet(np.array(config['data']), column_names=colnames)
+        self.calculate()

@@ -4,10 +4,13 @@
 from collections import namedtuple
 import numpy as np
 from scipy import stats
-from scipy.optimize import fsolve
+from scipy.optimize import root_scalar
 
 from . import risk_simpson
 from ..common import distributions
+
+
+SpecificRisk = namedtuple('SpecificRisk', ['cpk', 'total', 'lower', 'upper'])
 
 
 def specific_risk(dist, LL, UL):
@@ -50,8 +53,7 @@ def specific_risk(dist, LL, UL):
         cpk = max(0, min(abs(stats.norm.ppf(risk_lower))/3, abs(stats.norm.ppf(risk_upper))/3))
         if risk_lower > .5 or risk_upper > .5:
             cpk = -cpk
-    Result = namedtuple('SpecificRisk', ['cpk', 'total', 'lower', 'upper'])
-    return Result(cpk, risk_total, risk_lower, risk_upper)
+    return SpecificRisk(cpk, risk_total, risk_lower, risk_upper)
 
 
 def get_sigmaproc_from_itp(itp, bias=0):
@@ -69,13 +71,12 @@ def get_sigmaproc_from_itp(itp, bias=0):
             ru = 1 - stats.norm(mu, sigma).cdf(1)
             return rl + ru
 
-        # fsolve is sensitive to initial guess x0 - try another x0 if first one doesn't work
-        out = fsolve(lambda x: (1-sp_risk(bias, x))-itp, x0=.1, full_output=1)
-        if out[2] != 1:
-            out = fsolve(lambda x: (1-sp_risk(bias, x))-itp, x0=.8, full_output=1)
-        if out[2] != 1:
-            return 0
-        return out[0][0]
+    out = root_scalar(lambda x: (1-sp_risk(bias, x))-itp,
+                      bracket=(1E-9, 10),
+                      x0=.1)
+    if out.converged:
+        return out.root
+    return 0.
 
 
 def get_sigmaproc_from_itp_arb(dist, param, itp, LL, UL):
@@ -104,10 +105,16 @@ def get_sigmaproc_from_itp_arb(dist, param, itp, LL, UL):
         ru = 1 - distributions.get_distribution(dist.name, **kwargs).cdf(UL)
         return rl + ru
 
-    out = fsolve(lambda x: (1-sp_risk(**{param:x}, **fixedargs))-itp, x0=currentval, full_output=1)
-    if out[2] != 1:
+    try:
+        out = root_scalar(lambda x: (1-sp_risk(**{param: x}, **fixedargs))-itp,
+                          bracket=(0, currentval*100),
+                          x0=currentval)
+    except ValueError:  # Not bracketed
         return None
-    return out[0][0]
+
+    if out.converged:
+        return out.root
+    return None
 
 
 def PFA(dist_proc, dist_test, LL, UL, GBL=0, GBU=0, testbias=0):
@@ -208,6 +215,32 @@ def PFA_norm(itp, TUR, GB=1, sig0=None, biastest=0, biasproc=0, observeditp=Fals
     dtest = stats.norm(loc=0, scale=sigmatest)
     dproc = stats.norm(loc=biasproc, scale=sigma0)
     return PFA(dproc, dtest, -1, 1, GB, GB, testbias=biastest)
+
+
+def PFA_norm_conditional(itp, TUR, GB=1, sig0=None, biastest=0, biasproc=0, observeditp=False):
+    ''' Conditional PFA for normal distributions given TUR, ITP, and guardband
+
+        Args:
+            itp (float): In-tolerance probability (0-1 range). A-priori distribution of process.
+            TUR (float): Test Uncertainty Ratio. Spec Limit / (2*Test Uncertainty)
+            GB (float): Guardband Factor. Acceptance limit A = T * GB.
+            sig0 (float): Process standard deviation in terms of #SL, overrides itp
+            biastest (float): Bias/shift in the test measurement distribution, in percent of SL
+            biasproc (float): Bias/shift in the process distribution, in percent of SL
+            observed (bool): Consider itp as the "observed" itp. True itp will be adjusted
+              to account for measurement uncertainty in observing itp. See
+              Mimbs "Using Reliability to Meet Z540.3's 2% Rule", NCSLI 2011.
+    '''
+    sigma0 = sig0 if sig0 is not None else get_sigmaproc_from_itp(itp, biasproc)
+    sigmatest = 1/TUR/2
+
+    if observeditp:
+        sigma0 = np.sqrt(sigma0**2 - sigmatest**2)
+
+    GB = 1-GB  # Guardband factor to absolute guardband width
+    dtest = stats.norm(loc=0, scale=sigmatest)
+    dproc = stats.norm(loc=biasproc, scale=sigma0)
+    return PFA_conditional(dproc, dtest, -1, 1, GB, GB, testbias=biastest)
 
 
 def PFR_norm(itp, TUR, GB=1, sig0=None, biastest=0, biasproc=0, observeditp=False):

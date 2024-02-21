@@ -1,13 +1,13 @@
 - correlations:
-  - cor: '-0.6451'
-    var1: J
-    var2: theta
   - cor: '-0.3553'
     var1: J
     var2: V
+  - cor: '-0.6451'
+    var1: J
+    var2: theta
   - cor: '0.8576'
-    var1: theta
-    var2: V
+    var1: V
+    var2: theta
   description: 'Simultaneous resistance and reactance measurement
 
     Example from GUM appendix H.2
@@ -30,42 +30,48 @@
     name: Z
     units: ohm
   inputs:
-  - desc: 'Current'
-    mean: 19.661
+  - autocorrelate: false
+    desc: Current
+    mean: 19.660999999999998
     name: J
-    uncerts:
-    - degf: 4.0
-      desc: Type A uncertainty from IVdata.csv
-      dist: normal
-      name: typeA
-      unc: 9.471008394041335e-03
-      k: 1
-      units: milliampere
+    numnewmeas: 5
+    typea:
+    - 19.663
+    - 19.639
+    - 19.64
+    - 19.685
+    - 19.678
+    typea_uncert: !quantity '0.009471008394041188 milliampere'
+    uncerts: []
     units: milliampere
-  - desc: 'Phase'
-    mean: 1.0445
-    name: theta
-    uncerts:
-    - degf: 4
-      desc: Type A uncertainty from IVdata.csv
-      dist: normal
-      name: typeA
-      unc: 0.0007520638270785368
-      k: 1
-      units: radian
-    units: radian
-  - desc: 'Voltage'
-    mean: 4.999
+  - autocorrelate: false
+    desc: Voltage
+    mean: 4.9990000000000006
     name: V
-    uncerts:
-    - degf: 4
-      desc: Type A uncertainty from IVdata.csv
-      dist: normal
-      name: typeA
-      unc: 0.0032093613071761794
-      k: 1
-      units: volt
+    numnewmeas: 5
+    typea:
+    - 5.007
+    - 4.994
+    - 5.005
+    - 4.99
+    - 4.999
+    typea_uncert: !quantity '0.0032093613071761794 volt'
+    uncerts: []
     units: volt
+  - autocorrelate: false
+    desc: Phase
+    mean: 1.0444600000000002
+    name: theta
+    numnewmeas: 5
+    typea:
+    - 1.0456
+    - 1.0438
+    - 1.0468
+    - 1.0428
+    - 1.0433
+    typea_uncert: !quantity '0.0007520638270785368 radian'
+    uncerts: []
+    units: radian
   mode: uncertainty
   name: uncertainty
   samples: 1000000

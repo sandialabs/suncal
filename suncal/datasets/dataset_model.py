@@ -1,37 +1,222 @@
 ''' Data Set Model, processing ANOVA, etc. and handling column names, dates '''
-
-from collections import namedtuple
+from dataclasses import dataclass
 import numpy as np
 from scipy import stats
 from dateutil.parser import parse
 
-from ..common import distributions
+from ..common import reporter
 from .report.dataset import ReportDataSet
 from . import dataset
 
 
-ColumnStats = namedtuple('ColumnStats', ['name', 'mean', 'standarddev', 'standarderr', 'N', 'degf'])
+@reporter.reporter(ReportDataSet)
+@dataclass
+class DataSetResult:
+    ''' Results of DataSet statistics
+
+        Attributes:
+            data: The data used for calculation
+            colnames: Names, as-entered, of each column
+            colvals: Values, as-parsed, of each column
+            groups: Statistics for each column/group
+            pooled: Pooled statistics for the data set
+            uncertainty: Estimate of uncertainty/standard error
+            anova: Analysis of Variance
+            autocorrelation: Autocorrelation uncertainty for each column
+            correlation: Correlation matrix between the columns
+    '''
+    data: list[list[float]]
+    colnames: list[str]   # String/Value
+    colvals: list[float]  # Parsed
+    groups: dataset.GroupSummary  # For each group
+    pooled: dataset.PooledResult  # For the whole data set
+    uncertainty: dataset.StandardErrorResult
+    anova: dataset.AnovaResult
+    autocorrelation: list[dataset.AutoCorrelationResult]  # For each column
+    correlation: list[list[float]]  # Correlation between columns
+
+    def array(self):
+        ''' Convert 2D to array of mean/unc '''
+
+    @property
+    def mean(self):
+        ''' Grand mean of all data points '''
+        return np.mean(self.data)
+
+    @property
+    def ncolumns(self):
+        return len(self.colnames)
+
+    @property
+    def maxrows(self):
+        ''' Return longest column length '''
+        return max(len(c) for c in self.data)
+
+    @property
+    def totalN(self):
+        return np.count_nonzero(np.isfinite(self.data))
+
+    def histogram(self, bins=20):
+        ''' Get histogram of entire set '''
+        return np.histogram(self.data, bins=bins)
+
+    def groupidx(self, name) -> int:
+        ''' Get index of the group by name '''
+        if name is None:
+            return 0
+        try:
+            idx = self.colnames.index(name)
+        except ValueError:
+            idx = self.colvals.index(name)
+        return idx
+
+    def group_acorr(self, name) -> dataset.AutoCorrelationResult:
+        ''' Get autocorrelation for the group by name '''
+        idx = self.groupidx(name)
+        return self.autocorrelation[idx]
+
+    def group(self, name) -> dataset.GroupResult:
+        ''' Get stats for one group '''
+        if name is None:
+            name = self.colnames[0]
+        idx = self.groupidx(name)
+        return dataset.GroupResult(
+            name,
+            self.colvals[idx],
+            self.data[idx],
+            self.groups.means[idx],
+            self.groups.variances[idx],
+            self.groups.std_devs[idx],
+            self.groups.std_errs[idx],
+            self.groups.counts[idx],
+            self.groups.degfs[idx],
+            self.autocorrelation[idx] if self.autocorrelation is not None else None)
 
 
 class DataSet:
-    ''' Data Set Model (same as DataSetResults)
+    ''' Data Set Model '''
+    def __init__(self, data=None, column_names=None):
+        if data is None:
+            data = [[]]
+        self.data = np.atleast_2d(data)
+        if column_names is None:
+            self.colnames = list(range(1, max(1, len(self.data)+1)))
+        else:
+            self.colnames = column_names
+        self._result = None
+
+    @property
+    def result(self):
+        ''' Results of DataSet statistics '''
+        if self._result is None:
+            self.calculate()
+        return self._result
+
+    @property
+    def colnames(self):
+        ''' Get column names '''
+        return self._colnames
+
+    def get_column(self, name=None):
+        ''' Get column data by name '''
+        if name is None:
+            idx = 0
+        else:
+            idx = self.colnames.index(name)
+        return self.data[idx]
+
+    @colnames.setter
+    def colnames(self, value):
+        ''' Set column names, and parse strings into float or date values if possible. '''
+        if all(hasattr(v, 'month') for v in value):
+            cols = value
+            coltype = 'date'
+            self._colnames = [v.strftime('%Y-%m-%d') for v in value]
+        else:
+            try:
+                cols = [float(c) for c in value]
+                coltype = 'float'
+            except (TypeError, ValueError):
+                try:
+                    cols = [parse(c) for c in value]
+                    coltype = 'date'
+                except (ValueError, OverflowError):
+                    cols = np.arange(len(value))
+                    coltype = 'str'
+
+            self._colnames = value  # Raw column names
+        self._pcolnames = cols  # Parsed numeric column names
+        self.coltype = coltype  # type of columns
+
+    def clear(self):
+        ''' Clear the data '''
+        self.colnames = []
+        self.data = np.atleast_2d([[]])
+
+    def calculate(self):
+        ''' Calculate all the statistics '''
+        pooled = dataset.pooled_stats(self.data)
+        groups = dataset.group_stats(self.data)
+        anova = dataset.anova(self.data)
+        stderr = dataset.standarderror(self.data)
+        autocorr = [dataset.uncert_autocorrelated(column) for column in self.data]
+        self._result = DataSetResult(
+            self.data,
+            self._colnames,
+            self._pcolnames,
+            groups=groups,
+            pooled=pooled,
+            uncertainty=stderr,
+            anova=anova,
+            autocorrelation=autocorr,
+            correlation=np.corrcoef(self.data))
+        return self._result
+
+    def summarize(self) -> 'DataSetSummary':
+        ''' Convert the DataSet into an DataSetSummary object by finding
+            mean and standard deviation of each group.
+        '''
+        gstats = self.result.groups
+        return DataSetSummary(gstats.means,
+                              gstats.std_devs,
+                              nmeas=gstats.counts,
+                              column_names=self.colnames)
+
+    def to_array(self) -> dict[str, list[float]]:
+        ''' Summarize the DataSet as x, y, uy values '''
+        gstats = self.result.groups
+        return {
+            'x': self._pcolnames,
+            'y': gstats.means,
+            'u(y)': gstats.std_errs}
+
+
+class DataSetSummary:
+    ''' Dataset given by 3 rows: mean, stdev, and N for each group.
 
         Args:
-            data (array): 2D data to compute stats. May contain NaNs if groups
-              have different sizes.
-            colnames (array): names for each column
+            means (array): group mean values
+            stds (array): group standard deviations
+            nmeas (array): number of measurements in each group (degf+1)
+            column_names (list): column/group names
     '''
-    def __init__(self, data=None, colnames=None):
-        if data is None:
-            self.data = np.array([[]])
-            self.colnames = []
+
+    def __init__(self, means, stdevs, nmeas, column_names=None):
+        self.means = np.asarray(means)
+        self.stdevs = np.asarray(stdevs)
+        self.nmeas = np.asarray(nmeas)
+        if column_names is None:
+            self.colnames = list(range(len(self.means)))
         else:
-            self.data = np.atleast_2d(data)
-            if colnames is None:
-                self.colnames = [str(i) for i in range(self.data.shape[0])]
-            else:
-                self.colnames = colnames
-        self.report = ReportDataSet(self)
+            self.colnames = column_names
+        self._result = None
+
+    @property
+    def result(self):
+        ''' Results of DataSet statistics '''
+        if self._result is None:
+            self.calculate()
+        return self._result
 
     @property
     def colnames(self):
@@ -61,302 +246,65 @@ class DataSet:
         self._pcolnames = cols  # Parsed numeric column names
         self.coltype = coltype  # type of columns
 
-    def colnames_parsed(self):
-        ''' Get parsed column names (converted to float or datetime if possible) '''
-        return self._pcolnames
+    def calculate(self) -> DataSetResult:
+        ''' Calculate statistics for the summarized values '''
+        pooled = self._pooled_stats()
+        groups = self._group_stats()
+        anova = self._anova()
+        stderr = self._standarderror()
+        self._result = DataSetResult(
+            np.array([[]]),
+            self._colnames,
+            self._pcolnames,
+            groups=groups,
+            pooled=pooled,
+            uncertainty=stderr,
+            anova=anova,
+            autocorrelation=None,
+            correlation=None)
+        return self._result
 
-    def _colidx(self, name):
-        ''' Get column index from name '''
-        if name is None or name not in self.colnames:
-            return 0
-        return self.colnames.index(name)
+    def _group_stats(self) -> dataset.GroupSummary:
+        ''' Get statistics for all groups '''
+        variance = self.stdevs**2
+        sems = self.stdevs/np.sqrt(self.nmeas)
+        degf = self.nmeas - 1
+        return dataset.GroupSummary(
+            means=self.means,
+            counts=self.nmeas,
+            variances=variance,
+            std_devs=self.stdevs,
+            std_errs=sems,
+            degfs=degf)
 
-    def _colname(self, name=None):
-        ''' Get column name '''
-        if name is None:
-            return self.colnames[0]
-        return name
-
-    def get_column(self, colname=None):
-        ''' Get one column of data '''
-        return self.data[self._colidx(colname)]
-
-    def ncolumns(self):
-        ''' Get number of columns/groups in data set '''
-        return len(self.colnames)
-
-    def maxrows(self):
-        ''' Return longest column length '''
-        return max(len(c) for c in self.data)
-
-    def histogram(self, colname=None, bins='auto'):
-        ''' Get histogram of the column data
-
-            Args:
-                colname: name of column
-                bins: Number of histogram bins, passed to np.histogram.
-        '''
-        return np.histogram(self.data[self._colidx(colname)], bins=bins)
-
-    def column_stats(self, column_name):
-        ''' Get statistics for one column
-
-            Args:
-                column_name: name of column
-
-            Returns:
-                name: name of column
-                mean: mean value of column
-                stdandarddev: standard deviation of column
-                standarderr: standard error of the mean
-                N: number of data points in column
-                degf: degrees of freedom
-        '''
-        data = self.get_column(column_name)
-        mean = np.nanmean(data)
-        n = len(data)
-        stdev = np.nanstd(data, ddof=1)
-        sem = stdev / np.sqrt(n)
-        return ColumnStats(self._colname(column_name), mean, stdev, sem, n, n-1)
-
-    def mean(self):
-        ''' Mean of all data (excluding NaNs) '''
-        return np.nanmean(self.data)
-
-    def group_stats(self):
-        ''' Get summary statistics for each column/group
-
-            Returns:
-                mean (array): mean of each group
-                variance (array): variance of each group
-                stdandarddev (array): standard deviation of each group
-                standarderror (array): standard error of the mean of each group
-                num_measurements (array): number of (non-NaN) points in each group
-                degf (array): degrees of freedom of each group
-        '''
-        GroupStats = namedtuple('GroupStats', ['mean', 'variance', 'standarddev',
-                                               'standarderror', 'num_measurements', 'degf'])
-
-        try:
-            gstats = dataset.group_stats(self.data)
-        except TypeError:  # Could be datetime
-            ncol = self.ncolumns()
-            gstats = GroupStats(
-                np.full(ncol, np.nan),
-                np.full(ncol, np.nan),
-                np.full(ncol, np.nan),
-                np.full(ncol, np.nan),
-                np.full(ncol, np.nan),
-                np.full(ncol, np.nan))
-        return gstats
-
-    def pooled_stats(self):
-        ''' Calculate pooled standard deviation/variance/error for the 2D data
-
-            Returns:
-                mean (float): Mean of all data points
-                reproducibility (float): Reproducibility standard deviation
-                repeatability (float): Repeatability (pooled) standard deviation
-                reproducibility_degf (float): Degrees of freedom of reproducibility
-                repeatability_degf (float): Degrees of freedom of repeatability
-        '''
-        return dataset.pooled_stats(self.data)
-
-    def anova(self, conf=.95):
-        ''' Analysis of Variance (one-way)
-
-            Returns:
-                f (float): F-statistic
-                fcrit (float): Critical F value.
-                p (float): P value
-                test (bool): True if the groups are statistically the same (f < fcrit and p > 0.05).
-                SSbetween (float): Sum-of-squares of between-group variation
-                SSwithin (float): Sum-of-squares of within-group variation
-                MSbetween (float): Between-group variation
-                MSwithin (float): Within-group variation
-        '''
-        return dataset.anova(self.data, conf=conf)
-
-    def standarderror(self, conf=.95):
-        ''' Compute standard error of the mean of 2D data. Checks whether reproducibility is
-            significant using ANOVA with conf confidnece in F-test.
-
-            Returns:
-                standarderror (float): Standard error of the mean of the data
-                degf (float): Degrees of freedom
-                standarddeviation (float): Standard deviation
-                reprod_significant (bool): If reproducibility between groups is significant and was
-                  used to determine standard error.
-        '''
-        return dataset.standarderror(self.data, conf=conf)
-
-    def fit_dist(self, colname=None, distname='normal'):
-        ''' Fit a distribution and return distribution parameters dictionary
-
-            Args:
-                colname: name of column
-                distname: name of probability distribution
-
-            Returns:
-                params: dictionary of fit parameters
-        '''
-        fitdist = distributions.get_distribution(distname)
-        data = self.get_column(colname)
-        params = fitdist.fit(data)
-        return params
-
-    def correlation(self):
-        ''' Get correlation matrix between columns '''
-        return np.corrcoef(self.data)
-
-    def autocorrelation(self, colname=None):
-        ''' Get autocorrelation array rho(lag) '''
-        data = self.get_column(colname)
-        return dataset.autocorrelation(data)
-
-    def autocorrelation_uncert(self, colname=None):
-        ''' Get uncertainty adjusted for autocorrelation '''
-        data = self.get_column(colname)
-        return dataset.uncert_autocorrelated(data)
-
-    def summarize(self):
-        ''' Convert the DataSet into an DataSetSummary object by finding
-            mean and standard deviation of each group.
-        '''
-        gstats = self.group_stats()
-        return DataSetSummary(self.colnames, gstats.mean, gstats.standarddev, nmeas=gstats.N)
-
-    def to_array(self):
-        ''' Summarize the DataSet as an array with columns for x, y, stdev(y), u(y). '''
-        gstats = self.group_stats()
-        percent = gstats.standarderror/gstats.mean
-        dset = DataSet(np.vstack((self._pcolnames, gstats.mean, gstats.standarderror,
-                                  percent, percent*100, gstats.standarddev)),
-                       colnames=['x', 'y', 'u(y)', 'u(y)/y', 'u(y)/y*100%', 'stdev(y)'])
-        dset.coltype = self.coltype
-        return dset
-
-    def calculate(self):
-        ''' Run calculation. Just returns self here. '''
-        return self  # DataSet model is same as DataSetResult
-
-
-class DataSetSummary(DataSet):
-    ''' Dataset given by 3 rows: mean, stdev, and N for each group.
-
-        Args:
-            colnames (list): column/group names
-            means (array): group mean values
-            stds (array): group standard deviations
-            nmeas (array): number of measurements in each group (degf+1)
-    '''
-    ROW_MEAN = 0
-    ROW_STD = 1
-    ROW_NMEAS = 2
-    MAX_ROWS = 3
-
-    def __init__(self, colnames, means, stds, nmeas):
-        try:
-            data = np.vstack((means, stds, nmeas)).T
-        except ValueError:
-            data = np.array([[]])
-        super().__init__(data, colnames)
-
-    def _means(self):
-        ''' Get mean of each group '''
-        if self.data.shape[1] == 0:
-            return []
-        return self.data[:, self.ROW_MEAN]
-
-    def _stds(self):
-        ''' Get standard deviation of each group '''
-        if self.data.shape[1] == 0:
-            return []
-        return self.data[:, self.ROW_STD]
-
-    def _nmeas(self):
-        ''' Get number of measurements in each group '''
-        if self.data.shape[1] == 0:
-            return []
-        return self.data[:, self.ROW_NMEAS]
-
-    def maxrows(self):
-        ''' Get maximum number of rows in data table (always 3) '''
-        return self.MAX_ROWS
-
-    def ncolumns(self):
-        ''' Get number of columns/groups in data set '''
-        return len(self._means())
-
-    def column_stats(self, column_name):
-        ''' Get statistics for one column/group '''
-        idx = self._colidx(column_name)
-        return ColumnStats(self._colname(column_name),
-                           self._means()[idx],
-                           self._stds()[idx],
-                           self._stds()[idx]/np.sqrt(self._nmeas()[idx]),
-                           self._nmeas()[idx],
-                           self._nmeas()[idx]-1)
-
-    def group_stats(self):
-        ''' Get statistics for all groups
-
-            Returns:
-                mean (array): mean of each group
-                variance (array): variance of each group
-                stdandarddev (array): standard deviation of each group
-                standarderror (array): standard error of the mean of each group
-                num_measurements (array): number of (non-NaN) points in each group
-                degf (array): degrees of freedom of each group
-        '''
-        Result = namedtuple('GroupStats', ['name', 'mean', 'variance', 'standarddev', 'standarderror', 'N', 'degf'])
-        return Result(self.colnames,
-                      self._means(),
-                      self._stds()**2,
-                      self._stds(),
-                      self._stds()/np.sqrt(self._nmeas()),
-                      self._nmeas(),
-                      self._nmeas()-1)
-
-    def pooled_stats(self):
-        ''' Pooled standard deviation
-
-            Returns:
-                mean (float): Mean of all data points
-                reproducibility (float): Reproducibility standard deviation
-                repeatability (float): Repeatability (pooled) standard deviation
-                reproducibility_degf (float): Degrees of freedom of reproducibility
-                repeatability_degf (float): Degrees of freedom of repeatability
-        '''
-        ngroups = self.ncolumns()
-        groupmeans = self._means()
-        groupvars = self._stds()**2
-        degfs = self._nmeas()-1
-        pooled_var = sum(groupvars * degfs) / sum(degfs)
-        reprod_std = np.std(groupmeans, ddof=1)  # Standard deviation of group means, s(xj)
+    def _pooled_stats(self) -> dataset.PooledResult:
+        ''' Pooled standard deviation '''
+        ngroups = len(self.means)
+        degfs = self.nmeas - 1
+        variances = self.stdevs**2
+        pooled_var = sum(variances * degfs) / sum(degfs)
+        reprod_std = np.std(self.means, ddof=1)  # Standard deviation of group means, s(xj)
         reprod_df = ngroups - 1
         repeat_std = np.sqrt(pooled_var)  # Pooled standard deviation
         repeat_df = sum(degfs)
-        PooledStats = namedtuple('PooledStats', ['mean', 'reproducibility', 'repeatability',
-                                                 'reproducibility_degf', 'repeatability_degf'])
-        return PooledStats(np.nanmean(groupmeans), reprod_std, repeat_std, reprod_df, repeat_df)
+        return dataset.PooledResult(
+            np.mean(self.means),
+            reprod_std,
+            repeat_std,
+            reprod_df,
+            repeat_df)
 
-    def standarderror(self, conf=.95):
-        ''' Compute standard error of the mean the data. Checks whether reproducibility is
-            significant using ANOVA with conf confidnece in F-test.
-
-            Returns:
-                standarderror (float): Standard error of the mean of the data
-                degf (float): Degrees of freedom
-                standarddeviation (float): Standard deviation
-                reprod_significant (bool): If reproducibility between groups is significant and was
-                  used to determine standard error.
+    def _standarderror(self, conf=.95) -> dataset.StandardErrorResult:
+        ''' Compute standard error of the mean of the summarized data.
+            Checks whether reproducibility is significant using ANOVA
+            with conf confidnece in F-test.
         '''
-        pstats = self.pooled_stats()
+        pstats = self._pooled_stats()
         anova_result = self._anova(conf=conf)
-        ngroups = self.ncolumns()
+        ngroups = len(self.means)
+        ntotal = sum(self.nmeas)
 
-        if anova_result.F > anova_result.Fcrit:
+        if anova_result.f > anova_result.fcrit:
             # Reproducibility is significant
             sem = pstats.reproducibility / np.sqrt(ngroups)
             sem_degf = ngroups - 1
@@ -364,68 +312,39 @@ class DataSetSummary(DataSet):
             sem_std = pstats.reproducibility  # Standard deviation used to compute SEM
         else:
             # Reproducibility negligible
-            sem_degf = anova_result.degf_a + anova_result.degf_b
-            sem_std = (anova_result.degf_a*anova_result.sa2 + anova_result.degf_b*anova_result.sb2)/sem_degf
-            sem = np.sqrt(sem_std/anova_result.N)
+            sem_degf = anova_result.degf_msbet + anova_result.degf_mswit
+            sem_std = (anova_result.degf_msbet*anova_result.mean_sumsq_between +
+                       anova_result.degf_mswit*anova_result.mean_sumsq_within)/sem_degf
+            sem = np.sqrt(sem_std/ntotal)
             reprod_significant = False
+        return dataset.StandardErrorResult(
+            sem,
+            sem_std,
+            sem_degf,
+            reprod_significant)
 
-        StandardError = namedtuple(
-            'StandardError', ['standarderror', 'degf', 'standarddeviation', 'reprod_significant'])
-        return StandardError(sem, sem_degf, sem_std, reprod_significant)
-
-    def _anova(self, conf=0.95):
-        ''' Compute ANOVA variables for use in pooled stats and anova reports
-
-            Returns:
-                mean: mean of all data points
-                N: number of data points
-                sa2: variability of daily means
-                sb2: variability of daily observations
-                degf_a: degrees of freedom of sa2
-                degf_b: degrees of freedom of sb2
-                F: Test F value (sa2/sb2)
-                P: Test P value
-                fcrit: Critical F value given conf
-                gstats: Group statistics calculated from group_statistics()
-        '''
-        gstats = self.group_stats()
-        N = sum(gstats.N)
-        mean = sum(gstats.mean)/self.ncolumns()
-        sb2 = sum(gstats.variance * gstats.degf) / sum(gstats.degf)   # Pooled variance
-        degf_b = sum(gstats.degf)
-        degf_a = len(self.colnames) - 1
-        sa2 = sum((gstats.degf+1)*(mean - gstats.mean)**2) / degf_a
-        F = sa2 / sb2
-        P = stats.f.sf(F, dfn=degf_a, dfd=degf_b)
+    def _anova(self, conf=.95) -> dataset.AnovaResult:
+        ''' Analysis of Variance (one-way) for summarized statistics '''
+        gstats = self._group_stats()
+        ncolumns = len(gstats.means)
+        N = sum(gstats.counts)
+        mean = np.mean(gstats.means)
+        sb2 = sum(gstats.variances * gstats.degfs) / sum(gstats.degfs)   # Pooled variance
+        degf_b = sum(gstats.degfs)
+        degf_a = ncolumns - 1
+        sa2 = sum((gstats.degfs+1)*(mean - gstats.means)**2) / degf_a
+        f = sa2 / sb2
+        p = stats.f.sf(f, dfn=degf_a, dfd=degf_b)
         fcrit = stats.f.ppf(q=conf, dfn=degf_a, dfd=degf_b)
-
-        Result = namedtuple('_AnovaStats', ['mean', 'N', 'sa2', 'sb2', 'degf_a', 'degf_b',
-                                            'F', 'P', 'Fcrit', 'gstats'])
-        return Result(mean, N, sa2, sb2, degf_a, degf_b, F, P, fcrit, gstats)
-
-    def anova(self, conf=.95):
-        ''' Analysis of Variance (one-way)
-
-            Returns:
-                f (float): F-statistic
-                fcrit (float): Critical F value.
-                p (float): P value
-                test (bool): True if the groups are statistically the same (f < fcrit and p > 0.05).
-                SSbetween (float): Sum-of-squares of between-group variation
-                SSwithin (float): Sum-of-squares of within-group variation
-                MSbetween (float): Between-group variation
-                MSwithin (float): Within-group variation
-        '''
-        anova = self._anova(conf=conf)
-        ngroups = self.ncolumns()
-        test = (anova.F < anova.Fcrit) and (anova.P > 0.05)
-        MSbetween = anova.sa2
-        MSwithin = anova.sb2
-        SSbetween = MSbetween * (ngroups-1)
-        SSwithin = MSwithin * (anova.N-ngroups)
-
-        AnovaResult = namedtuple('AnovaResult', ['F', 'P', 'Fcrit', 'reprod_significant',
-                                                 'SSbet', 'SSwit', 'MSbet', 'MSwit'])
-
-        return AnovaResult(anova.F, anova.P, anova.Fcrit,
-                           test, SSbetween, SSwithin, MSbetween, MSwithin)
+        SSbetween = sa2 * (ncolumns-1)
+        SSwithin = sb2 * (N-ncolumns)
+        return dataset.AnovaResult(
+            f,
+            fcrit,
+            p,
+            SSbetween,
+            SSwithin,
+            sa2,
+            sb2,
+            degf_a,
+            degf_b)

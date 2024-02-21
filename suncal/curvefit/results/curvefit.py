@@ -343,7 +343,7 @@ class CurveFitResultsCombined:
 
     def method(self, name):
         ''' Get results from one method
-        
+
             Args:
                 method (str): Name of method. Can be lsq, gum, montecarlo, or markov
         '''

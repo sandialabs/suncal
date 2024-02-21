@@ -5,14 +5,15 @@ import matplotlib as mpl
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 
-from PyQt5 import QtCore, QtWidgets
+from PyQt6 import QtCore, QtWidgets
 
-# Sequential colormaps defined in matplotlib 2.0
+# Sequential colormaps defined in matplotlib 3.0
 DFLT_CMAPS = ['viridis', 'plasma', 'inferno', 'magma', 'cividis', 'Greys', 'Purples', 'Blues', 'Greens', 'Oranges',
               'Reds', 'YlOrBr', 'YlOrRd', 'OrRd', 'PuRd', 'RdPu', 'BuPu', 'GnBu', 'PuBu', 'YlGnBu', 'PuBuGn', 'BuGn',
-              'YlGn', 'bone', 'pink', 'spring', 'summer', 'autumn', 'winter', 'cool', 'Wistia', 'hot', 'gist_heat',
-              'copper', 'twilight', 'hsv', 'ocean', 'gist_earth', 'terrain', 'gnuplot', 'cubehelix', 'brg',
-              'gist_rainbow', 'jet']
+              'YlGn', 'binary', 'gray', 'bone', 'pink', 'spring', 'summer', 'autumn', 'winter', 'cool', 'Wistia', 'hot',
+              'afmhot', 'gist_heat', 'copper', 'twilight', 'twilight_shifted', 'hsv', 'ocean', 'gist_earth', 'terrain',
+              'gist_stern', 'gnuplot', 'gnuplot2', 'CMRmap', 'cubehelix', 'brg',
+              'gist_rainbow', 'jet', 'turbo', 'nipy_spectral', 'gist_ncar']
 
 
 class ColorMapPickerWidget(QtWidgets.QWidget):
@@ -29,6 +30,7 @@ class ColorMapPickerWidget(QtWidgets.QWidget):
             self.selectedidx = None
         self.fig = Figure()
         self.canvas = FigureCanvas(self.fig)
+        self.canvas.setStyleSheet("background-color:transparent;")
         self.canvas.mpl_connect('button_press_event', self.onclick)
 
         layout = QtWidgets.QVBoxLayout()
@@ -91,7 +93,8 @@ class ColorMapDialog(QtWidgets.QDialog):
         self.setWindowTitle('Select Color Map')
 
         self.cpicker = ColorMapPickerWidget(selectedcmap)
-        self.bbox = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel)
+        self.bbox = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.StandardButton.Ok |
+                                               QtWidgets.QDialogButtonBox.StandardButton.Cancel)
         self.bbox.accepted.connect(self.accept)
         self.bbox.rejected.connect(self.reject)
         self.cpicker.cmappicked.connect(self.accept)

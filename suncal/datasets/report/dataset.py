@@ -10,22 +10,26 @@ class ReportDataSet:
     ''' Report data set/ANOVA results
 
         Args:
-            datasetmodel: DataSet instance
+            datasetresult: DataSetResult instance
     '''
-    def __init__(self, datasetmodel):
-        self.model = datasetmodel
-        self.plot = DataSetPlot(self.model)
+    def __init__(self, datasetresult):
+        self.result = datasetresult
+        self.plot = DataSetPlot(self.result)
 
     def summary(self, **kwargs):
         ''' Group stats '''
         rows = []
-        names = self.model.colnames
-        gstats = self.model.group_stats()
-        meanstrs = report.Number.number_array(gstats.mean, fmin=0)
-        for g, gmean, gvar, gstd, gsem, df in zip(names, meanstrs, gstats.variance,
-                                                  gstats.standarddev, gstats.standarderror, gstats.degf):
-            rows.append([str(g), gmean, report.Number(gvar, fmin=0),
-                         report.Number(gstd, fmin=0), report.Number(gsem, fmin=0), report.Number(df, fmin=0)])
+        # data is None when Summarized Data was entered
+        if self.result.data is None or len(self.result.data) > 0:
+            meanstrs = report.Number.number_array(self.result.groups.means, fmin=0)
+            groups = self.result.groups
+            for i in range(len(groups.means)):
+                rows.append([str(self.result.colnames[i]),
+                            meanstrs[i],
+                            report.Number(groups.variances[i], fmin=0),
+                            report.Number(groups.std_devs[i], fmin=0),
+                            report.Number(groups.std_errs[i], fmin=0),
+                            report.Number(groups.degfs[i], fmin=0)])
 
         rpt = report.Report(**kwargs)
         rpt.table(rows, hdr=['Group', 'Mean', 'Variance', 'Std. Dev.', 'Std. Error', 'Deg. Freedom'])
@@ -40,20 +44,20 @@ class ReportDataSet:
 
     def column(self, column_name=None, **kwargs):
         ''' Stats for one column/group '''
-        st = self.model.column_stats(column_name)
-        dat = self.model.get_column(column_name)
+        group = self.result.group(column_name)
+        data = group.values
         rpt = report.Report(**kwargs)
-        if len(dat) > 0:
-            q025, q25, q75, q975 = np.quantile(dat, (.025, .25, .75, .975))
-            rows = [['Mean', report.Number(st.mean, fmin=0)],
-                    ['Standard Deviation', report.Number(st.standarddev, fmin=3)],
-                    ['Std. Error of the Mean', report.Number(st.standarderr, fmin=3)],
-                    ['Deg. Freedom', f'{st.degf:.2f}'],
-                    ['Minimum',  report.Number(dat.min(), fmin=3)],
+        if len(data) > 0:
+            q025, q25, q75, q975 = np.quantile(data, (.025, .25, .75, .975))
+            rows = [['Mean', report.Number(group.mean, fmin=0)],
+                    ['Standard Deviation', report.Number(group.std_dev, fmin=3)],
+                    ['Std. Error of the Mean', report.Number(group.std_err, fmin=3)],
+                    ['Deg. Freedom', f'{group.degf:.2f}'],
+                    ['Minimum',  report.Number(data.min(), fmin=3)],
                     ['First Quartile', report.Number(q25, fmin=3)],
-                    ['Median', report.Number(np.median(dat), fmin=3)],
+                    ['Median', report.Number(np.median(data), fmin=3)],
                     ['Third Quartile', report.Number(q75, fmin=3)],
-                    ['Maximum', report.Number(dat.max(), fmin=3)],
+                    ['Maximum', report.Number(data.max(), fmin=3)],
                     ['95% Coverage Interval', f'{report.Number(q025, fmin=3)}, {report.Number(q975, fmin=3)}']
                     ]
             rpt.table(rows, hdr=['Parameter', 'Value'])
@@ -61,54 +65,55 @@ class ReportDataSet:
 
     def pooled(self, **kwargs):
         ''' Pooled statistics and Grand Mean '''
-        pstats = self.model.pooled_stats()
-        stderr = self.model.standarderror()
+        pstats = self.result.pooled
+        stderr = self.result.uncertainty
         rows = []
-        rows.append(['Grand Mean', report.Number(pstats.mean, matchto=pstats.repeatability, fmin=0), '-'])
+        rows.append(['Grand Mean', report.Number(pstats.mean, matchto=pstats.repeatability, fmin=0), '&nbsp;'])
         rows.append(['Repeatability (Pooled Standard Deviation)', report.Number(pstats.repeatability),
-                     report.Number(pstats.repeatability_degf, fmin=0)])
+                     report.Number(pstats.repeat_degf, fmin=0)])
         rows.append(['Reproducibility Standard Deviation', report.Number(pstats.reproducibility),
-                     report.Number(pstats.reproducibility_degf, fmin=0)])
-        rows.append(['Reproducibility Significant?', str(stderr.reprod_significant), '-'])
-        rows.append(['Estimate of Standard Deviation of the Mean', report.Number(stderr.standarderror),
-                     report.Number(stderr.degf, fmin=0)])
+                     report.Number(pstats.reprod_degf, fmin=0)])
+        rows.append(['Reproducibility Significant?', str(stderr.reprod_significant), '&nbsp;'])
+        rows.append(['Estimate of Standard Deviation of the Mean', report.Number(stderr.stderr),
+                     report.Number(stderr.stderr_degf, fmin=0)])
         rpt = report.Report(**kwargs)
         rpt.table(rows, hdr=['Statistic', 'Value', 'Degrees of Freedom'])
         return rpt
 
     def anova(self, **kwargs):
         ''' Analysis of variance '''
-        aresult = self.model.anova()
+        aresult = self.result.anova
         hdr = ['Source', 'SS', 'MS', 'F', 'F crit (95%)', 'p-value']
-        rows = [['Between Groups', report.Number(aresult.SSbet), report.Number(aresult.MSbet),
-                report.Number(aresult.F, fmt='decimal'), report.Number(aresult.Fcrit, fmt='decimal'),
-                report.Number(aresult.P, fmt='decimal')],
-                ['Within Groups', report.Number(aresult.SSwit), report.Number(aresult.MSwit), '-', '-', '-'],
-                ['Total', report.Number(aresult.SSbet+aresult.SSwit), '-', '-', '-', '-']]
+        rows = [['Between Groups', report.Number(aresult.sumsq_between), report.Number(aresult.mean_sumsq_between),
+                report.Number(aresult.f, fmt='decimal'), report.Number(aresult.fcrit, fmt='decimal'),
+                report.Number(aresult.p, fmt='decimal')],
+                ['Within Groups', report.Number(aresult.sumsq_within), report.Number(aresult.mean_sumsq_within), '&nbsp;', '&nbsp;', '&nbsp;'],
+                ['Total', report.Number(aresult.sumsq_between+aresult.sumsq_within), '&nbsp;', '&nbsp;', '&nbsp;', '&nbsp;']]
         rpt = report.Report(**kwargs)
         rpt.table(rows, hdr=hdr)
-        rpt.table([['F < Fcrit?', str(aresult.F < aresult.Fcrit)], ['p > 0.05?', str(aresult.P > 0.05)]],
+        rpt.table([['F < Fcrit?', str(aresult.f < aresult.fcrit)], ['p > 0.05?', str(aresult.p > 0.05)]],
                   hdr=['Test', 'Statistically equivalent (95%)?'])
         return rpt
 
     def correlation(self, **kwargs):
         ''' Correlation between columns '''
         rpt = report.Report(**kwargs)
-        if len(self.model.colnames) < 2:
+        if len(self.result.colnames) < 2:
             rpt.txt('Add columns to compute correlation.')
             return rpt
 
-        corr = self.model.correlation()
-        names = self.model.colnames
+        corr = self.result.correlation
+        names = self.result.colnames
         rows = []
         for name, corrow in zip(names, corr):
             rows.append([name] + [report.Number(f) for f in corrow])
-        rpt.table(rows, hdr=['-'] + names)
+        rpt.table(rows, hdr=['&nbsp;'] + names)
         return rpt
 
     def autocorrelation(self, column_name=None, **kwargs):
         ''' Report of autocorrelation for one column '''
-        acor = self.model.autocorrelation_uncert(colname=column_name)
+        idx = self.result.groupidx(column_name)
+        acor = self.result.autocorrelation[idx]
         rows = [['r (variance)', report.Number(acor.r, fmin=0)],
                 ['r (uncertainty)', report.Number(acor.r_unc, fmin=0)],
                 ['nc', str(acor.nc)],
@@ -125,7 +130,7 @@ class DataSetPlot:
             datasetmodel: DataSet instance
     '''
     def __init__(self, datasetmodel):
-        self.model = datasetmodel
+        self.result = datasetmodel
 
     def groups(self, fig=None):
         ''' Plot each group with errorbars.
@@ -134,18 +139,14 @@ class DataSetPlot:
                 fig: Matplotlib figure to plot on
         '''
         _, ax = plotting.initplot(fig)
-        summary = self.model.summarize()
-        gstats = summary.group_stats()
-        x = summary.colnames_parsed()
-        y = gstats.mean
+        gstats = self.result.groups
+        x = self.result.colvals
+        y = gstats.means
         if len(x) != len(y):
             return  # Nothing to plot
-        uy = gstats.standarddev
+        uy = gstats.std_devs
 
         ax.errorbar(x, y, yerr=uy, marker='o', ls='', capsize=4)
-        if self.model.coltype == 'str':
-            ax.set_xticks(x)
-            ax.set_xticklabels(self.model.colnames)
         ax.set_xlabel('Group')
         ax.set_ylabel('Value')
 
@@ -162,9 +163,9 @@ class DataSetPlot:
                 interval (float): Confidence interval to plot as vertical lines
         '''
         fig, _ = plotting.initplot(fig)
-        data = self.model.get_column(colname)
-        if colname is None and len(self.model.colnames) > 0:
-            colname = self.model.colnames[0]
+        data = self.result.group(colname).values
+        if colname is None and len(self.result.colnames) > 0:
+            colname = self.result.colnames[0]
         plotting.fitdist(data, fit, fig=fig, qqplot=qqplot, bins=bins,
                          points=points, coverage=interval, xlabel=colname)
 
@@ -179,19 +180,18 @@ class DataSetPlot:
         '''
         _, ax = plotting.initplot(fig)
 
-        x = self.model.get_column(colname)
-        rho = self.model.autocorrelation(colname)
-
+        acorr = self.result.group_acorr(colname)
+        x = self.result.group(colname).values
         if nmax is None:
             nmax = len(x)
 
         k = ttable.k_factor(conf, np.inf)
-        ax.plot(rho[:nmax+1], marker='o')
+        ax.plot(acorr.rho[:nmax+1], marker='o')
         z = k/np.sqrt(len(x))
         ax.axhline(0, ls='-', color='black')
         ax.axhline(z, ls=':', color='black')
         ax.axhline(-z, ls=':', color='black')
-        sig = sigma_rhok(rho)
+        sig = sigma_rhok(acorr.rho)
         ax.plot(k*sig[:nmax+1], ls='--', color='red')
         ax.plot(-k*sig[:nmax+1], ls='--', color='red')
 
@@ -204,7 +204,7 @@ class DataSetPlot:
                 lag (int): Lag value to plot
         '''
         _, ax = plotting.initplot(fig)
-        x = self.model.get_column(colname)
+        x = self.result.group(colname).values
         ax.plot(x[lag:], x[:len(x)-lag], ls='', marker='o')
 
     def scatter(self, col1, col2, fig=None):
@@ -216,8 +216,8 @@ class DataSetPlot:
                 fig (plt.Figure): Matplotlib figure to plot on
         '''
         _, ax = plotting.initplot(fig)
-        x = self.model.get_column(col1)
-        y = self.model.get_column(col2)
+        x = self.result.group(col1).values
+        y = self.result.group(col2).values
         ax.scatter(x, y, marker='.')
         ax.set_xlabel(col1)
         ax.set_ylabel(col2)

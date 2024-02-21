@@ -1,6 +1,8 @@
 ''' Common functions for plotting results '''
 
-from contextlib import suppress, contextmanager
+import sys
+import os
+from contextlib import contextmanager
 import numpy as np
 from scipy import stats
 import matplotlib as mpl
@@ -10,43 +12,34 @@ from ..common import distributions
 
 
 # Common plot parameters, usage: "with mpl.style.context(plotstyle):"
-plotstyle = {'figure.figsize': (8, 6), 'font.size': 12}
+plotstyle = {'figure.figsize': (10, 8), 'font.size': 14}
 dfltsubplots = {'wspace': .1, 'hspace': .1, 'left': .05, 'right': .95, 'top': .95, 'bottom': .05}
 
 
-# This unfortunately overwrites the user's MPL context, so user notebooks will end up with these params
-# after importing suncal. But matplotlib contexts are broken such that certain parameters won't stay
-# with the plot - see the "won't fix" bug report: https://github.com/matplotlib/matplotlib/issues/11376/
-# meaning things like color='C0' and mathtext.fontset won't actually plot with their context-defined values.
-mpl.style.use('bmh')
+try:
+    # _MEIPASS is added by PyInstaller when running from EXE
+    MPL_STYLE_PATH = sys._MEIPASS
+except AttributeError:
+    MPL_STYLE_PATH = os.path.join(os.path.dirname(__file__), 'style')
 
 
-def setup_mplparams():
-    ''' Set some default matplotlib parameters for things like fonts '''
-    with suppress(AttributeError, KeyError):
-        mpl.rcParams['figure.subplot.left'] = .12
-        mpl.rcParams['figure.subplot.right'] = .95
-        mpl.rcParams['figure.subplot.top'] = .95
-        mpl.rcParams['figure.subplot.bottom'] = .12
-        mpl.rcParams['figure.subplot.hspace'] = .4
-        mpl.rcParams['figure.subplot.wspace'] = .4
-        mpl.rcParams['figure.facecolor'] = 'none'
-        mpl.rcParams['axes.formatter.use_mathtext'] = True
-        mpl.rcParams['axes.formatter.limits'] = [-4, 4]
-        mpl.rcParams['mathtext.fontset'] = 'stixsans'
-        mpl.rcParams['mathtext.default'] = 'regular'
-        mpl.rcParams['figure.max_open_warning'] = 0
-        mpl.rcParams['axes.formatter.useoffset'] = False
+def activate_plotstyle(style: str, dark: bool = False) -> None:
+    ''' Activate the Matplotlib style, either `Suncal` or
+        one of the styles returned from mpl.style.available().
 
-        # v3.3 of Matplotlib made a really bad decision to change the epoch used by num2date
-        # for plotting so that datetime.toordinal() does not give the same float date as num2date()
-        # unless epoch is overridden like this. But it could be broken by the user if they
-        # change rcParams after importing suncal. MPL < 3.3 will raise KeyError here, but it should
-        # be suppressed above
-        mpl.rcParams['date.epoch'] = '0000-12-31T00:00:00'
+        Suncal automatically switches to dark theme when dark=True.
+    '''
+    mpl.rcParams.update(mpl.rcParamsDefault)
+    mpl.rcParams['date.epoch'] = '0000-12-31T00:00:00'
+    if style == 'Suncal' and dark:
+        mpl.style.use(os.path.join(MPL_STYLE_PATH, 'suncal_dark.mplstyle'))
+    elif style == 'Suncal':
+        mpl.style.use(os.path.join(MPL_STYLE_PATH, 'suncal_light.mplstyle'))
+    else:
+        mpl.style.use(style)
 
 
-setup_mplparams()
+activate_plotstyle('Suncal')
 
 
 class ReportPlot:
@@ -139,7 +132,7 @@ def probplot(y, ax, sparams=None, dist='norm', conf=.95):
 
     ax.plot(z, y, marker='o', ls='', color='C0')
     ax.plot(z, fitval, ls='-', color='C1')
-    ax.fill_between(z, fitval-zz*SE, fitval+zz*SE, alpha=.4, color='C2')
+    ax.fill_between(z, fitval-zz*SE, fitval+zz*SE, alpha=.4, color='C3')
     ax.set_xlabel(f'Theoretical Quantiles ({dist})')
     ax.set_ylabel('Ordered Sample Values')
 
@@ -202,7 +195,7 @@ def fitdist(y, distname='norm', fig=None, qqplot=False, bins='sqrt', points=None
 
             probplot(ythin, ax2, sparams=params, dist=distname)
         return fitparams
-
+    return None
 
 def equalize_scales(axis1, axis2):
     ''' Set axis scales equal

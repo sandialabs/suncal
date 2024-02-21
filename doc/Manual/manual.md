@@ -1,6 +1,6 @@
 ---
 title: Suncal User's Guide
-date: May 26, 2023
+date: February 15, 2024
 author:
 - Sandia National Laboratories^[Sandia National Laboratories is a multimission laboratory managed and operated by National Technology and Engineering Solutions of Sandia, LLC., a wholly owned subsidiary of Honeywell International, Inc., for the U.S. Department of Energy’s National Nuclear Security Administration under contract DE-NA-0003525.]
 - uncertainty@sandia.gov
@@ -92,7 +92,7 @@ Both calculation methods also provide a method for computing expanded uncertaint
 ### Wizard Interface
 
 Selecting the **Uncertainty Wizard** button from the main menu opens a guided interface for entering a measurement model and uncertainties associated with each input variable.
-While the wizard is limited to a single function in the measurement model, it does provide easy methods for configuring variables based on a single measurement value, or a repeatability or reproducibility array of values, while taking care of the uncertainty calculation from the array of data.
+The wizard is limited to a single function in the measurement model, but provides a simpler step-by-step approach for entering the data.
 The **Help** button in the wizard interface shows more details about the prompt for information to ensure the correct values are entered.
 After calculating, results from the wizard interface are identical to results from the standard interface described below.
 
@@ -127,7 +127,7 @@ These equations may be chained together, for example "f = a + b", and "g = 2*f".
 
 Once a function is entered, the **Uncertainties** table is filled in with the variable names extracted from the measurement model equations.
 In this table, the nominal measured value, measurement units, and a description of each variable can be entered, along with one or more uncertainty components for each measurement variable.
-If a variable has more than one uncertainty component (e.g. a type A and type B component), click the plus (+) button on the right side of the table or right-click on the variable and select **Add uncertainty component.**
+If a variable has more than one uncertainty component, click the plus (+) button on the right side of the table or right-click on the variable and select **Add uncertainty component.**
 When multiple components are present, the standard uncertainty of each component is root-sum-squared together to obtain a standard uncertainty for the variable used by the GUM equation, and the degrees of freedom are combined using the W-S formula.
 The Monte Carlo method will separately sample each component before combining.
 
@@ -157,15 +157,6 @@ The abbreviations `ppb` and `ppbrange()` can also be used to specify parts per b
 ![Entering an uncertainty as a percent reading + percent range](figs/Figure_2_4.png){#id .class width=3in #fig:uncertpercent}
 
 
-#### Correlated Uncertainties
-
-If the input variables are correlated, these can be entered on the **Correlations** section (see {*@fig:correlation}).
-Correlation coefficients are entered one pair at a time, and must be a value between -1 and +1.
-Use the plus (+) button or right-click the table to add or remove correlation coefficients.
-
-![Correlation coefficient entry table](figs/Figure_2_5.png){#fig:correlation}
-
-
 #### Entering Units
 
 The Measurement Model and Uncertainties tables allow entry of measurement units.
@@ -191,20 +182,32 @@ Custom units can also be defined in the **Preferences** menu.
 Uncertainties do not necessarily need to be the same units as their input variables, for example a nominal value could be in meters with uncertainty in millimeters.
 Conversions will happen automatically to produce a result in the units specified in the Measurement Model table.
 
-
 #### Loading uncertainties from measured data
 
-If the measurements consist of multiple measured values stored in a CSV file, both the uncertainties and correlations can be loaded by selecting **Import uncertainty distributions** from the **Uncertainty** menu (see {*@fig:importing}).
-In this dialog, first select a data source, which can be a CSV file or the result of another calculation in the project.
-Use the table and the **Assigned Variable** dropdown to select which columns of the data to import.
-Use the **Distribution to Fit** dropdown to select different probability distributions, or use the default of normal distribution, computing standard error of the mean of the column of data.
-After clicking **OK**, the assigned distributions will be loaded into the uncertainty calculation.
+If the measurements consist of multiple measured values (i.e. Type A uncertainties), the raw measurement values may be entered directly and Type A uncertainty computed automatically.
+Click the button **Enter Type A measurement data** in the right most column of the measured values table, or select **Type A Measurement Data** from the **Uncertainty** menu
+to display a dialog for entering the measured values (see {*@fig:typeadata}).
+Choose the variable from the drop down, and type or paste the measured values into the table. Values may be a single column of repeatability measurements, or multiple
+columns of reproducibility measurements. Statistics and the estimated standard uncertainty for the data set will be shown. Click **OK** to migrate the data
+into the Measured Values table. If data for multiple variables is entered and the same number of measurements was made for each, the correlation between variables will also
+be computed and included in the calculation.
 
-![Importing measurement data into uncertainty propagation](figs/Figure_2_6.png){#fig:importing}
+The Type A dialog also provides a button for loading the values from a CSV file, and for importing the results of another Suncal calculation in the project (such as results of a Curve Fit calculation).
+
+![Type A measurement dialog](figs/Figure_2_6.png){#fig:typeadata}
+
+#### Correlated Uncertainties
+
+If the input variables are correlated, these can be entered on the **Correlations** section (see {*@fig:correlation}).
+Correlation coefficients are entered one pair at a time, and must be a value between -1 and +1.
+Use the plus (+) button or right-click the table to add or remove correlation coefficients.
+
+![Correlation coefficient entry table](figs/Figure_2_5.png){#fig:correlation}
+
+#### Settings
 
 Finally, the **Notes** section contains a field for entering your own information to save with the calculation, and the **Settings** section allows entry of the number of Monte Carlo samples and the random number generator seed.
 A seed of "None" will be randomized on every run.
-
 
 
 ### Outputs
@@ -456,17 +459,25 @@ The Correlations view shows the correlation coefficient between the fit paramete
 ## Risk Analysis
 
 The Risk Analysis calculation computes the risk associated with process and/or test distributions falling outside of specification limits.
-This tool has two operating modes: Simple and Full.
 
-In Simple mode, the risk calculation follows [@deaver] by assuming normal distributions and symmetric acceptance limits.
+### Simple Risk Tool
+
+A simplified risk calculation tool is always avaliable by selectin **Risk Calculator** from the **Tools** menu. In this tool, the risk calculation follows [@deaver] by assuming normal distributions and symmetric acceptance limits.
 Parameters are entered in terms of a test uncertainty ratio (TUR), in-tolerance probability (itp), and guardband factor.
 
-![Simple risk analysis assume both distributions are normal and symmetric.](figs/Figure_2_13.png){#fig:risksimple}
+![Simple risk analysis tool based on TUR and ITP](figs/Figure_2_13.png){#fig:risksimple}
 
-In Full mode, both process and test distributions, along with absolute acceptance limits and guardband limits, are specified. No assumptions are made about distribution type.
-With only a process distribution and specification limits, the probability of a value on the distribution falling outside the limit is calculated by integrating the probability distribution function outside the limits to give the "process risk".
-When a Test Measurement is added, the total probability of false accept and total probability of false reject is computed by the double integral of the product of the two distributions falling outside the limits.
-Non-normal distributions can also be entered and are integrated numerically using the same approach.
+### Risk Calculation
+
+By selectin **Risk Analysis** from the main project menu, a more full-featured risk calculation is presented.
+Probability distributions for the process/population and the test measurement are entered, along with absolute acceptance limits and guardband limits.
+Unlike the Simple Risk Tool, no assumptions are made about distribution type; non-normal distributions can also be entered and are integrated numerically using the same approach.
+The "Process Risk" considers only the process distribution, and is calculated as the probability of the process distribution falling outside the limit.
+The "Specific Measurement Risk" considers only the measurement distribution, and is given in terms of the specific risk for the entered measurement value and as the worst-case
+specific risk that typically occurs when a value is measured on one of the acceptance limits.
+
+The "Global Risk" column calculates the total probability of false accept and total probability of false reject as the double integral of the product of the two distributions falling outside the limits.
+
 An optional guardband can be entered, as a relative offset to the specification limit; for example, with an upper specification limit of 2 and guardband of 0.1, the product will be rejected with a measurement over 1.9.
 The **Risk** menu provides an option for computing a guardband.
 The guardband can be computed using one of several common methods (such as the RSS method $k = \sqrt{1-1/TUR^2}$), or by targeting a specific false accept probability.
@@ -475,15 +486,15 @@ This method uses a numerical minimization technique to solve for the limits on t
 ![Full risk analysis allowing complete specification of process and test distributions](figs/Figure_2_14.png){#fig:riskanalysis}
 
 The **Calculation** dropdown allows selection of different calculations on risk.
-Integral mode calculates PFA and PFR by numerically integrating the joint probability distribution.
-A Monte Carlo calculation is also available. This method pulls random samples from the test and process distribution and counts the number of false accepts and false rejects to determine the PFA and PFR probabilities.
+"Risk"" mode calculates PFA and PFR by numerically integrating the joint probability distribution.
 
-![Monte Carlo risk calculation](figs/Figure_2_15.png){#fig:riskMC}
+The "Guardband Sweep" mode plots how PFA and PFR change with different guardband factors and can be useful for finding an optimal trade off between false accept and false reject.
+"Probability of Conformance" mode plots the probability that a given measurement result is a conforming product, useful when no prior information is available on the distribution of possible products.
 
-The Guardband Sweep mode plots how PFA and PFR change with different guardband factors and can be useful for finding an optimal trade off between false accept and false reject.
-Probability of Conformance mode plots the probability that a given measurement result is a conforming product, useful when no prior information is available on the distribution of possible products.
-The Risk Curves mode generates sweeps of PFA and PFR with TUR, itp, guardband factor, and bias. One of these variables must be selected as the sweep (x) value,
-and another can optionally be selected as the step (z) variable.
+### Risk Curves
+
+A Risk Curves Tool, available from the **Tools** menu, generates sweeps of PFA and PFR with TUR, itp, guardband factor, and bias.
+One of these variables must be selected as the sweep (x) value, and another can optionally be selected as the step (z) variable.
 The remaining variables are set as constants.
 The sweep values can then be entered by defining a start value, stop value, and the number of sweep points.
 Step values are entered as a comma-separated list of individual values.
@@ -541,7 +552,7 @@ Click **Sample** to pull random samples from a distribution and see the resultin
 
 ## T-Table Calculator
 
-From the **Window** menu, select **T-Table** for a dialog box that calculates values based on the Student-t distribution (see {*@fig:ttable}).
+From the **Tools** menu, select **T-Table** for a dialog box that calculates values based on the Student-t distribution (see {*@fig:ttable}).
 The calculator can solve for the coverage factor k, the confidence level, or the degrees of freedom when given the other two parameters.
 A comparison plot of a normal and a t-distribution with the given degrees of freedom is also shown as a reference.
 
@@ -563,16 +574,14 @@ The **Examples** folder in the source repository contains several saved projects
 
 In many calculation functions, data from one calculation result can be loaded as the input to another calculation.
 For example, the prediction band at a specific x date of a curve fit calculation (see {*@fig:importdistribution}) can be imported into a risk analysis
-calculation (select **Import Distribution** in the **Risk** menu) to determine the probability of an out-of-tolerance condition at a given date.
-Results of an uncertainty sweep or ANOVA data set can be loaded into a curve fit calculation (by selecting **Insert Data From** from the **Curve Fit** menu)
+calculation (select **Import Process Distribution** in the **Risk** menu) to determine the probability of an out-of-tolerance condition at a given date.
+Results of an uncertainty sweep or ANOVA data set can be loaded into a curve fit calculation (by selecting **Insert Data From Project** from the **Curve Fit** menu)
 or even another sweep calculation.
-After selecting the data source, a table will be filled in with data from that source. Use the **Assigned Variable** dropdown to select which columns in the table
-should be used with which options in the calculation. If the column is based on a particular x-value (such as the confidence or prediction band of a curve fit),
-an **X Value** option will be shown.
-Once the assignments have been made, the distribution can be imported into the calculation.
+Double-click the desired data source in the **Data Source** table. Some sources require extra information, such as a particular x-value 
+when importing data from the confidence or prediction band of a curve fit.
 Importing data is a one-time event. If the original calculation data changes, the data will need to be re-imported into the second calculation.
 
-![Loading the prediction band distribution of a curve fit into a risk analysis](figs/Figure_3_1.png){#fig:importdistribution}
+![Loading a data set summary into a curve fit](figs/Figure_3_1.png){#fig:importdistribution}
 
 
 ## Reports

@@ -61,8 +61,8 @@ def test_saveload_fname(tmpdir):
     projexp.get_config()
 
     projdset = project.ProjectDataSet()
-    projdset.model.data = np.vstack((np.repeat(np.arange(5), 5),
-                                     np.random.normal(loc=10, scale=1, size=25))).transpose()
+    projdset.setdata(np.random.normal(loc=10, scale=1, size=(5, 5)))
+    projdset.setcolnames([1, 2, 3, 4, 5])
 
     proj = project.Project()
     proj.add_item(proj1)

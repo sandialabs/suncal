@@ -106,13 +106,14 @@ class McResults:
             name = self.functionnames[0]
         return self.expected[name]
 
-    def expand(self, name=None, shortest=False, conf=0.95):
+    def expand(self, name=None, shortest=False, conf=0.95, k=None):
         ''' Get a single expanded uncertainty
 
             Args:
                 name: Name of the function
                 shortest (bool): Use shortest interval instead of symmetric interval
                 conf: Level of confidence to expand to
+                k (float): Coverage factor for interval, overrides conf
 
             Returns:
                 Expanded uncertainty
@@ -133,20 +134,26 @@ class McResults:
             low = y[ridx]
             high = y[ridx+quant]
             k = unitmgr.strip_units((high-low) / (2*self.uncertainty[name]), reduce=True)
-        else:
+        elif k is None:
             quantiles = 100*(1-conf)/2, 100-100*(1-conf)/2
             low, high = np.nanpercentile(self.samples[name], quantiles)
             k = unitmgr.strip_units((high-low) / (2*self.uncertainty[name]), reduce=True)
+        else:
+            low = self.expected[name] - self.uncertainty[name]*k
+            high = self.expected[name] + self.uncertainty[name]*k
+            inrange = np.count_nonzero((low < self.samples[name]) & (self.samples[name] < high))
+            conf = inrange/len(self.samples[name])
 
         low = unitmgr.convert(low, self._units.get(name))
         high = unitmgr.convert(high, self._units.get(name))
         return Expanded(low, high, k, conf)
 
-    def expanded(self, conf=0.95, shortest=False):
+    def expanded(self, conf=0.95, k=None, shortest=False):
         ''' Expanded uncertainties
 
             Args:
                 conf (float): Level of confidence in expanded interval
+                k (float): Coverage factor for interval, overrides conf
                 shortest (bool): Use shortest interval instead of symmetric interval
 
             Returns:
@@ -155,7 +162,7 @@ class McResults:
         assert 0 < conf < 1
         expanded = {}
         for fname in self.functionnames:
-            expanded[fname] = self.expand(fname, conf=conf, shortest=shortest)
+            expanded[fname] = self.expand(fname, conf=conf, k=k, shortest=shortest)
         return expanded
 
     def sensitivity(self):

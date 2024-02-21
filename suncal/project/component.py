@@ -3,30 +3,72 @@
 import numpy as np
 import yaml
 
+from ..common import unitmgr
+
 
 # pyYaml can't serialize numpy float64 for some reason. Add custom representer.
-def np64_representer(dumper, data):
+def np64_representer(dumper: yaml.Dumper, data: np.float64):
     ''' Represent numpy float64 as yaml '''
     return dumper.represent_float(float(data))  # Just convert to regular float.
 
 
-def npi64_representer(dumper, data):
+def npi64_representer(dumper: yaml.Dumper, data: np.int64):
     ''' Represent numpy int64 as yaml '''
     return dumper.represent_int(int(data))
 
 
+def ndarray_representer(dumper: yaml.Dumper, array: np.ndarray) -> yaml.Node:
+    ''' Represent numpy ndarray as list in yaml '''
+    return dumper.represent_list(array.tolist())
+
+
+def unit_representer(dumper: yaml.Dumper, value):
+    return dumper.represent_scalar('!quantity', format(value))
+
+
+def unit_constructor(loader, value):
+    qty = unitmgr.parse_expression(value.value)
+    return qty
+
+
 yaml.add_representer(np.float64, np64_representer)
 yaml.add_representer(np.int64, npi64_representer)
+yaml.add_representer(np.ndarray, ndarray_representer)
+yaml.add_representer(unitmgr.Quantity, unit_representer)
+yaml.add_constructor(u'!quantity', unit_constructor, Loader=yaml.Loader)
 
 
 class ProjectComponent:
     ''' Base class for all project components '''
+    def __init__(self, name=None):
+        self.name = name
+        self.description = ''
+        self.project = None  # Project this belongs to
+        self._result = None
+
+    @property
+    def result(self):
+        ''' DataSet calculation result '''
+        if self._result is None:
+            self.calculate()
+        return self._result
+
+    def calculate(self):
+        ''' Calculate the result '''
+        # Subclass this
+
     def get_config(self):
         ''' Get configuration dictionary. Subclass this. '''
-        return {}
+        return {'name': self.name,
+                'description': self.description}
 
     def load_config(self, config):
         ''' Load configuration into project component. Subclass this. '''
+
+    @property
+    def component_type(self) -> str:
+        ''' Type name of the project component '''
+        return self.__class__.__name__[7:]  # remove the "Project" part
 
     @classmethod
     def from_config(cls, config):
@@ -73,7 +115,7 @@ class ProjectComponent:
             return None
 
         try:
-            config = yaml.safe_load(yml)
+            config = yaml.load(yml, Loader=yaml.Loader)
         except yaml.YAMLError:
             return None  # Can't read YAML
 

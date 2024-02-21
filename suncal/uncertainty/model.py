@@ -135,7 +135,7 @@ class Model(ModelBase):
         for exp in self.basesympys.values():
             Cx_row = []
             for var in self.varnames:
-                Cx_row.append(sympy.Derivative(exp, sympy.Symbol(var), evaluate=True).simplify())
+                Cx_row.append(sympy.Derivative(exp, sympy.Symbol(var), evaluate=True))
             Cx.append(Cx_row)
         return Cx
 

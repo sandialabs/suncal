@@ -1,5 +1,30 @@
 # Change History
 
+## Version 1.6.5
+
+Enhancements:
+
+- Allow entry of Type A measurement data directly into Uncertainty interface
+- Updated cost-based guardbanding to work with arbitrary distributions
+- (Re)add Level of Confidence vs Coverage Factor dropdown in expanded uncertainty results
+- Simplified data importing dialogs
+- Moved some Risk calculation functions to Tools menu
+- Added PFR Target guardbanding
+- Show worst-case specific risk in risk calculation report
+- Enabled dark mode switching
+
+Bug Fixes:
+- Fixed PFR calculation with single-sided limits
+- Fixed guardbanding in Risk Curves tool
+- Fixed potential issue calculating uncertainty with expression containing log of constant value
+
+Other updates:
+- Changed DataSets API to match other calculation types
+- Removed deprecated UncertCalc class
+- Upgraded UI to use QT6
+- Updated for compatibility with Python 3.12
+
+
 ## Version 1.6.4
 
 - Added inline help documentation

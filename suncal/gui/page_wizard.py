@@ -4,7 +4,7 @@ from enum import IntEnum, auto
 from contextlib import suppress
 
 import numpy as np
-from PyQt5 import QtWidgets, QtGui, QtCore
+from PyQt6 import QtWidgets, QtGui, QtCore
 from pint import PintError, OffsetUnitCalculusError
 import sympy
 import matplotlib.pyplot as plt
@@ -12,10 +12,12 @@ from matplotlib.figure import Figure
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 
 from . import gui_common  # noqa: F401
-from . import gui_widgets
+from . import widgets
+from . import gui_styles
+from . import gui_math
 from .help_strings import WizardHelp
 from ..uncertainty.variables import Typeb
-from ..project.proj_wizard import ProjectUncertWizard, VariableDataType
+from ..project.proj_uncert import ProjectUncert, MeasuredDataType
 from ..common import report, unitmgr, uparser, ttable
 from ..datasets.dataset_model import DataSet
 from ..datasets.dataset import uncert_autocorrelated
@@ -45,12 +47,13 @@ class UncertWizard(QtWidgets.QWidget):
     change_help = QtCore.pyqtSignal()  # Tell main window to refresh help display
     open_help = QtCore.pyqtSignal()  # Request to open the help report widget
 
-    def __init__(self, projitem=None, parent=None):
+    def __init__(self, component=None, parent=None):
         super().__init__(parent)
-        if projitem is None:
-            self.projitem = ProjectUncertWizard()
+        if component is None:
+            self.component = ProjectUncert()
         else:
-            self.projitem = projitem
+            self.component = component
+        self.component.iswizard = True
 
         self.currentvar = None  # Current variable being modified
         self.currentunc = None
@@ -61,13 +64,13 @@ class UncertWizard(QtWidgets.QWidget):
         self.btnBack = QtWidgets.QPushButton()
         self.btnNext = QtWidgets.QPushButton()
         self.btnHelp = QtWidgets.QPushButton('Help')
-        self.btnBack.setIcon(self.style().standardIcon(QtWidgets.QStyle.SP_ArrowLeft))
-        self.btnNext.setIcon(self.style().standardIcon(QtWidgets.QStyle.SP_ArrowRight))
-        self.btnHelp.setIcon(self.style().standardIcon(QtWidgets.QStyle.SP_TitleBarContextHelpButton))
-        self.stack = gui_widgets.SlidingStackedWidget()
+        self.btnBack.setIcon(self.style().standardIcon(QtWidgets.QStyle.StandardPixmap.SP_ArrowLeft))
+        self.btnNext.setIcon(self.style().standardIcon(QtWidgets.QStyle.StandardPixmap.SP_ArrowRight))
+        self.btnHelp.setIcon(self.style().standardIcon(QtWidgets.QStyle.StandardPixmap.SP_TitleBarContextHelpButton))
+        self.stack = widgets.SlidingStackedWidget()
 
         self.menu = QtWidgets.QMenu('&Uncertainty')
-        self.actSaveReport = QtWidgets.QAction('Save Report...', self)
+        self.actSaveReport = QtGui.QAction('Save Report...', self)
         self.menu.addAction(self.actSaveReport)
         self.actSaveReport.setEnabled(False)
         self.actSaveReport.triggered.connect(self.save_report)
@@ -105,9 +108,9 @@ class UncertWizard(QtWidgets.QWidget):
         self.outpage.change_help.connect(self.change_help)
 
         # Navigate by Enter/Return key
-        self.shortcut_next = QtWidgets.QShortcut(QtGui.QKeySequence('enter'), self)
+        self.shortcut_next = QtGui.QShortcut(QtGui.QKeySequence('enter'), self)
         self.shortcut_next.activated.connect(self.gonext)
-        self.shortcut_next2 = QtWidgets.QShortcut(QtGui.QKeySequence('return'), self)
+        self.shortcut_next2 = QtGui.QShortcut(QtGui.QKeySequence('return'), self)
         self.shortcut_next2.activated.connect(self.gonext)
 
         self.stack.currentWidget().initialize()
@@ -136,7 +139,7 @@ class UncertWizard(QtWidgets.QWidget):
                 pageid = None
 
             if pageid == Pages.OUTPUT:
-                self.outpage.update(self.projitem.result)
+                self.outpage.update(self.component.result)
                 self.outpage.outputupdate()
                 self.stack.slideInLeft(Pages.OUTPUT)
                 self.btnBack.setEnabled(True)
@@ -160,6 +163,7 @@ class UncertWizard(QtWidgets.QWidget):
             if pageid is not None:
                 self.stack.widget(pageid).initialize()
                 self.btnBack.setEnabled(self.stack.widget(pageid).backenabled)
+                self.btnNext.setEnabled(True)
                 self.stack.slideInRight(pageid)
                 self.change_help.emit()
 
@@ -179,15 +183,16 @@ class UncertWizard(QtWidgets.QWidget):
 
     def current_randvar(self):
         ''' Get the current input variable being worked on '''
-        return self.projitem.model.var(self.currentvar)
+        return self.component.model.var(self.currentvar)
 
     def calculate(self):
         ''' Run the calculation '''
-        return self.projitem.calculate()
+        return self.component.calculate()
 
     def save_report(self):
         ''' Save full output report to file, using user's GUI settings '''
-        gui_widgets.savereport(self.get_report())
+        with gui_styles.LightPlotstyle():
+            widgets.savereport(self.outpage.generate_report())
 
     def get_report(self):
         ''' Get output report '''
@@ -261,34 +266,30 @@ class PageMeasModel(Page):
             expr = expr.strip()
         symexpr, consts = uparser.parse_math_with_quantities(expr, raiseonerr=False)
         if symexpr is None:
-            self.validindicator.setPixmap(self.style().standardPixmap(QtWidgets.QStyle.SP_DialogNoButton))
+            self.validindicator.setPixmap(self.style().standardPixmap(
+                QtWidgets.QStyle.StandardPixmap.SP_DialogNoButton))
             self.wizard.btnNext.setEnabled(False)
         else:
-            self.validindicator.setPixmap(self.style().standardPixmap(QtWidgets.QStyle.SP_DialogYesButton))
-            ratio = QtWidgets.QApplication.instance().devicePixelRatio()
-            px = QtGui.QPixmap()
-            tex = uparser.parse_math_with_quantities_to_tex(expr)
-            px.loadFromData(report.Math.from_latex(tex).svg_buf(fontsize=16*ratio).read())
-            px.setDevicePixelRatio(ratio)
+            self.validindicator.setPixmap(self.style().standardPixmap(
+                QtWidgets.QStyle.StandardPixmap.SP_DialogYesButton))
+            px = gui_math.pixmap_from_latex(expr)
             self.eqlabel.setPixmap(px)
 
             varnames = ', '.join(sorted(sympy.latex(s) for s in symexpr.free_symbols if str(s) not in consts))
-            px = QtGui.QPixmap()
-            px.loadFromData(report.Math.from_latex(varnames).svg_buf(fontsize=16*ratio).read())
-            px.setDevicePixelRatio(ratio)
+            px = gui_math.pixmap_from_latex(varnames)
             self.varlabel.setPixmap(px)
             self.wizard.btnNext.setEnabled(True)
 
     def initialize(self):
-        if len(self.wizard.projitem.model.exprs) > 0:
-            self.txtFunction.setText(self.wizard.projitem.model.exprs[0])
+        if len(self.wizard.component.model.exprs) > 0:
+            self.txtFunction.setText(self.wizard.component.model.exprs[0])
         else:
             self.txtFunction.setText('f = x')
         self.txtFunction.setFocus()
 
     def gonext(self):
-        self.wizard.projitem.set_function(self.txtFunction.text())
-        missing = self.wizard.projitem.missingvars
+        self.wizard.component.set_function(self.txtFunction.text())
+        missing = self.wizard.component.missingvars
         if len(missing) == 0:
             return Pages.SUMMARY
         self.wizard.currentvar = missing[0]
@@ -315,10 +316,7 @@ class VarnameTitle(QtWidgets.QWidget):
 
     def setvarname(self, varname, title2=None):
         ''' Set the variable name to show in title '''
-        ratio = QtWidgets.QApplication.instance().devicePixelRatio()
-        px = QtGui.QPixmap()
-        px.loadFromData(report.Math.from_latex(sympy.latex(sympy.Symbol(varname))).svg_buf(fontsize=16*ratio).read())
-        px.setDevicePixelRatio(ratio)
+        px = gui_math.pixmap_from_sympy(sympy.Symbol(varname))
         self.varname.setPixmap(px)
         if title2 is not None:
             self.title2.setText(title2)
@@ -347,13 +345,13 @@ class PageDatatype(Page):
 
     def initialize(self):
         varname = self.wizard.currentvar
-        self.optSkip.setEnabled(len(self.wizard.projitem.missingvars) > 1)
+        self.optSkip.setEnabled(len(self.wizard.component.missingvars) > 1)
         self.title.setvarname(varname)
-        if varname in self.wizard.projitem.model.variables.names:
-            inpttype = self.wizard.projitem.inpt_type(varname)
-            if inpttype == VariableDataType.REPEATABILITY:
+        if varname in self.wizard.component.model.variables.names:
+            inpttype = self.wizard.component.variable_type(varname)
+            if inpttype == MeasuredDataType.REPEATABILITY:
                 self.optRepeat.setChecked(True)
-            elif inpttype == VariableDataType.REPRODUCIBILITY:
+            elif inpttype == MeasuredDataType.REPRODUCIBILITY:
                 self.optReprod.setChecked(True)
             else:
                 self.optSingle.setChecked(True)
@@ -366,7 +364,7 @@ class PageDatatype(Page):
         elif self.optReprod.isChecked():
             page = Pages.REPROD
         elif self.optSkip.isChecked():
-            missingvars = self.wizard.projitem.missingvars
+            missingvars = self.wizard.component.missingvars
             if len(missingvars) > 1:
                 missingvars.remove(self.wizard.currentvar)
             self.wizard.currentvar = missingvars[0]
@@ -383,7 +381,7 @@ class PageSingle(Page):
     ''' Page for single nominal value if no Type A '''
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.title = VarnameTitle('What is the expected value of variable', varname='x', title2='?')
+        self.title = VarnameTitle('What is the expected value of variable', varname='x', title2='(with optional units)?')
         self.txtValue = QtWidgets.QLineEdit()
         self.lblValue = QtWidgets.QLabel()
         self.backenabled = True
@@ -402,8 +400,8 @@ class PageSingle(Page):
     def initialize(self):
         varname = self.wizard.currentvar
         self.title.setvarname(varname)
-        if varname in self.wizard.projitem.variablesdone:
-            var = self.wizard.projitem.model.var(varname)
+        if varname in self.wizard.component.variablesdone:
+            var = self.wizard.component.model.var(varname)
             self.txtValue.setText(f'{var.value[0]}')
         else:
             self.txtValue.setText('')
@@ -436,7 +434,7 @@ class PageSingle(Page):
                 value, unit = qty.magnitude, format(qty.units, 'D')
             else:
                 value, unit = qty, None
-            self.wizard.projitem.set_inputval(varname, value, unit)
+            self.wizard.component.measure_variable(varname, value, unit)
             return Pages.UNCERTS
         return None
 
@@ -452,7 +450,7 @@ class PageUncerts(Page):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.title = VarnameTitle('These are the expected value and standard uncertainties for', varname='x', title2='')
-        self.uncsummary = gui_widgets.MarkdownTextEdit()
+        self.uncsummary = widgets.MarkdownTextEdit()
         self.backenabled = False
         self.optGood = QtWidgets.QRadioButton('These look good, keep going')
         self.optAdd = QtWidgets.QRadioButton('Add a Type B uncertainty')
@@ -499,11 +497,11 @@ class PageUncerts(Page):
 
     def gonext(self):
         if self.optGood.isChecked():
-            missingvars = self.wizard.projitem.missingvars
+            missingvars = self.wizard.component.missingvars
             if len(missingvars) == 0:
                 # All inputs defined, go to summary
                 self.wizard.currentvar = None
-                units = self.wizard.projitem.model.variables.units
+                units = self.wizard.component.model.variables.units
                 if all(u is None or unitmgr.is_dimensionless(u) for u in units.values()):
                     page = Pages.SUMMARY
                 else:
@@ -515,16 +513,16 @@ class PageUncerts(Page):
             page = Pages.TYPEB
         else:
             randvar = self.wizard.current_randvar()
-            datatype = self.wizard.projitem.inpt_type(self.wizard.currentvar)
+            datatype = self.wizard.component.variable_type(self.wizard.currentvar)
             dlg = ModifySelect(randvar, datatype, parent=self)
-            ok = dlg.exec_()
+            ok = dlg.exec()
             if ok:
                 comp = dlg.get_comp()
-                if comp == 'measured' and datatype == VariableDataType.SINGLE:
+                if comp == 'measured' and datatype == MeasuredDataType.SINGLE:
                     page = Pages.SINGLE
-                elif comp == 'measured' and datatype == VariableDataType.REPEATABILITY:
+                elif comp == 'measured' and datatype == MeasuredDataType.REPEATABILITY:
                     page = Pages.REPEAT
-                elif comp == 'measured' and datatype == VariableDataType.REPRODUCIBILITY:
+                elif comp == 'measured' and datatype == MeasuredDataType.REPRODUCIBILITY:
                     page = Pages.REPROD
                 else:
                     page = Pages.TYPEB
@@ -544,11 +542,12 @@ class ModifySelect(QtWidgets.QDialog):
         self.setWindowTitle('Suncal')
         self.randvar = randvar
         self.datatype = datatype
-        self.buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel)
+        self.buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.StandardButton.Ok |
+                                                  QtWidgets.QDialogButtonBox.StandardButton.Cancel)
         layout = QtWidgets.QVBoxLayout()
         layout.addWidget(QtWidgets.QLabel('Select component to modify'))
         self.opts = []
-        if self.datatype == VariableDataType.SINGLE:
+        if self.datatype == MeasuredDataType.SINGLE:
             self.opts.append(QtWidgets.QRadioButton('Nominal Value'))
             layout.addWidget(self.opts[-1])
         else:
@@ -598,7 +597,6 @@ class DistributionPlotWidget(QtWidgets.QWidget):
                 x = unitmgr.strip_units(x)
                 ax.plot(x, y)
                 ax.yaxis.set_ticks([])
-                self.figure.tight_layout()
             self.canvas.draw_idle()
 
 
@@ -627,7 +625,7 @@ class DistributionWidget(QtWidgets.QWidget):
         kvalidator.setRange(0, 1000, 3)
         self.kvalue.setValidator(kvalidator)
         self.degfvalue.setValidator(kvalidator)
-        pctvalidator = QtGui.QRegExpValidator(QtCore.QRegExp(r'\d*(\.)?\d+%?'))
+        pctvalidator = QtGui.QRegularExpressionValidator(QtCore.QRegularExpression(r'\d*(\.)?\d+%?'))
         self.confvalue.setValidator(pctvalidator)
 
         # TODO: implement G.4.2, degf approximation. Maybe apply a warning if uB > 2uA and infinite?
@@ -782,7 +780,7 @@ class PageTypeB(Page):
         layout.addWidget(self.dist)
         layout.addStretch()
         self.setLayout(layout)
-        self.dist.changed.connect(lambda x: self.wizard.btnNext.setEnabled(x))
+        self.dist.changed.connect(self.wizard.btnNext.setEnabled)
 
     def initialize(self):
         varname = self.wizard.currentvar
@@ -837,16 +835,16 @@ class DataEntry(QtWidgets.QDialog):
     def __init__(self, title='', data=None, multicol=False, parent=None):
         super().__init__(parent=parent)
         self.setWindowTitle('Suncal - Enter Data')
-        gui_widgets.centerWindow(self, 700, 500)
+        gui_common.centerWindow(self, 700, 500)
         font = self.font()
         font.setPointSize(12)
         self.setFont(font)
         self.title = QtWidgets.QLabel(title)
-        self.table = gui_widgets.FloatTableWidget(paste_multicol=multicol, movebyrows=True)
+        self.table = widgets.FloatTableWidget(paste_multicol=multicol, movebyrows=True)
         self.table.setColumnCount(1)
         self.btnok = QtWidgets.QPushButton()
-        self.btnok.setIcon(self.style().standardIcon(QtWidgets.QStyle.SP_DialogApplyButton))
-        self.btnaddcol = gui_widgets.TreeButton('+')
+        self.btnok.setIcon(self.style().standardIcon(QtWidgets.QStyle.StandardPixmap.SP_DialogApplyButton))
+        self.btnaddcol = widgets.PlusButton()
         self.btnaddcol.setVisible(multicol)
 
         layout = QtWidgets.QVBoxLayout()
@@ -881,7 +879,7 @@ class PageRepeat(Page):
         self.data = None
         self.title = VarnameTitle('Set parameters of repeatability data for', varname='x', title2='')
         self.btnEditData = QtWidgets.QPushButton('Edit Data')
-        self.btnEditData.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
+        self.btnEditData.setSizePolicy(QtWidgets.QSizePolicy.Policy.Fixed, QtWidgets.QSizePolicy.Policy.Fixed)
 
         self.units = QtWidgets.QLineEdit('')
         self.units.setMaximumWidth(250)
@@ -890,7 +888,7 @@ class PageRepeat(Page):
         self.Nnewmeas = QtWidgets.QSpinBox()
         self.Nnewmeas.setRange(1, 999)
         self.Nlabel = QtWidgets.QLabel('new measurements')
-        self.stats = gui_widgets.MarkdownTextEdit()
+        self.stats = widgets.MarkdownTextEdit()
         self.fig = Figure()
         self.canvas = FigureCanvas(self.fig)
         self.canvas.setStyleSheet("background-color:transparent;")
@@ -929,7 +927,7 @@ class PageRepeat(Page):
     def initialize(self):
         varname = self.wizard.currentvar
         self.title.setvarname(varname)
-        self.data = self.wizard.projitem.model.var(varname).value
+        self.data = self.wizard.component.model.var(varname).value
         self.Nnewmeas.setValue(1)
         units = unitmgr.split_units(self.data)[1]
         if units is not None and not unitmgr.is_dimensionless(units):
@@ -941,7 +939,7 @@ class PageRepeat(Page):
     def popupdata(self):
         ''' Show data entry '''
         dlg = DataEntry('Type or paste repeated measurements', data=self.data)
-        dlg.exec_()
+        dlg.exec()
         data = dlg.table.get_column(0)
         self.data = data[np.isfinite(data)]
 
@@ -998,7 +996,6 @@ class PageRepeat(Page):
                 self.fig.clf()
                 self.fig.gca().hist(self.data)
                 self.fig.gca().set_xlabel(str(unit))
-                self.fig.tight_layout()
                 self.canvas.draw_idle()
                 self.wizard.btnNext.setEnabled(True)
             else:
@@ -1014,10 +1011,12 @@ class PageRepeat(Page):
             nmeas = self.Nnewmeas.value()
         else:
             nmeas = len(self.data)
-        self.wizard.projitem.set_inputval(varname, self.data,
-                                          num_newmeas=nmeas,
-                                          autocor=self.chkAutocorr.isChecked(),
-                                          units=self.units.text())
+        self.wizard.component.measure_variable(
+            varname,
+            self.data,
+            num_newmeas=nmeas,
+            autocor=self.chkAutocorr.isChecked(),
+            units=self.units.text())
         return Pages.UNCERTS
 
     def goback(self):
@@ -1035,7 +1034,7 @@ class PageReprod(Page):
         self.data = None
         self.title = VarnameTitle('Set parameters of reproducibility data for', varname='x', title2='')
         self.btnEditData = QtWidgets.QPushButton('Edit Data')
-        self.btnEditData.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
+        self.btnEditData.setSizePolicy(QtWidgets.QSizePolicy.Policy.Fixed, QtWidgets.QSizePolicy.Policy.Fixed)
 
         self.units = QtWidgets.QLineEdit('')
         self.units.setMaximumWidth(250)
@@ -1043,7 +1042,7 @@ class PageReprod(Page):
         self.Nnewmeas = QtWidgets.QSpinBox()
         self.Nnewmeas.setRange(1, 999)
         self.Nlabel = QtWidgets.QLabel('new measurements')
-        self.stats = gui_widgets.MarkdownTextEdit()
+        self.stats = widgets.MarkdownTextEdit()
         self.fig = Figure()
         self.canvas = FigureCanvas(self.fig)
         self.canvas.setStyleSheet("background-color:transparent;")
@@ -1079,7 +1078,7 @@ class PageReprod(Page):
     def initialize(self):
         varname = self.wizard.currentvar
         self.title.setvarname(varname)
-        self.data = self.wizard.projitem.model.var(varname).value
+        self.data = self.wizard.component.model.var(varname).value
         self.Nnewmeas.setValue(1)
         units = unitmgr.split_units(self.data)[1]
         if units is not None and not unitmgr.is_dimensionless(units):
@@ -1092,7 +1091,7 @@ class PageReprod(Page):
         ''' Show data entry '''
         data = self.data.data if self.data is not None else None
         dlg = DataEntry('Type or paste reproducibility measurements', data=data, multicol=True)
-        dlg.exec_()
+        dlg.exec()
         data = dlg.table.get_table()
         self.data = DataSet(data)
         self.parsedata()
@@ -1132,7 +1131,6 @@ class PageReprod(Page):
             if unitvalid:
                 self.fig.clf()
                 ReportDataSet(self.data).plot.groups(self.fig)
-                self.fig.tight_layout()
                 self.canvas.draw_idle()
                 self.wizard.btnNext.setEnabled(np.isfinite(mean))
             else:
@@ -1147,9 +1145,11 @@ class PageReprod(Page):
         nmeas = None
         if self.chkNewmeas.isChecked():
             nmeas = self.Nnewmeas.value()
-        self.wizard.projitem.set_inputval(varname, self.data.data,
-                                          num_newmeas=nmeas,
-                                          units=self.units.text())
+        self.wizard.component.measure_variable(
+            varname,
+            self.data.data,
+            num_newmeas=nmeas,
+            units=self.units.text())
         return Pages.UNCERTS
 
     def goback(self):
@@ -1185,7 +1185,7 @@ class PageUnits(Page):
 
     def initialize(self):
         try:
-            value = list(self.wizard.projitem.model.eval().values())[0]  # Only one output
+            value = list(self.wizard.component.model.eval().values())[0]  # Only one output
         except PintError as exc:
             self.lblnatural.setText('<font color="red">Units error in inputs:</font>')
             self.message.setText(str(exc))
@@ -1201,7 +1201,7 @@ class PageUnits(Page):
 
     def checkunits(self):
         '''Check the units and display message if incompatible '''
-        self.wizard.projitem.outunits = {self.wizard.projitem.model.functionnames[0]: self.outunits.text()}
+        self.wizard.component.outunits = {self.wizard.component.model.functionnames[0]: self.outunits.text()}
         try:
             newunits = unitmgr.parse_units(self.outunits.text())
         except PintError:
@@ -1220,7 +1220,7 @@ class PageUnits(Page):
             self.wizard.btnNext.setEnabled(True)
 
     def gonext(self):
-        self.wizard.projitem.outunits = {self.wizard.projitem.model.functionnames[0]: self.outunits.text()}
+        self.wizard.component.outunits = {self.wizard.component.model.functionnames[0]: self.outunits.text()}
         return Pages.SUMMARY
 
     def goback(self):
@@ -1235,7 +1235,7 @@ class PageSummary(Page):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.title = QtWidgets.QLabel('Ready to calculate! Summary of variables:')
-        self.report = gui_widgets.MarkdownTextEdit()
+        self.report = widgets.MarkdownTextEdit()
         self.backenabled = True
         layout = QtWidgets.QVBoxLayout()
         layout.addWidget(self.title)
@@ -1246,8 +1246,8 @@ class PageSummary(Page):
         rpt = report.Report()
         hdr = ['Variable', 'Mean', 'Standard Uncertainty', 'Degrees of Freedom']
         rows = []
-        for varname in self.wizard.projitem.model.variables.names:
-            var = self.wizard.projitem.model.var(varname)
+        for varname in self.wizard.component.model.variables.names:
+            var = self.wizard.component.model.var(varname)
             rows.append([report.Math.from_latex(varname),
                          str(var.expected),
                          report.Number(var.uncertainty, fmin=0),
@@ -1256,7 +1256,7 @@ class PageSummary(Page):
         self.report.setReport(rpt)
 
     def gonext(self):
-        self.wizard.projitem.calculate()
+        self.wizard.component.calculate()
         return Pages.OUTPUT
 
     def goback(self):
@@ -1280,7 +1280,7 @@ class PageVariableSelect(Page):
         self.setLayout(layout)
 
     def initialize(self):
-        inputnames = self.wizard.projitem.model.variables.names
+        inputnames = self.wizard.component.model.variables.names
         layout = self.layout()
         for opt in self.opts:
             layout.removeWidget(opt)
@@ -1298,7 +1298,7 @@ class PageVariableSelect(Page):
         name = [opt.text() for opt in self.opts if opt.isChecked()]
         if len(name) > 0:
             self.wizard.currentvar = name[0]
-            if name[0] in self.wizard.projitem.variablesdone:
+            if name[0] in self.wizard.component.variablesdone:
                 return Pages.UNCERTS
             else:
                 return Pages.DATATYPE
@@ -1314,13 +1314,11 @@ class PageVariableSelect(Page):
 def main():
     ''' Start the wizard as standalone app '''
     import sys
-    QtWidgets.QApplication.setAttribute(QtCore.Qt.AA_EnableHighDpiScaling)
-    QtWidgets.QApplication.setAttribute(QtCore.Qt.AA_UseHighDpiPixmaps)
     app = QtWidgets.QApplication(sys.argv)
 
     wiz = UncertWizard()
     wiz.show()
-    app.exec_()
+    app.exec()
 
 
 if __name__ == '__main__':

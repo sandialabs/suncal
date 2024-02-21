@@ -4,9 +4,9 @@
     and the "Variables" method.
 '''
 
-from .variables import VariablesInterval, VariablesIntervalAssets, datearray
-from .binoms2 import BinomialInterval, BinomialIntervalAssets
-from .testa3 import TestInterval, TestIntervalAssets
-
-__all__ = ['VariablesInterval', 'VariablesIntervalAssets', 'BinomialInterval',
-           'BinomialIntervalAssets', 'TestInterval', 'TestIntervalAssets', 'datearray']
+from .testa3 import A3Params, a3_testinterval, datearray
+from .binoms2 import S2Params, s2_binom_interval
+from .variables import (VariablesData,
+                        variables_reliability_target,
+                        variables_uncertainty_target,
+                        ResultsVariablesInterval)

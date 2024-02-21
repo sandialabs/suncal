@@ -4,11 +4,12 @@ Pages for sweeping uncertainty propagation and reverse propagations.
 from contextlib import suppress
 import re
 import numpy as np
-from PyQt5 import QtWidgets, QtGui, QtCore
+from PyQt6 import QtWidgets, QtGui, QtCore
 from pint import DimensionalityError, UndefinedUnitError, OffsetUnitCalculusError
 
-from . import gui_common  # noqa: F401
-from . import gui_widgets
+from . import widgets
+from . import gui_styles
+from .gui_common import BlockedSignals
 from . import page_uncert
 from . import page_reverse
 from . import page_dataimport
@@ -26,9 +27,10 @@ class StartStopCountWidget(QtWidgets.QDialog):
         self.start = QtWidgets.QLineEdit()
         self.stop = QtWidgets.QLineEdit()
         self.num = QtWidgets.QLineEdit()
-        self.buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel)
+        self.buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.StandardButton.Ok |
+                                                  QtWidgets.QDialogButtonBox.StandardButton.Cancel)
         validator = QtGui.QDoubleValidator(-1E99, 1E99, 4)
-        validator.setNotation(QtGui.QDoubleValidator.StandardNotation | QtGui.QDoubleValidator.ScientificNotation)
+        validator.setNotation(QtGui.QDoubleValidator.Notation.ScientificNotation)
         self.start.setValidator(validator)
         self.stop.setValidator(validator)
         self.num.setValidator(QtGui.QIntValidator(0, 10000))
@@ -51,21 +53,20 @@ class StartStopCountWidget(QtWidgets.QDialog):
             return np.array([])
 
 
-class SweepSetupTable(gui_widgets.FloatTableWidget):
+class SweepSetupTable(widgets.FloatTableWidget):
     ''' Table for defining sweep variables '''
-    def __init__(self, projitem=None, parent=None):
+    def __init__(self, component=None, parent=None):
         super().__init__(parent=parent, movebyrows=True, paste_multicol=False)
-        self.projitem = projitem
+        self.component = component
         self.variables = None
-        self.setStyleSheet(page_uncert.page_uncert_input.TABLESTYLE)
 
         # This is stupid and ugly but otherwise the keyboard navigation doesn't work with a table
         # embedded in a tree. It works fine when table isn't embedded in tree.
-        self.setEditTriggers(QtWidgets.QTableWidget.AllEditTriggers)
+        self.setEditTriggers(QtWidgets.QTableWidget.EditTrigger.AllEditTriggers)
 
         # Load initial values from saved file
-        self.setColumnCount(len(self.projitem.model.sweeplist))
-        for swpidx, swp in enumerate(self.projitem.model.sweeplist):
+        self.setColumnCount(len(self.component.model.sweeplist))
+        for swpidx, swp in enumerate(self.component.model.sweeplist):
             values = swp.get('values', [])
             if len(values) > self.rowCount():
                 self.setRowCount(len(values))
@@ -117,28 +118,26 @@ class SweepSetupTable(gui_widgets.FloatTableWidget):
         actCopy.triggered.connect(self._copy)
         actInsert.triggered.connect(self._insertrow)
         actRemove.triggered.connect(self._removerow)
-        menu.popup(QtGui.QCursor.pos())
+        menu.popup(event.globalPos())
 
     def remcol(self):
         ''' Remove the selected column '''
         col = self.currentColumn()
         if col >= 0:
-            self.blockSignals(True)
-            self.removeColumn(col)
-            self.blockSignals(False)
+            with BlockedSignals(self):
+                self.removeColumn(col)
 
     def addcol(self):
         ''' Add a column to the sweep table '''
         w = SweepParamWidget(self.variables)
-        status = w.exec_()
+        status = w.exec()
         if status:
-            self.blockSignals(True)
-            col = self.columnCount()
-            self.setColumnCount(col+1)
-            sweepstr = w.get_sweepstr()
-            self.setHorizontalHeaderItem(col, QtWidgets.QTableWidgetItem(sweepstr))
-            self.setCurrentCell(0, col)
-            self.blockSignals(False)
+            with BlockedSignals(self):
+                col = self.columnCount()
+                self.setColumnCount(col+1)
+                sweepstr = w.get_sweepstr()
+                self.setHorizontalHeaderItem(col, QtWidgets.QTableWidgetItem(sweepstr))
+                self.setCurrentCell(0, col)
         return status
 
     def importdata(self):
@@ -152,23 +151,22 @@ class SweepSetupTable(gui_widgets.FloatTableWidget):
         elif col < 0:
             col = 0
 
-        dlg = page_dataimport.ArraySelectWidget(singlecol=True, project=self.projitem.project)
-        ok = dlg.exec_()
+        dlg = page_dataimport.ArraySelectWidget(project=self.component.project)
+        ok = dlg.exec()
         if ok:
             sweep = dlg.get_array().get('y')
             if sweep is not None:
-                self.blockSignals(True)
-                if len(sweep) > self.rowCount():
-                    self.setRowCount(len(sweep))
+                with BlockedSignals(self):
+                    if len(sweep) > self.rowCount():
+                        self.setRowCount(len(sweep))
 
-                # Clear out all rows in column
-                for i in range(self.rowCount()):
-                    self.setItem(i, col, QtWidgets.QTableWidgetItem(''))
+                    # Clear out all rows in column
+                    for i in range(self.rowCount()):
+                        self.setItem(i, col, QtWidgets.QTableWidgetItem(''))
 
-                # Fill rows from range
-                for i, val in enumerate(sweep):
-                    self.item(i, col).setText(str(val))
-                self.blockSignals(False)
+                    # Fill rows from range
+                    for i, val in enumerate(sweep):
+                        self.item(i, col).setText(str(val))
                 self.resizeColumnsToContents()
 
     def filldata(self):
@@ -185,21 +183,20 @@ class SweepSetupTable(gui_widgets.FloatTableWidget):
             col = 0
 
         dlg = StartStopCountWidget(title=self.horizontalHeaderItem(col).text())
-        ok = dlg.exec_()
+        ok = dlg.exec()
         if ok:
-            self.blockSignals(True)
-            rng = dlg.get_range()
-            if len(rng) > self.rowCount():
-                self.setRowCount(len(rng))
+            with BlockedSignals(self):
+                rng = dlg.get_range()
+                if len(rng) > self.rowCount():
+                    self.setRowCount(len(rng))
 
-            # Clear out all rows in column
-            for i in range(self.rowCount()):
-                self.setItem(i, col, QtWidgets.QTableWidgetItem(''))
+                # Clear out all rows in column
+                for i in range(self.rowCount()):
+                    self.setItem(i, col, QtWidgets.QTableWidgetItem(''))
 
-            # Fill rows from range
-            for i, val in enumerate(rng):
-                self.item(i, col).setText(str(val))
-            self.blockSignals(False)
+                # Fill rows from range
+                for i, val in enumerate(rng):
+                    self.item(i, col).setText(str(val))
 
     def get_config(self):
         ''' Get sweep configuration dictionary '''
@@ -250,7 +247,8 @@ class SweepParamWidget(QtWidgets.QDialog):
         self.uncparam.setVisible(False)
         self.lblparam.setVisible(False)
         self.lblcomp.setVisible(False)
-        self.buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel)
+        self.buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.StandardButton.Ok |
+                                                  QtWidgets.QDialogButtonBox.StandardButton.Cancel)
         self.buttons.rejected.connect(self.reject)
         self.buttons.accepted.connect(self.accept)
         if self.variables:
@@ -288,33 +286,31 @@ class SweepParamWidget(QtWidgets.QDialog):
 
     def varchanged(self):
         ''' Variable selection has changed '''
-        self.blockSignals(True)
-        name = self.varname.currentText()
-        var = self.variables.get(name)
+        with BlockedSignals(self):
+            name = self.varname.currentText()
+            var = self.variables.get(name)
 
-        comps = var.typeb_names if var else []
-        self.unccomp.clear()
-        if len(comps) > 0:
-            self.unccomp.addItems(comps)
-        else:
-            self.unccomp.addItems([f'u({name})'])
-        self.blockSignals(False)
+            comps = var.typeb_names if var else []
+            self.unccomp.clear()
+            if len(comps) > 0:
+                self.unccomp.addItems(comps)
+            else:
+                self.unccomp.addItems([f'u({name})'])
 
     def compchanged(self):
         ''' Component selection changed '''
-        self.blockSignals(True)
-        varname = self.varname.currentText()
-        compname = self.unccomp.currentText()
-        var = self.variables.get(varname)
-        if compname and var:
-            typeb = var.get_typeb(compname)
-            if typeb.distname in ['normal', 't']:
-                items = ['unc', 'k']
-            else:
-                items = typeb.required_args
-            self.uncparam.clear()
-            self.uncparam.addItems(items)
-        self.blockSignals(False)
+        with BlockedSignals(self):
+            varname = self.varname.currentText()
+            compname = self.unccomp.currentText()
+            var = self.variables.get(varname)
+            if compname and var:
+                typeb = var.get_typeb(compname)
+                if typeb.distname in ['normal', 't']:
+                    items = ['unc', 'k']
+                else:
+                    items = typeb.required_args
+                self.uncparam.clear()
+                self.uncparam.addItems(items)
 
     def get_sweepstr(self):
         ''' Get string representation of sweep '''
@@ -359,10 +355,10 @@ class SweepSlider(QtWidgets.QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent=parent)
-        self.slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
+        self.slider = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
         self.slider.valueChanged.connect(self.valueChanged)
         self.lblValue = QtWidgets.QLabel()
-        div = gui_widgets.QHLine()
+        div = widgets.QHLine()
         layout = QtWidgets.QVBoxLayout()
         slayout = QtWidgets.QHBoxLayout()
         slayout.addWidget(QtWidgets.QLabel('Sweep Index:'))
@@ -424,16 +420,16 @@ class PageOutputSweep(page_uncert.page_uncert_output.PageOutput):
 
 class UncertSweepWidget(page_uncert.UncertPropWidget):
     ''' Uncertainty Propagation Sweep. Adds sweep tab to tabwidget '''
-    def __init__(self, projitem, parent=None):
-        self.projitem = projitem
-        self.sweepsetup = SweepSetupTable(self.projitem)
-        super().__init__(projitem, parent)
+    def __init__(self, component, parent=None):
+        self.component = component
+        self.sweepsetup = SweepSetupTable(self.component)
+        super().__init__(component, parent)
 
         self.menu.removeAction(self.mnuSaveSamples.menuAction())
-        self.actNewUnc = QtWidgets.QAction('New single calculation from sweep', self)
-        self.actNewUnc.triggered.connect(lambda event, x=projitem: self.newtype.emit(x.get_config(), 'uncertainty'))
+        self.actNewUnc = QtGui.QAction('New single calculation from sweep', self)
+        self.actNewUnc.triggered.connect(lambda event, x=component: self.newtype.emit(x.get_config(), 'uncertainty'))
         self.actReverse.disconnect()
-        self.actReverse.triggered.connect(lambda event, x=projitem: self.newtype.emit(x.get_config(), 'reversesweep'))
+        self.actReverse.triggered.connect(lambda event, x=component: self.newtype.emit(x.get_config(), 'reversesweep'))
         self.menu.insertAction(self.actSweep, self.actNewUnc)
         self.menu.removeAction(self.actSweep)
         self.pgoutputsweep = PageOutputSweep(None)
@@ -445,7 +441,7 @@ class UncertSweepWidget(page_uncert.UncertPropWidget):
         buttons.minusclicked.connect(self.sweepsetup.remcol)
         self.pginput.panel.expand('Sweep')
         self.update_proj_config()
-        self.sweepsetup.set_variables(self.projitem.model.model.variables)
+        self.sweepsetup.set_variables(self.component.model.model.variables)
         self.pginput.funclist.funcchanged.connect(self.funcchanged)
         self.pginput.meastable.changed.connect(self.funcchanged)
         self.pgoutputsweep.change_help.connect(self.change_help)
@@ -453,7 +449,7 @@ class UncertSweepWidget(page_uncert.UncertPropWidget):
     def funcchanged(self, funclist):
         ''' Function has changed '''
         self.update_proj_config()
-        self.sweepsetup.set_variables(self.projitem.model.model.variables)
+        self.sweepsetup.set_variables(self.component.model.model.variables)
         with suppress(AttributeError):  # May not be defined yet
             self.actNewUnc.setEnabled(True)
 
@@ -485,16 +481,16 @@ class UncertSweepWidget(page_uncert.UncertPropWidget):
             err_msg('Circular reference in function definitions')
             return
 
-        if len(self.projitem.model.sweeplist) < 1:
+        if len(self.component.model.sweeplist) < 1:
             err_msg('Please define at least one sweep in the Sweep tab.')
             return
 
-        elif len(set([len(s.get('values', [])) for s in self.projitem.model.sweeplist])) > 1:
+        elif len(set([len(s.get('values', [])) for s in self.component.model.sweeplist])) > 1:
             err_msg('All sweep columns must be the same length.')
             return
 
         try:
-            self.projitem.model.model.eval()
+            self.component.model.model.eval()
         except OffsetUnitCalculusError as exc:
             badunit = re.findall(r'\((.+ )', str(exc))[0].split()[0].strip(', ')
             err_msg(f'Ambiguous unit {badunit}. Try "delta_{badunit}".')
@@ -507,7 +503,7 @@ class UncertSweepWidget(page_uncert.UncertPropWidget):
             return
 
         try:
-            self.projitem.calculate()
+            self.component.calculate()
         except OffsetUnitCalculusError as exc:
             badunit = re.findall(r'\((.+ )', str(exc))[0].split()[0].strip(', ')
             err_msg(f'Ambiguous unit {badunit}. Try "delta_{badunit}".')
@@ -519,7 +515,7 @@ class UncertSweepWidget(page_uncert.UncertPropWidget):
             err_msg('Error computing solution!')
             return
 
-        self.pgoutputsweep.set_sweepresult(self.projitem.result)
+        self.pgoutputsweep.set_sweepresult(self.component.result)
         self.pgoutputsweep.outputupdate()
         self.stack.slideInLeft(self.PG_OUTPUT)
         self.actSaveReport.setEnabled(True)
@@ -527,7 +523,7 @@ class UncertSweepWidget(page_uncert.UncertPropWidget):
 
     def update_proj_config(self):
         ''' Save page setup back to project item configuration '''
-        self.projitem.load_config(self.get_config())
+        self.component.load_config(self.get_config())
 
     def get_config(self):
         config = self.pginput.get_config()
@@ -536,11 +532,12 @@ class UncertSweepWidget(page_uncert.UncertPropWidget):
 
     def get_report(self):
         ''' Get full report of curve fit, using page settings '''
-        return self.projitem.result.report.all()
+        return self.component.result.report.all()
 
     def save_report(self):
         ''' Save full report, asking user for settings/filename '''
-        gui_widgets.savereport(self.get_report())
+        with gui_styles.LightPlotstyle():
+            widgets.savereport(self.get_report())
 
     def help_report(self):
         ''' Get the help report to display the current widget mode '''
@@ -552,17 +549,17 @@ class UncertSweepWidget(page_uncert.UncertPropWidget):
 
 class UncertReverseSweepWidget(page_uncert.UncertPropWidget):
     ''' Widget for calculating a reverse uncertainty sweep '''
-    def __init__(self, projitem, parent=None):
-        self.projitem = projitem
-        self.sweepsetup = SweepSetupTable(self.projitem)
-        self.targetsetup = page_reverse.TargetSetupWidget(self.projitem)
-        super().__init__(self.projitem, parent=parent)
+    def __init__(self, component, parent=None):
+        self.component = component
+        self.sweepsetup = SweepSetupTable(self.component)
+        self.targetsetup = page_reverse.TargetSetupWidget(self.component)
+        super().__init__(self.component, parent=parent)
 
         self.menu.removeAction(self.mnuSaveSamples.menuAction())
-        self.actNewRev = QtWidgets.QAction('New single reverse from sweep', self)
-        self.actNewRev.triggered.connect(lambda event, x=projitem: self.newtype.emit(x.get_config(), 'reverse'))
-        self.actNewSwp = QtWidgets.QAction('New forward sweep from model', self)
-        self.actNewSwp.triggered.connect(lambda event, x=projitem: self.newtype.emit(x.get_config(), 'sweep'))
+        self.actNewRev = QtGui.QAction('New single reverse from sweep', self)
+        self.actNewRev.triggered.connect(lambda event, x=component: self.newtype.emit(x.get_config(), 'reverse'))
+        self.actNewSwp = QtGui.QAction('New forward sweep from model', self)
+        self.actNewSwp.triggered.connect(lambda event, x=component: self.newtype.emit(x.get_config(), 'sweep'))
         self.menu.insertAction(self.actSweep, self.actNewRev)
         self.menu.insertAction(self.actSweep, self.actNewSwp)
         self.menu.removeAction(self.actSweep)
@@ -577,10 +574,10 @@ class UncertReverseSweepWidget(page_uncert.UncertPropWidget):
         buttons.minusclicked.connect(self.sweepsetup.remcol)
         self.pginput.funclist.funcchanged.connect(self.funcchanged)
         self.pginput.meastable.changed.connect(self.measchanged)
-        self.sweepsetup.set_variables(self.projitem.model.model.variables)
+        self.sweepsetup.set_variables(self.component.model.model.variables)
 
     def measchanged(self, measlist):
-        self.sweepsetup.set_variables(self.projitem.model.model.variables)
+        self.sweepsetup.set_variables(self.component.model.model.variables)
 
     def funcchanged(self, funclist):
         ''' Function has changed '''
@@ -612,7 +609,7 @@ class UncertReverseSweepWidget(page_uncert.UncertPropWidget):
 
         self.update_proj_config()
 
-        if len(self.projitem.model.model.exprs) < 1:
+        if len(self.component.model.model.exprs) < 1:
             err_msg('Need at least one measurement function to calculate.')
             return
 
@@ -620,16 +617,16 @@ class UncertReverseSweepWidget(page_uncert.UncertPropWidget):
             err_msg('Please define solve-for parameter in the Target tab.')
             return
 
-        if len(self.projitem.model.sweeplist) < 1:
+        if len(self.component.model.sweeplist) < 1:
             err_msg('Please define at least one sweep in the Sweep tab.')
             return
 
-        if len({len(s.get('values', [])) for s in self.projitem.model.sweeplist}) > 1:
+        if len({len(s.get('values', [])) for s in self.component.model.sweeplist}) > 1:
             err_msg('All sweep columns must be the same length.')
             return
 
         try:
-            self.projitem.calculate()
+            self.component.calculate()
         except OffsetUnitCalculusError as exc:
             badunit = re.findall(r'\((.+ )', str(exc))[0].split()[0].strip(', ')
             err_msg(f'Ambiguous unit {badunit}. Try "delta_{badunit}".')
@@ -642,14 +639,14 @@ class UncertReverseSweepWidget(page_uncert.UncertPropWidget):
             self.actSaveReport.setEnabled(False)
             return
 
-        self.pgoutputrevsweep.txtOutput.setReport(self.projitem.result.report.summary_withplots())
+        self.pgoutputrevsweep.txtOutput.setReport(self.component.result.report.summary_withplots())
         self.stack.slideInLeft(self.PG_OUTPUT)
         self.actSaveReport.setEnabled(True)
         self.change_help.emit()
 
     def update_proj_config(self):
         ''' Save page setup back to project item configuration '''
-        self.projitem.load_config(self.get_config())
+        self.component.load_config(self.get_config())
 
     def get_config(self):
         config = self.pginput.get_config()
@@ -661,16 +658,17 @@ class UncertReverseSweepWidget(page_uncert.UncertPropWidget):
         function = functions[funcnames.index(reverseparams['funcname'])]
         units = function.get('units', None)
         reverseparams['targetunits'] = units
-        config.update({'reverse': reverseparams}) 
+        config.update({'reverse': reverseparams})
         return config
 
     def get_report(self):
         ''' Get full report of curve fit, using page settings '''
-        return self.projitem.result.report.all()
+        return self.component.result.report.all()
 
     def save_report(self):
         ''' Save full report, asking user for settings/filename '''
-        gui_widgets.savereport(self.get_report())
+        with gui_styles.LightPlotstyle():
+            widgets.savereport(self.get_report())
 
     def help_report(self):
         if self.stack.m_next == self.PG_INPUT:

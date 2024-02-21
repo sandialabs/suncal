@@ -4,7 +4,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from ...common import report, unitmgr
-from .uncertainty import ReportUncertainty
 from .gum import _contour
 
 

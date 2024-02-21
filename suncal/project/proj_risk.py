@@ -3,25 +3,22 @@
 from .component import ProjectComponent
 from ..common import distributions
 
-from ..risk.risk_model import RiskModel
+from ..risk.risk_model import RiskModel, RiskResults
 
 
 class ProjectRisk(ProjectComponent):
     ''' Risk project component '''
     def __init__(self, model=None, name='risk'):
-        super().__init__()
-        self.name = name
+        super().__init__(name=name)
         if model is None:
             self.model = RiskModel()
         else:
             self.model = model
-        self.description = ''
-        self.project = None  # Parent project
-        self.result = self.model
 
-    def calculate(self):
-        ''' "Calculate" values, returning the model/results object '''
-        return self.model
+    def calculate(self) -> RiskResults:
+        ''' Calculate values, returning the results object '''
+        self._result = self.model.calculate()
+        return self._result
 
     def get_config(self):
         ''' Get configuration dictionary '''
@@ -31,11 +28,11 @@ class ProjectRisk(ProjectComponent):
         d['desc'] = self.description
         d['bias'] = self.model.testbias
 
-        if self.model.procdist is not None:
-            d['distproc'] = self.model.procdist.get_config()
+        if self.model.process_dist is not None:
+            d['distproc'] = self.model.process_dist.get_config()
 
-        if self.model.testdist is not None:
-            d['disttest'] = self.model.testdist.get_config()
+        if self.model.measure_dist is not None:
+            d['disttest'] = self.model.measure_dist.get_config()
 
         d['GBL'] = self.model.gbofsts[0]
         d['GBU'] = self.model.gbofsts[1]
@@ -52,12 +49,12 @@ class ProjectRisk(ProjectComponent):
 
         dproc = config.get('distproc', None)
         if dproc is not None:
-            self.model.procdist = distributions.from_config(dproc)
+            self.model.process_dist = distributions.from_config(dproc)
         else:
-            self.model.procdist = None
+            self.model.process_dist = None
 
         dtest = config.get('disttest', None)
         if dtest is not None:
-            self.model.testdist = distributions.from_config(dtest)
+            self.model.measure_dist = distributions.from_config(dtest)
         else:
-            self.model.testdist = None
+            self.model.measure_dist = None

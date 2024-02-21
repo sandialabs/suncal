@@ -38,18 +38,20 @@ class ReportGum:
         rpt.table(rows, hdr=hdr)
         return rpt
 
-    def expanded(self, conf=0.95, **kwargs):
+    def expanded(self, conf=0.95, k=None, **kwargs):
         ''' Generate table of expanded uncertainties, min/max, from level of confidence
 
             Args:
                 conf (float): Level of confidence in the interval
+                k (float): Coverage factor for interval, overrides conf
         '''
         rows = []
         hdr = ['Function', 'Level of Confidence', 'Minimum', 'Maximum', 'k', 'Deg. Freedom', 'Expanded Uncertainty']
-        expanded = self._results.expanded(conf=conf)
+        expanded = self._results.expanded(conf=conf, k=k)
 
         for funcname in self._results.functionnames:
             uncert = expanded[funcname].uncertainty
+            conf = expanded[funcname].confidence
             row = [report.Math(funcname),
                    f'{conf*100:.2f}%',
                    report.Number(self._results.expected[funcname]-uncert, matchto=uncert, **kwargs),
@@ -93,7 +95,7 @@ class ReportGum:
 
         correlation = self._results.correlation()
 
-        hdr = ['-'] + [report.Math(n) for n in self._results.functionnames]
+        hdr = ['&nbsp;'] + [report.Math(n) for n in self._results.functionnames]
         rows = []
         for func1 in self._results.functionnames:
             row = [report.Math(func1)]
@@ -115,7 +117,7 @@ class ReportGum:
     def input_covariance(self, solve=False, **kwargs):
         ''' Report the input covariance matrix Ux '''
         rpt = report.Report(**kwargs)
-        hdr = ['-'] + self._results.variablenames
+        hdr = ['&nbsp;'] + self._results.variablenames
         Ux = self._results.covariance_inputs(symbolic=not solve)
         rows = []
         for varname1 in self._results.variablenames:
@@ -183,7 +185,7 @@ class ReportGum:
         # Multiple outputs, return matrix
         # Three choices: matrix of d/dx[y];  matrix of solved derivatives;  matrix of numeric values
         rows = []
-        hdr = ['-'] + self._results.variablenames
+        hdr = ['&nbsp;'] + self._results.variablenames
         for funcname in self._results.functionnames:
             row = [report.Math(funcname)]
             for varname in self._results.variablenames:
@@ -300,13 +302,14 @@ class GumPlot:
         self._noutputs = len(self._results.functionnames)
         self.axis = GumAxisPlot(self._results)
 
-    def pdf(self, functions=None, fig=None, interval=None, labeldesc=False, **kwargs):
+    def pdf(self, functions=None, fig=None, interval=None, k=None, labeldesc=False, **kwargs):
         ''' Plot probability density function for the outputs. Clears the figure.
 
             Args:
                 functions (list of str): Function names to include
                 fig (plt.Figure): Matplotlib Figure to plot on
                 interval (float): Show expanded interval to this level of confidence
+                k (float): Show expanded interval to this coverage factor (overrides interval argument)
                 labeldesc (bool): Use "description" as axis label instead of variable name
         '''
         if functions is None:
@@ -317,7 +320,7 @@ class GumPlot:
         fig.subplots_adjust(**plotting.dfltsubplots)
         axs = plotting.axes_grid(len(functions), fig, len(functions))
         for fname, ax in zip(functions, axs):
-            self.axis.pdf(funcname=fname, ax=ax, interval=interval, labeldesc=labeldesc, **kwargs)
+            self.axis.pdf(funcname=fname, ax=ax, interval=interval, k=k, labeldesc=labeldesc, **kwargs)
         fig.tight_layout()
 
     def joint_pdf(self, functions=None, fig=None, cmap='viridis', legend=True, labeldesc=False, **kwargs):
@@ -353,13 +356,14 @@ class GumAxisPlot:
         self._results = gumresults
         self._noutputs = len(self._results.functionnames)
 
-    def pdf(self, funcname, ax=None, interval=None, labeldesc=False, **kwargs):
+    def pdf(self, funcname, ax=None, interval=None, k=None, labeldesc=False, **kwargs):
         ''' Plot probability density for the function
 
             Args:
                 funcname (str): Function to plot
                 ax (plt.axes): Matplotlib Axis to plot on
                 interval (float): Show expanded interval to this level of confidence
+                k (float): Show expanded interval to this coverage factor (overrides interval argument)
                 labeldesc (bool): Use "description" as axis label instead of variable name
         '''
         _, ax = plotting.initplot(ax)
@@ -372,11 +376,15 @@ class GumAxisPlot:
 
         line, *_ = ax.plot(x, pdf, **kwargs)
 
-        if interval is not None:
-            expand = unitmgr.strip_units(self._results.expand(funcname, conf=interval))
-            ax.axvline(mean + expand, ls='--', color='C4')
-            ax.axvline(mean - expand, ls='--', color='C4', label='GUM')
-            ax.legend(loc='lower left', title=f'{interval*100:.2f}% Coverage')
+        if k is not None or interval is not None:
+            if k is not None:
+                expand = unitmgr.strip_units(self._results.expand(funcname, k=k))
+                ax.legend(loc='lower left', title=f'k = {k:.2f}')
+            else:
+                expand = unitmgr.strip_units(self._results.expand(funcname, conf=interval))
+                ax.legend(loc='lower left', title=f'{interval*100:.2f}% Coverage')
+            ax.axvline(mean + expand, ls='--', color='C3')
+            ax.axvline(mean - expand, ls='--', color='C3', label='GUM')
 
         if labeldesc:
             label = self._results.descriptions.get(funcname, '')

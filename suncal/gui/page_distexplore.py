@@ -1,15 +1,17 @@
 ''' GUI for exploring distributions and doing manual Monte Carlo '''
 
 import numpy as np
-from PyQt5 import QtWidgets, QtGui, QtCore
+from PyQt6 import QtWidgets, QtGui, QtCore
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
 
 from ..project import ProjectDistExplore
 from ..common import report, distributions, uparser
-from . import gui_common
-from . import gui_widgets
+from . import widgets
+from . import gui_styles
+from .gui_common import BlockedSignals
+from .gui_settings import gui_settings
 from .help_strings import DistExploreHelp
 
 
@@ -33,34 +35,27 @@ class DistEntry(QtWidgets.QWidget):
         if dist is None:
             dist = distributions.get_distribution('normal')
         self.dist = dist
-        self.btnAdd = QtWidgets.QToolButton()
-        self.btnRem = QtWidgets.QToolButton()
+        self.btnAddRem = widgets.PlusMinusButton(stretch=False)
         self.btnCustom = QtWidgets.QToolButton()
         self.btnSample = QtWidgets.QToolButton()
-        self.btnAdd.setText('+')
-        self.btnRem.setText('–')  # endash
         self.btnCustom.setText('normal...')
         self.btnSample.setText('Sample')
-        self.btnAdd.setToolTip('Insert distribution')
-        self.btnRem.setToolTip('Remove distribution')
+        self.btnAddRem.btnminus.setToolTip('Remove Distribution')
+        self.btnAddRem.btnplus.setToolTip('Insert Distribution')
         self.btnCustom.setToolTip('Define distribution parameters')
         self.btnSample.setToolTip('Generate random samples')
         self.txtName = QtWidgets.QLineEdit(name)
-
-        self.btnAdd.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
-        self.btnRem.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
-        self.btnCustom.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
-        self.btnSample.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
+        self.btnCustom.setSizePolicy(QtWidgets.QSizePolicy.Policy.Fixed, QtWidgets.QSizePolicy.Policy.Fixed)
+        self.btnSample.setSizePolicy(QtWidgets.QSizePolicy.Policy.Fixed, QtWidgets.QSizePolicy.Policy.Fixed)
 
         self.btnCustom.clicked.connect(self.editdist)
-        self.btnAdd.clicked.connect(lambda y, x=self: self.addDist.emit(x))
-        self.btnRem.clicked.connect(lambda y, x=self: self.remDist.emit(x))
+        self.btnAddRem.plusclicked.connect(lambda x=self: self.addDist.emit(x))
+        self.btnAddRem.minusclicked.connect(lambda x=self: self.remDist.emit(x))
         self.btnSample.clicked.connect(lambda x: self.sampleDist.emit(self.get_name()))
         self.txtName.editingFinished.connect(self.change_name)
 
         layout = QtWidgets.QHBoxLayout()
-        layout.addWidget(self.btnAdd)
-        layout.addWidget(self.btnRem)
+        layout.addWidget(self.btnAddRem)
         layout.addWidget(self.txtName)
         layout.addWidget(self.btnCustom)
         layout.addWidget(self.btnSample)
@@ -82,9 +77,8 @@ class DistEntry(QtWidgets.QWidget):
         try:
             expr = uparser.parse_math(name)
         except ValueError:
-            self.txtName.blockSignals(True)
-            self.txtName.setText('ERROR')
-            self.txtName.blockSignals(False)
+            with BlockedSignals(self.txtName):
+                self.txtName.setText('ERROR')
         else:
             if hasattr(expr, 'is_symbol') and expr.is_symbol:
                 self.btnCustom.setEnabled(True)  # Base variable, can customize
@@ -112,11 +106,12 @@ class DistDialog(QtWidgets.QDialog):
         self.dist = dist
         args = self.dist.get_config()
         args.update({'median': self.dist.median()})
-        self.table = gui_widgets.DistributionEditTable(args)
+        self.table = widgets.DistributionEditTable(args)
         self.fig = Figure()
         self.canvas = FigureCanvas(self.fig)
         self.canvas.setStyleSheet("background-color:transparent;")
-        self.btnBox = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel)
+        self.btnBox = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.StandardButton.Ok |
+                                                 QtWidgets.QDialogButtonBox.StandardButton.Cancel)
 
         self.setWindowTitle('Configure Probability Distribution')
         self.setMaximumSize(600, 600)
@@ -152,7 +147,6 @@ class DistDialog(QtWidgets.QDialog):
         ax = self.fig.add_subplot(1, 1, 1)
         ax.plot(xx, yy)
         ax.set_xlabel(report.Math(self.name).latex())
-        self.fig.tight_layout()
         self.canvas.draw_idle()
 
 
@@ -195,12 +189,12 @@ class DistributionListWidget(QtWidgets.QWidget):
 
     def clear(self):
         ''' Remove all items, but leave a blank one to edit. '''
-        while self.pagelayout.count() > 0:
+        while self.pagelayout.count() > 1:
             item = self.pagelayout.itemAt(0).widget()
-            self.pagelayout.removeWidget(item)
             if item:
+                self.pagelayout.removeWidget(item)
                 item.setParent(None)
-        self.pagelayout.addStretch()
+#        self.pagelayout.addStretch()
         self.addItem()
 
     def get_dists(self):
@@ -214,12 +208,12 @@ class DistributionListWidget(QtWidgets.QWidget):
         return dists
 
 
-class DistWidget(QtWidgets.QWidget):
+class DistExploreWidget(QtWidgets.QWidget):
     ''' Page widget for distribution explorer '''
-    def __init__(self, projitem, parent=None):
+    def __init__(self, component, parent=None):
         super().__init__(parent)
-        assert isinstance(projitem, ProjectDistExplore)
-        self.projitem = projitem
+        assert isinstance(component, ProjectDistExplore)
+        self.component = component
 
         self.distlist = DistributionListWidget()
         self.scroll = QtWidgets.QScrollArea()
@@ -229,21 +223,21 @@ class DistWidget(QtWidgets.QWidget):
         self.samples = QtWidgets.QLineEdit('10000')
         self.samples.setValidator(QtGui.QIntValidator(1, 10000000))
         self.samples.setMaximumWidth(300)
-        self.samples.editingFinished.connect(lambda: self.projitem.model.set_numsamples(int(self.samples.text())))
+        self.samples.editingFinished.connect(lambda: self.component.model.set_numsamples(int(self.samples.text())))
         self.seed = QtWidgets.QLineEdit('None')
 
         self.cmbView = QtWidgets.QComboBox()
-        self.cmbView.addItems(self.projitem.model.samplevalues.keys())
+        self.cmbView.addItems(self.component.model.samplevalues.keys())
         self.cmbFit = QtWidgets.QComboBox()
-        dists = gui_common.settings.getDistributions()
-        dists = [d for d in dists if distributions.fittable(d)]
+        dists = [d for d in gui_settings.distributions if distributions.fittable(d)]
         self.cmbFit.addItems(['None'] + dists)
         self.chkInterval = QtWidgets.QCheckBox('Show 95% Coverage')
         self.chkProbPlot = QtWidgets.QCheckBox('Show Probability Plot')
         self.fig = Figure()
         self.canvas = FigureCanvas(self.fig)
+        self.canvas.setStyleSheet("background-color:transparent;")
         self.toolbar = NavigationToolbar(self.canvas, self, coordinates=True)
-        self.txtOutput = gui_widgets.MarkdownTextEdit()
+        self.txtOutput = widgets.MarkdownTextEdit()
 
         slayout = QtWidgets.QHBoxLayout()
         slayout.addWidget(QtWidgets.QLabel('Samples:'))
@@ -269,7 +263,7 @@ class DistWidget(QtWidgets.QWidget):
         rlayout.addWidget(self.toolbar)
         self.topwidget = QtWidgets.QWidget()
         self.topwidget.setLayout(rlayout)
-        self.rightsplitter = QtWidgets.QSplitter(QtCore.Qt.Vertical)
+        self.rightsplitter = QtWidgets.QSplitter(QtCore.Qt.Orientation.Vertical)
         self.rightsplitter.addWidget(self.topwidget)
         self.rightsplitter.addWidget(self.txtOutput)
         self.leftwidget = QtWidgets.QWidget()
@@ -284,16 +278,16 @@ class DistWidget(QtWidgets.QWidget):
         self.setLayout(layout)
 
         # Initialize
-        if len(self.projitem.model.dists) == 0:
+        if len(self.component.model.dists) == 0:
             self.distlist.addItem('a')  # Make a new distribution named 'a'
             self.dist_changed()   # Save it
         else:
-            for expr, dist in self.projitem.model.dists.items():
+            for expr, dist in self.component.model.dists.items():
                 self.distlist.addItem(str(expr), dist)
 
         self.menu = QtWidgets.QMenu('Distributions')
-        self.actSave = QtWidgets.QAction('Save report...', self)
-        self.actClear = QtWidgets.QAction('Clear', self)
+        self.actSave = QtGui.QAction('Save report...', self)
+        self.actClear = QtGui.QAction('Clear', self)
         self.menu.addAction(self.actClear)
         self.menu.addAction(self.actSave)
         self.actClear.triggered.connect(self.clear)
@@ -319,23 +313,23 @@ class DistWidget(QtWidgets.QWidget):
 
     def clear(self):
         ''' Clear the distribution list '''
-        self.projitem.model.samplevalues = {}
+        self.component.model.samplevalues = {}
         self.distlist.clear()
         self.cmbView.clear()
 
     def changeview(self):
         ''' Output view changed. Update plot and text report. '''
         name = self.cmbView.currentText()
-        if name in self.projitem.model.samplevalues:
+        if name in self.component.model.samplevalues:
             fitdist = self.cmbFit.currentText()
             fitdist = None if fitdist == 'None' else fitdist
             qq = self.chkProbPlot.isChecked()
             if fitdist is None and qq:
                 fitdist = 'normal'
 
-            fitparams = self.projitem.result.report.plot.hist(
+            fitparams = self.component.result.report.plot.hist(
                 name, fig=self.fig, fitdist=fitdist, qqplot=qq, interval=self.chkInterval.isChecked())
-            self.txtOutput.setReport(self.projitem.result.report.single(name, fitparams))
+            self.txtOutput.setReport(self.component.result.report.single(name, fitparams))
             self.fig.suptitle(report.Math(name).latex())
             self.canvas.draw_idle()
         else:
@@ -344,9 +338,9 @@ class DistWidget(QtWidgets.QWidget):
     def dist_changed(self, name=None):
         ''' Distribution changed, store to DistExplore object '''
         dists = self.distlist.get_dists()
-        self.projitem.model.dists = dists
+        self.component.model.dists = dists
         if name is not None:
-            self.projitem.model.samplevalues.pop(name, None)
+            self.component.model.samplevalues.pop(name, None)
         self.updatecmbView()
         self.changeview()
 
@@ -354,7 +348,7 @@ class DistWidget(QtWidgets.QWidget):
         ''' Add available (sampled) items to combo box and select name, if given '''
         self.cmbView.blockSignals(True)
         self.cmbView.clear()
-        self.cmbView.addItems(list(self.projitem.model.samplevalues.keys()))
+        self.cmbView.addItems(list(self.component.model.samplevalues.keys()))
         if name is not None:
             self.cmbView.setCurrentIndex(self.cmbView.findText(name))
         else:
@@ -373,7 +367,7 @@ class DistWidget(QtWidgets.QWidget):
             np.random.seed(seed)
 
         try:
-            self.projitem.model.sample(name)
+            self.component.model.sample(name)
         except ValueError:
             QtWidgets.QMessageBox.warning(self, 'Sampling', f'Undefined variable in expression {name}')
         self.updatecmbView(name=name)
@@ -385,11 +379,12 @@ class DistWidget(QtWidgets.QWidget):
         fitdist = None if fitdist == 'None' else fitdist
         qq = self.chkProbPlot.isChecked()
         cov = self.chkInterval.isChecked()
-        return self.projitem.result.report.all(fitdist=fitdist, coverage=cov, qqplot=qq)
+        return self.component.result.report.all(fitdist=fitdist, coverage=cov, qqplot=qq)
 
     def save_report(self):
         ''' Save full report, asking user for settings/filename '''
-        gui_widgets.savereport(self.get_report())
+        with gui_styles.LightPlotstyle():
+            widgets.savereport(self.get_report())
 
     def help_report(self):
         ''' Get the help report to display the current widget mode '''

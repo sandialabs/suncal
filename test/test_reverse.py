@@ -75,8 +75,8 @@ def test_sweep():
     assert result.gum[0].expected['f'] == 14   # Verify mean values of GUM calculation
     assert result.gum[1].expected['f'] == 15
     assert result.gum[2].expected['f'] == 16
-    assert 'f (GUM)' in proj.get_dataset()
-    assert np.allclose(proj.get_dataset('f (GUM)').get_column('f'), np.array([14, 15, 16]))
+    assert 'f (GUM)' in proj.get_arrays()
+    assert np.allclose(proj.get_arrays()['f (GUM)'].get('y'), np.array([14, 15, 16]))
     cfg = proj.get_config()
     s2 = ProjectSweep.from_config(cfg)
     assert cfg['sweeps'] == s2.get_config()['sweeps']
@@ -91,8 +91,8 @@ def test_sweep():
     assert np.isclose(result.gum[0].uncertainty['f'], np.sqrt(0.5**2 + 0.5**2))  # Uncertainties should sweep
     assert np.isclose(result.gum[1].uncertainty['f'], np.sqrt(1**2 + .5**2))
     assert np.isclose(result.gum[2].uncertainty['f'], np.sqrt(1.5**2 + .5**2))
-    assert 'f (GUM)' in proj.get_dataset()
-    assert np.allclose(proj.get_dataset('f (GUM)').get_column('f'), np.array([15, 15, 15]))  # Mean value shouldnt change
+    assert 'f (GUM)' in proj.get_arrays()
+    assert np.allclose(proj.get_arrays()['f (GUM)'].get('y'), np.array([15, 15, 15]))  # Mean value shouldnt change
     cfg = proj.get_config()
     s2 = ProjectSweep.from_config(cfg)
     assert cfg['sweeps'] == s2.get_config()['sweeps']
@@ -134,8 +134,8 @@ def test_sweepreverse():
     s.add_sweep_unc('b', values=np.array([.5, 1.0, 1.5]))
     proj = ProjectReverseSweep(s)
     result = proj.calculate()
-    assert 'f (GUM)' in proj.get_dataset()
-    assert np.allclose(proj.get_dataset('f (GUM)').get_column('$u_{b}$'), np.array([.5, 1, 1.5]))
+    assert 'f (GUM)' in proj.get_arrays()
+    assert np.allclose(proj.get_arrays()['f (GUM)'].get('x'), np.array([.5, 1, 1.5]))
     assert '$u_{b}$' in str(result.report.summary())
     cfg = proj.get_config()
     s2 = ProjectReverseSweep.from_config(cfg)
@@ -147,9 +147,9 @@ def test_sweepreverse():
     s.add_sweep_nom('b', values=np.array([4, 5, 6]))
     proj = ProjectReverseSweep(s)
     result = proj.calculate()
-    assert 'f (GUM)' in proj.get_dataset()
-    assert np.allclose(proj.get_dataset('f (GUM)').get_column('$b$'), np.array([4, 5, 6]))
-    assert np.allclose(proj.get_dataset('f (GUM)').get_column('u(f)'), np.full(3, 1.12), atol=.005)
+    assert 'f (GUM)' in proj.get_arrays()
+    assert np.allclose(proj.get_arrays()['f (GUM)'].get('x'), np.array([4, 5, 6]))
+    assert np.allclose(proj.get_arrays()['f (GUM)'].get('u(y)'), np.full(3, 1.12), atol=.005)
     cfg = proj.get_config()
     s2 = ProjectReverseSweep.from_config(cfg)
     assert cfg['sweeps'] == s2.get_config()['sweeps']
@@ -160,8 +160,8 @@ def test_sweepreverse():
     s.add_sweep_df('b', values=np.array([5, 10, 15]))
     proj = ProjectReverseSweep(s)
     result = proj.calculate()
-    assert 'f (GUM)' in proj.get_dataset()
-    assert np.allclose(proj.get_dataset('f (GUM)').get_column('$b$ deg.f'), np.array([5, 10, 15]))
+    assert 'f (GUM)' in proj.get_arrays()
+    assert np.allclose(proj.get_arrays()['f (GUM)'].get('x'), np.array([5, 10, 15]))
     cfg = proj.get_config()
     s2 = ProjectReverseSweep.from_config(cfg)
     assert cfg['sweeps'] == s2.get_config()['sweeps']
@@ -172,8 +172,8 @@ def test_sweepreverse():
     s.add_sweep_corr('a', 'b', values=np.array([-.5, 0, 0.5]))
     proj = ProjectReverseSweep(s)
     result = proj.calculate()
-    assert 'f (GUM)' in proj.get_dataset()
-    assert np.allclose(proj.get_dataset('f (GUM)').get_column('$corr$'), np.array([-.5, 0, 0.5]))
+    assert 'f (GUM)' in proj.get_arrays()
+    assert np.allclose(proj.get_arrays()['f (GUM)'].get('x'), np.array([-.5, 0, 0.5]))
     cfg = proj.get_config()
     s2 = ProjectReverseSweep.from_config(cfg)
     assert cfg['sweeps'] == s2.get_config()['sweeps']

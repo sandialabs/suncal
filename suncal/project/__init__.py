@@ -2,7 +2,6 @@
 
 from .project import Project
 from .proj_uncert import ProjectUncert
-from .proj_wizard import ProjectUncertWizard
 from .proj_risk import ProjectRisk
 from .proj_dataset import ProjectDataSet
 from .proj_explore import ProjectDistExplore
