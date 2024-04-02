@@ -329,7 +329,7 @@
     }
   </script>
   <py-config>
-    packages = ["src/whl/suncal-1.6.5a0-py3-none-any.whl"]
+    packages = ["src/whl/suncal-1.6.6-py3-none-any.whl"]
   </py-config>
 
 <py-script>
@@ -338,7 +338,7 @@ import asyncio
 from js import createObject, document
 from pyodide.ffi import create_proxy
 import matplotlib.pyplot as plt
-from suncal import risk
+from suncal.risk.risk_model import RiskModel, RiskModelSimple
 from suncal.common import distributions
 from suncal.common.report import Report
 
@@ -347,7 +347,8 @@ Report.apply_css = False  # Use this page's CSS, not Suncal's built-in CSS
 
 createObject(create_proxy(globals()), "pyodideGlobals")
 
-calc = risk.risk_model.RiskModel()
+calc = RiskModel()
+calcsimple = RiskModelSimple()
 figure = plt.figure()
 
 def calcPlots():
@@ -380,7 +381,7 @@ def calcPlots():
       aVal = document.getElementById("std").value
       aVal = float(aVal)
       procdist = distributions.get_distribution(procDistChoice, a = aVal, median = procMedian)
-    calc.procdist = procdist
+    calc.process_dist = procdist
 
     if (testDistChoice == "gamma"):
       alpha = document.getElementById("std2").value
@@ -396,7 +397,7 @@ def calcPlots():
       aVal = document.getElementById("std2").value
       aVal = float(aVal)
       testdist = distributions.get_distribution(testDistChoice, a = aVal, median = measurement)
-    calc.testdist = testdist
+    calc.measure_dist = testdist
     calc.testbias = testMedian
 
     useGB = document.getElementById("guardband").checked
@@ -427,12 +428,12 @@ def calcSimplePlots():
     itp = itp/100
     sliderRange = float(sliderRange)
 
-    calc.set_gbf(gbf)
-    calc.set_tur(tur)
-    calc.set_itp(itp)
-    calc.set_testmedian(sliderRange)
+    calcsimple.gbf = gbf
+    calcsimple.tur = tur
+    calcsimple.itp = itp
+    #calc.set_testmedian(sliderRange)
 
-    out = calc.calculate().report
+    out = calcsimple.calculate().report
     document.getElementById("output").innerHTML = ''  # append=False doesn't seem to work. Clearing old output here.
     display(out.summary(), target="output", append=False)
     out.plot.joint(figure)
@@ -481,8 +482,8 @@ def getNum():
     aVal = document.getElementById("std2").value
     aVal = float(aVal)
     testdist = distributions.get_distribution(testDistChoice, a = aVal, median = measurement)
-  calc.procdist = procdist
-  calc.testdist = testdist
+  calc.process_dist = procdist
+  calc.measure_dist = testdist
   calc.speclimits = (lowerSpec, upperSpec)
 
   pfaTarget = document.getElementById('TargetPFA').value
