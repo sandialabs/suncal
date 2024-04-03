@@ -2,8 +2,11 @@
 
 The Suncal-Web interface currently provides these tools as a beta-test:
 
-- [Decision Risk Calculator](risk.html): Calculate probability of false accept and reject
+- [Uncertainty Propagation](uncertainty.html): GUM and Monte Carlo Risk Propagation
+- [Decision Risk Calculator (simple)](risktur.html): Calculate probability of false accept and reject based on Test Uncertainty Ratios
+- [Decision Risk Calculator](risk.html): Calculate probability of false accept and reject using arbitrary probability distributions
 - [Decision Risk Curves](riskcurves.html): Generate plots of decision risk versus guardbanding, in-tolerance probability, or TURs
+- [Distribution Explorer](distributions.html): Sample from probability distributions and combine using Monte Carlo (typically for training purposes).
 - [Student T Calculator](student.html): Calculate coverage factor, level of confidence, and degrees of freedom
 - [Units Converter](units.html): Convert between measurement units
 
@@ -20,9 +23,20 @@ Source code for this website and the web interface can be found on [github](http
 Suncal-Web is still under active development and considered in beta testing.
 
 
+### Limitations
+
+Some features are only available in the desktop version at this time, including:
+
+- Loading and saving calculation setup
+- Reverse and swept uncertainty propagation
+- Analysis of Variance calculations
+- Calibration interval analysis
+- Curve fitting uncertainty analysis
+- Combining the results of different calculations
+
 
 ### License and Copyright
 
-Copyright 2021-2023 National Technology & Engineering Solutions of Sandia, LLC (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S. Government retains certain rights in this software.
+Copyright 2021-2024 National Technology & Engineering Solutions of Sandia, LLC (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S. Government retains certain rights in this software.
 
 This software is distributed under the GNU General Public License.

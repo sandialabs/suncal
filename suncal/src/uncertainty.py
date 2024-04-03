@@ -1,6 +1,6 @@
 ''' Pyscript interface to Suncal Uncertainty Propagation '''
-from pyscript import Element, display
-from js import alert, window, Object, console
+from pyscript import document, window, display
+from js import alert, Object, console
 from pyodide.ffi import to_js
 
 from js import katex, renderMathInElement, delimiters
@@ -21,11 +21,11 @@ class Uncert:
         self.results = None
         self.update_model()
 
-    def update_model(self):
+    def update_model(self, event=None):
         ''' Update the model in real-time, without commiting it yet '''
-        Element('model-preview').element.innerHTML = ''
+        document.querySelector('#model-preview').innerHTML = ''
         mathinnerHTMLs = []
-        value = Element('model').value
+        value = document.querySelector('#model').value
         exprs = value.split(';') if ';' in value else [value]
 
         # Check each expr for validity
@@ -40,24 +40,24 @@ class Uncert:
                 uparser.parse_math_with_quantities(expr, name)
             except ValueError as err:
                 display(str(err), target='model-preview', append=True)
-                Element('button-model').element.disabled = True
+                document.querySelector('#button-model').disabled = True
                 allvalid = False
             else:
                 mathtex = uparser.parse_math_with_quantities_to_tex(expr)
                 if name:
                     mathtex = f'{name} = {mathtex}'
                 mathinnerHTMLs.append(katex.renderToString(mathtex))
-        Element('model-preview').element.innerHTML = '<br>'.join(mathinnerHTMLs)
-        Element('button-model').element.disabled = not allvalid
+        document.querySelector('#model-preview').innerHTML = '<br>'.join(mathinnerHTMLs)
+        document.querySelector('#button-model').disabled = not allvalid
         return exprs
 
-    def set_model(self):
+    def set_model(self, event=None):
         ''' Commit the model and show variable entry '''
         # Model was already checked for validity
         exprs = self.update_model()
         if exprs:
             savedvars = self.model.variables.variables if self.model else {}
-            savedcor = self.model.variables.correlation_list if self.model else {}
+            savedcor = correlation_list(self.model.variables) if self.model else {}
             self.model = Model(*exprs)
             for v in self.model.variables.names:
                 if v in savedvars:
@@ -66,38 +66,37 @@ class Uncert:
             for (var1, var2), correlation in savedcor.items():
                 self.model.variables.correlate(var1, var2, correlation)
 
-            select = Element('variable-select')
-            select.element.innerHTML = ''
+            select = document.querySelector('#variable-select')
+            select.innerHTML = ''
             for v in self.model.variables.names:
-                select.element.innerHTML += f'<option value="{v}">{v}</option>'
+                select.innerHTML += f'<option value="{v}">{v}</option>'
             self.select_variable()
 
-            correlationlist = Element('correlation-vars')
-            correlationlist.element.innerHTML = ''
+            correlationlist = document.querySelector('#correlation-vars')
+            correlationlist.innerHTML = ''
             for i, v1 in enumerate(self.model.variables.names):
                 for v2 in self.model.variables.names[i+1:]:
-                    correlationlist.element.innerHTML += f'<option value="{v1},{v2}">{v1} &harr; {v2}</option>'
+                    correlationlist.innerHTML += f'<option value="{v1},{v2}">{v1} &harr; {v2}</option>'
 
-            Element('measured-values').remove_class('input-hidden')
-            Element('div-calculate').remove_class('input-hidden')
+            document.querySelector('#measured-values').classList.remove('input-hidden')
+            document.querySelector('#div-calculate').classList.remove('input-hidden')
 
     def fill_variable(self):
         ''' Fill the variable entries for selected variable '''
-        varname = Element('variable-select').value
+        varname = document.querySelector('#variable-select').value
         var = self.model.var(varname)
-        value = Element('varvalue')
+        value = document.querySelector('#varvalue')
         expected = str(var.expected)
-        value.element.value = expected
+        value.value = expected
 
-        uc = Element('varuncert')
-        uc.write(str(var.uncertainty))
-        Element('var-degf').write(str(var.degrees_freedom))
+        display(str(var.uncertainty), target='varuncert', append=False)
+        display(str(var.degrees_freedom), target='var-degf', append=False)
 
-    def set_var_value(self):
+    def set_var_value(self, event=None):
         ''' Set measured/expected value of the selected variable '''
-        varname = Element('variable-select').value
+        varname = document.querySelector('#variable-select').value
         var = self.model.var(varname)
-        value = Element('varvalue').value
+        value = document.querySelector('#varvalue').value
         units = None
         if ' ' in value:
             value, units = value.split(' ')
@@ -113,9 +112,9 @@ class Uncert:
         except PintError:
             alert(f'Invalid unit `{units}`')
 
-    def add_component(self):
+    def add_component(self, event=None):
         ''' Add a new uncertianty component '''
-        varname = Element('variable-select').value
+        varname = document.querySelector('#variable-select').value
         var = self.model.var(varname)
         typebnames = var.typeb_names
         try:
@@ -124,97 +123,98 @@ class Uncert:
             num = 0
         uname = f'u{num+1}'
 
-        Element('uncert-box').remove_class('input-hidden')  # Must be visible or chaning select won't work
-        Element('component-select').element.innerHTML += f'<option value="{uname}">{uname}</option>'
-        Element('component-select').element.value = uname
-        Element('distribution').element.value = 'normal'
-        Element('uncertvalue').element.value = '1'
-        Element('coverage').element.value = '2'
-        Element('confidence').element.value = '95.45%'
-        Element('degf').element.value = 'inf'
+        document.querySelector('#uncert-box').classList.remove('input-hidden')###.remove_class('input-hidden')  # Must be visible or chaning select won't work
+        document.querySelector('#component-select').innerHTML += f'<option value="{uname}">{uname}</option>'
+        document.querySelector('#component-select').value = uname
+        document.querySelector('#distribution').value = 'normal'
+        document.querySelector('#uncertvalue').value = '1'
+        document.querySelector('#coverage').value = '2'
+        document.querySelector('#confidence').value = '95.45%'
+        document.querySelector('#degf').value = 'inf'
         var.typeb(name=uname, unc=1, k=2)
-        Element('uncertunits').element.value = str(var._typeb[-1].units) if var._typeb[-1].units else ''
+        document.querySelector('#uncertunits').value = str(var._typeb[-1].units) if var._typeb[-1].units else ''
         self.fill_variable()
 
-    def select_variable(self):
+    def select_variable(self, event=None):
         ''' Selected Variable was changed '''
-        varname = Element('variable-select').value
+        varname = document.querySelector('#variable-select').value
         var = self.model.var(varname)
-        Element('component-select').element.innerHTML = ''
+        document.querySelector('#component-select').innerHTML = ''
         if len(var.typeb_names) == 0:
-            Element('uncert-box').add_class('input-hidden')
+            document.querySelector('#uncert-box').classList.add('input-hidden')
         else:
-            Element('uncert-box').remove_class('input-hidden')
+            document.querySelector('#uncert-box').classList.remove('input-hidden')
             for uname in var.typeb_names:
-                Element('component-select').element.innerHTML += f'<option value="{uname}">{uname}</option>'
+                document.querySelector('#component-select').innerHTML += f'<option value="{uname}">{uname}</option>'
             self.select_component()
         self.fill_variable()
 
-    def select_component(self):
+    def select_component(self, event=None):
         ''' Selected uncertainty component was changed '''
-        varname = Element('variable-select').value
+        varname = document.querySelector('#variable-select').value
         var = self.model.var(varname)
-        uncname = Element('component-select').value
+        uncname = document.querySelector('#component-select').value
         unc = var.get_typeb(uncname)
 
-        Element('distribution').element.value = unc.distname
-        Element('uncertvalue').element.value = str(unc.kwargs.get('unc', unc.kwargs.get('a', 1)))
-        Element('coverage').element.value = str(unc.kwargs.get('k', '-'))
-        Element('confidence').element.value = str(unc.kwargs.get('conf', '-'))
-        Element('degf').element.value = str(unc.degf)
+        document.querySelector('#distribution').value = unc.distname
+        document.querySelector('#uncertvalue').value = str(unc.kwargs.get('unc', unc.kwargs.get('a', 1)))
+        document.querySelector('#coverage').value = str(unc.kwargs.get('k', '-'))
+        document.querySelector('#confidence').value = str(unc.kwargs.get('conf', '-'))
+        document.querySelector('#degf').value = str(unc.degf)
 
-    def set_comp_value(self, cov=None):
+    def set_comp_value(self, event):###cov=None):
         ''' Store entered values of uncertainty component '''
-        varname = Element('variable-select').value
+        cov = event.target.id
+        varname = document.querySelector('#variable-select').value
         var = self.model.var(varname)
-        uncname = Element('component-select').value
+        uncname = document.querySelector('#component-select').value
         oldunc = var.get_typeb(uncname)
 
         try:
-            distname = Element('distribution').value
+            distname = document.querySelector('#distribution').value
 
-            degf = float(Element('degf').value)
-            k = float(Element('coverage').value)
+            degf = float(document.querySelector('#degf').value)
+            k = float(document.querySelector('#coverage').value)
             if cov in ['coverage', 'degf']:
                 conf = f'{ttable.confidence(k, degf)*100:.2f}%'
-                Element('confidence').element.value = conf
+                document.querySelector('#confidence').value = conf
             elif cov == 'confidence':
-                conf = float(Element('confidence').value.rstrip('%')) / 100
+                conf = float(document.querySelector('#confidence').value.rstrip('%')) / 100
                 k = ttable.k_factor(conf, degf)
-                Element('coverage').element.value = format(k, '.2f')
+                document.querySelector('#coverage').value = format(k, '.2f')
 
-            kwargs = {'k': k, 'degf': degf, 'units': Element('uncertunits').value}
+            kwargs = {'k': k, 'degf': degf, 'units': document.querySelector('#uncertunits').value}
             if distname == 'normal':
-                kwargs['unc'] = Element('uncertvalue').value
+                kwargs['unc'] = document.querySelector('#uncertvalue').value
             else:
-                kwargs['a'] = Element('uncertvalue').value
+                kwargs['a'] = document.querySelector('#uncertvalue').value
 
             var.typeb(name=uncname, dist=distname, **kwargs)
         except (ValueError, PintError) as exc:
-            Element('uncert-entry-error').write(str(exc))
+            display(str(exc), target='uncert-entry-error', append=False)
         else:
-            Element('uncert-entry-error').write('')
+            display('', target='uncert-entry-error', append=False)
             var._typeb.remove(oldunc)
             self.fill_variable()
 
         if distname == 'normal':
-            Element('uncert-label').element.innerHTML = 'Uncertainty'
-            Element('cov-input').remove_class('input-hidden')
-            Element('cov-label').remove_class('input-hidden')
-            Element('cov-help').remove_class('input-hidden')
-            Element('conf-input').remove_class('input-hidden')
-            Element('conf-label').remove_class('input-hidden')
-            Element('conf-help').remove_class('input-hidden')
+            document.querySelector('#uncert-label').innerHTML = 'Uncertainty'
+            document.querySelector('#cov-input').classList.remove('input-hidden')
+            document.querySelector('#cov-label').classList.remove('input-hidden')
+            document.querySelector('#cov-help').classList.remove('input-hidden')
+            document.querySelector('#conf-input').classList.remove('input-hidden')
+            document.querySelector('#conf-label').classList.remove('input-hidden')
+            document.querySelector('#conf-help').classList.remove('input-hidden')
         else:
-            Element('uncert-label').element.innerHTML = 'Half-width'
-            Element('cov-input').add_class('input-hidden')
-            Element('cov-label').add_class('input-hidden')
-            Element('cov-help').add_class('input-hidden')
-            Element('conf-input').add_class('input-hidden')
-            Element('conf-label').add_class('input-hidden')
-            Element('conf-help').add_class('input-hidden')
+            document.querySelector('#uncert-label').innerHTML = 'Half-width'
+            document.querySelector('#cov-input').classList.add('input-hidden')
+            document.querySelector('#cov-label').classList.add('input-hidden')
+            document.querySelector('#cov-help').classList.add('input-hidden')
+            document.querySelector('#conf-input').classList.add('input-hidden')
+            document.querySelector('#conf-label').classList.add('input-hidden')
+            document.querySelector('#conf-help').classList.add('input-hidden')
 
-    def calculate(self):
+    def calculate(self, event=None):
         try:
             self.results = self.model.calculate()
         except ValueError as exc:
@@ -225,40 +225,40 @@ class Uncert:
         except PintError as exc:
             alert(str(exc))
         else:
-            Element('suncal-input').add_class('input-hidden')
-            Element('suncal-output').remove_class('input-hidden')
+            document.querySelector('#suncal-input').classList.add('input-hidden')
+            document.querySelector('#suncal-output').classList.remove('input-hidden')
 
             if len(self.results.functionnames) > 0:
-                Element('mcfit-function-select').remove_class('input-hidden')
-                functionselect = Element('mcfit-function')
-                functionselect.element.innerHTML = ''
+                document.querySelector('#mcfit-function-select').classList.remove('input-hidden')
+                functionselect = document.querySelector('#mcfit-function')
+                functionselect.innerHTML = ''
                 for i, name in enumerate(self.results.functionnames):
-                    functionselect.element.innerHTML += f'<option value="{i}">{name}</option>'
+                    functionselect.innerHTML += f'<option value="{i}">{name}</option>'
             else:
-                Element('mcfit-function-select').add_class('input-hidden')
+                document.querySelector('#mcfit-function-select').classList.add('input-hidden')
 
             self.output_change()
 
-    def output_change(self):
-        Element('output-units').add_class('input-hidden')
-        Element('uncert-control-comparison').add_class('input-hidden')
-        Element('uncert-control-expanded').add_class('input-hidden')
-        Element('uncert-control-derivation').add_class('input-hidden')
-        Element('uncert-control-validity').add_class('input-hidden')
-        Element('uncert-control-mcfit').add_class('input-hidden')
-        Element('uncert-control-mcinputs').add_class('input-hidden')
-        reportname = Element('outputpage').value
+    def output_change(self, event=None):
+        document.querySelector('#output-units').classList.add('input-hidden')
+        document.querySelector('#uncert-control-comparison').classList.add('input-hidden')
+        document.querySelector('#uncert-control-expanded').classList.add('input-hidden')
+        document.querySelector('#uncert-control-derivation').classList.add('input-hidden')
+        document.querySelector('#uncert-control-validity').classList.add('input-hidden')
+        document.querySelector('#uncert-control-mcfit').classList.add('input-hidden')
+        document.querySelector('#uncert-control-mcinputs').classList.add('input-hidden')
+        reportname = document.querySelector('#outputpage').value
         if reportname == 'summary':
-            Element('output-units').remove_class('input-hidden')
+            document.querySelector('#output-units').classList.remove('input-hidden')
             unitvals = [str(self.results.getunits().get(f)) for f in self.results.functionnames]
-            Element('output-units-value').element.value = '; '.join(unitvals)
+            document.querySelector('#output-units-value').value = '; '.join(unitvals)
             rpt = self.results.report.summary_withplots()
 
         elif reportname == 'comparison':
             joint = False
             if len(self.model.functionnames) > 1:
-                Element('uncert-control-comparison').remove_class('input-hidden')
-                joint = Element('uncert-control-comparison-joint').element.checked
+                document.querySelector('#uncert-control-comparison').classList.remove('input-hidden')
+                joint = document.querySelector('#uncert-control-comparison-joint').checked
             rpt = plt.figure()
             if joint:
                 self.results.report.plot.joint_pdf(fig=rpt)
@@ -266,30 +266,30 @@ class Uncert:
                 self.results.report.plot.pdf(fig=rpt)
 
         elif reportname == 'expanded':
-            Element('uncert-control-expanded').remove_class('input-hidden')
-            conf = float(Element('report-expanded-confs').value) / 100
+            document.querySelector('#uncert-control-expanded').classList.remove('input-hidden')
+            conf = float(document.querySelector('#report-expanded-confs').value) / 100
             rpt = self.results.report.expanded(conf=conf)
 
         elif reportname == 'budget':
             rpt = self.results.report.allinputs()
 
         elif reportname == 'derivation':
-            Element('uncert-control-derivation').remove_class('input-hidden')
-            values = Element('uncert-control-derivation-values').element.checked
+            document.querySelector('#uncert-control-derivation').classList.remove('input-hidden')
+            values = document.querySelector('#uncert-control-derivation-values').checked
             rpt = self.results.report.gum.derivation(solve=values)
 
         elif reportname == 'validity':
-            Element('uncert-control-validity').remove_class('input-hidden')
-            figs = int(Element('uncert-control-validity-figs').value)
+            document.querySelector('#uncert-control-validity').classList.remove('input-hidden')
+            figs = int(document.querySelector('#uncert-control-validity-figs').value)
             rpt = self.results.report.validity(ndig=figs)
 
         elif reportname == 'mcdist':
-            Element('uncert-control-mcfit').remove_class('input-hidden')
+            document.querySelector('#uncert-control-mcfit').classList.remove('input-hidden')
             functionid = 0
             if len(self.results.functionnames) > 0:
-                functionid = int(Element('mcfit-function').value)
+                functionid = int(document.querySelector('#mcfit-function').value)
 
-            distname = Element('uncert-control-mcfit-dist').value
+            distname = document.querySelector('#uncert-control-mcfit-dist').value
             rpt = plt.figure()
             self.results.report.montecarlo.plot.probplot(
                 function=self.results.functionnames[functionid],
@@ -297,9 +297,9 @@ class Uncert:
                 fig=rpt)
 
         elif reportname == 'mcinputs':
-            Element('uncert-control-mcinputs').remove_class('input-hidden')
+            document.querySelector('#uncert-control-mcinputs').classList.remove('input-hidden')
             rpt = plt.figure()
-            if Element('uncert-control-mcinputs-joint').element.checked:
+            if document.querySelector('#uncert-control-mcinputs-joint').checked:
                 self.results.report.montecarlo.plot.variable_scatter(fig=rpt)
             else:
                 self.results.report.montecarlo.plot.variable_hist(fig=rpt)
@@ -310,40 +310,39 @@ class Uncert:
             rpt = Report()
             rpt.hdr('TODO')
 
-        Element('report').element.innerHTML = ''
         display(rpt, target='report', append=False)
 
         # Katex render the equations.
         # note - `delimiters` argument is a js nested data structure that doesn't
         # convert well from Python list of dicts so it's set up in a <script> on the html page.
-        renderMathInElement(Element('report').element, delimiters=delimiters)
+        renderMathInElement(document.querySelector('#report'), delimiters=delimiters)
 
-    def enable_correlations(self):
+    def enable_correlations(self, event=None):
         ''' Enable/disable correlation controls '''
-        if Element('enable-correlations').element.checked:
-            Element('correlations-entries').remove_class('input-hidden')
+        if document.querySelector('#enable-correlations').checked:
+            document.querySelector('#correlations-entries').classList.remove('input-hidden')
         else:
-            Element('correlations-entries').add_class('input-hidden')
+            document.querySelector('#correlations-entries').classList.add('input-hidden')
 
-    def select_correlation(self):
+    def select_correlation(self, event=None):
         ''' Fill correlation input with stored value for the selected variable pair '''
-        v1, v2 = Element('correlation-vars').value.split(',')
+        v1, v2 = document.querySelector('#correlation-vars').value.split(',')
         corr = self.model.variables.get_correlation_coeff(v1, v2)
-        Element('correlation-value').element.value = corr
+        document.querySelector('#correlation-value').value = corr
 
-    def set_correlation(self):
+    def set_correlation(self, event=None):
         ''' Store entered correlation coefficient to the model '''
         try:
-            corr = float(Element('correlation-value').value)
-            v1, v2 = Element('correlation-vars').value.split(',')
+            corr = float(document.querySelector('#correlation-value').value)
+            v1, v2 = document.querySelector('#correlation-vars').value.split(',')
         except ValueError:
             pass
         else:
             self.model.variables.correlate(v1, v2, corr)
 
-    def change_units(self):
+    def change_units(self, event=None):
         ''' Units changed '''
-        unitstr = Element('output-units-value').value
+        unitstr = document.querySelector('#output-units-value').value
         units = [u.strip() for u in unitstr.split(';')]
         try:
             self.results.units(**dict(zip(self.results.functionnames, units)))
@@ -353,27 +352,23 @@ class Uncert:
         else:
             self.output_change()
 
-    def back(self):
+    def back(self, event=None):
         ''' Go back to input page '''
-        Element('suncal-input').remove_class('input-hidden')
-        Element('suncal-output').add_class('input-hidden')
+        document.querySelector('#suncal-input').classList.remove('input-hidden')
+        document.querySelector('#suncal-output').classList.add('input-hidden')
 
-    def restart(self):
+    def restart(self, event=None):
         ''' Clear inputs and restart the calculation '''
-        Element('model').element.value = 'f = x'
+        document.querySelector('#model').value = 'f = x'
         self.model = None
         self.update_model()
-        Element('measured-values').add_class('input-hidden')
-        Element('div-calculate').add_class('input-hidden')
+        document.querySelector('#measured-values').classList.add('input-hidden')
+        document.querySelector('#div-calculate').classList.add('input-hidden')
         self.back()
 
 
-async def file_save(report_method):
-    ''' Download a report. Ask for filename before generating report due to time
-
-        Args:
-            report_method: method for generating the suncal Report instance
-    '''
+async def file_save(event=None):
+    ''' Download a report. Ask for filename before generating report due to time '''
     try:
         options = {"startIn": "downloads", "suggestedName": "report.html"}
         fileHandle = await window.showSaveFilePicker(Object.fromEntries(to_js(options)))
@@ -383,10 +378,27 @@ async def file_save(report_method):
 
     footer = '''<br><div>Uncertainty calculated by <a href="https://sandiapsl.github.io">Suncal</a></div>'''
     Report.apply_css = True
-    html = report_method().get_html(footer=footer)
+    html = uncert.results.report.all().get_html(footer=footer)
     Report.apply_css = False
 
     file = await fileHandle.createWritable()
     await file.write(html)
     await file.close()
     return
+
+
+def correlation_list(variables):
+    ''' Get parseable dictionary of correlation coefficients
+        in the form {(v1, v2): correlation}
+
+        This used to be a method of Variables class in suncal.
+    '''
+    coeffs = {}
+    for idx1, name1 in enumerate(variables.names):
+        for idx2, name2 in enumerate(variables.names):
+            if name1 < name2:
+                coeffs[(name1, name2)] = variables._correlation[idx1, idx2]
+    return coeffs
+
+
+uncert = Uncert()

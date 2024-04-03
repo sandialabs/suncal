@@ -3,92 +3,48 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-
     <title>Suncal - Units Converter</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Raleway&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://pyscript.net/latest/pyscript.css" />
     <link rel="stylesheet" href="style/style.css" />
-    <script defer src="https://pyscript.net/releases/2023.03.1/pyscript.js"></script>
-    <py-config>
-        packages = ["pint"]
-    </py-config>
+    <link rel="stylesheet" href="https://pyscript.net/releases/2024.3.2/core.css">
+    <script type="module" src="https://pyscript.net/releases/2024.3.2/core.js"></script>
+    <script type="module">
+      const loading = document.getElementById('loading');
+      addEventListener('py:ready', () => loading.close());
+      loading.showModal();
+    </script>
   </head>
-
   <body>
+    <dialog id="loading">
+      <h2>Loading...</h2>
+    </dialog>
     <div class="container">
       <h1>Suncal Web (Beta) - Units Converter</h1>
     </div>
-<br><br>
-<div class="container units">
-<div class="grid-container units">
-  <div class="grid-child left"><span class="largenumber"></span><input type="text" id="qty-from" name="qty-from" value="10 cm" py-input="convert()"></div>
-  <div class="grid-child center">=</div>
-  <div class="grid-child">
-    <span class="largenumber" id="qty-to">100.0</span>
-    <input type="text" id="unit-to" name="unit-to" value="mm" py-input="convert()"></div>
-  <div class="grid-child left"><span id="unitname-from" >centimeter</span></div>
-  <div class="grid-child center">&rarr;</div>
-  <div class="grid-child"><span id="unitname-to" >millimeter</span></div>
-  <div class="grid-child left"><span id="dimension-from" >length</span></div>
-  <div class="grid-child center">&rarr;</div>
-  <div class="grid-child"><span id="dimension-to" >length</span></div>
-</div>
-<br><br>
-<div><span id="error"></span></div>
-</div>
-<br><br>
-<div class="footer">
-  <p>Units conversion powered by <a href="https://pint.readthedocs.io">Pint</a></p>
-  <p><a href="index.html">Suncal-Web Home</a></p>
-</div>
-</div>
-<py-script>
-
-from pint import UnitRegistry, PintError, UndefinedUnitError, DimensionalityError, DefinitionSyntaxError
-from tokenize import TokenError
-ureg = UnitRegistry()
-
-def convert():
-    Element('error').clear()
-    qtyfrom = Element('qty-from').value
-    tounit = Element('unit-to').value
-    qtyfrom = qtyfrom.replace('^', '**')
-    tounit = tounit.replace('^', '**')
-
-    fromvalid = tovalid = False
-    try:
-        qtyfrom = ureg.Quantity(qtyfrom)
-    except (ValueError, DefinitionSyntaxError, UndefinedUnitError, DimensionalityError, TokenError, AssertionError):
-        vals = qtyfrom.split(maxsplit=1)
-        unit = qtyfrom
-        if len(vals) > 1:
-            unit = vals[1]
-        display(f'Unit {unit} is not defined', target='error')
-    else:
-        fromvalid = True
-        display(format(qtyfrom.units, 'P'), target='unitname-from', append=False)
-        display(format(qtyfrom.dimensionality, 'P'), target='dimension-from', append=False)
-
-    try:
-        tounit = ureg.Quantity(tounit)
-    except (ValueError, DefinitionSyntaxError, UndefinedUnitError, DimensionalityError, AssertionError):
-        display(f'Unit {tounit} is not defined', target='error', append=True)
-    else:
-        tovalid = True
-        display(format(tounit.units, 'P'), target='unitname-to', append=False)
-        display(format(tounit.dimensionality, 'P'), target='dimension-to', append=False)
-
-    if fromvalid and tovalid:
-        try:
-            qtyto = qtyfrom.to(tounit)
-        except DimensionalityError as exc:
-            display('Dimensionality Mismatch', target='error')
-        else:
-            Element('qty-to').clear()
-            display(format(qtyto.magnitude, 'g'), target='qty-to', append=False)
-
-</py-script>
+    <br><br>
+    <div class="container units">
+    <div class="grid-container units">
+      <div class="grid-child left"><span class="largenumber"></span><input type="text" id="qty-from"
+        name="qty-from" value="10 cm" py-input="convert"></div>
+      <div class="grid-child center">=</div>
+      <div class="grid-child">
+        <span class="largenumber" id="qty-to">100.0</span>
+        <input type="text" id="unit-to" name="unit-to" value="mm" py-input="convert"></div>
+      <div class="grid-child left"><span id="unitname-from" >centimeter</span></div>
+      <div class="grid-child center">&rarr;</div>
+      <div class="grid-child"><span id="unitname-to" >millimeter</span></div>
+      <div class="grid-child left"><span id="dimension-from" >length</span></div>
+      <div class="grid-child center">&rarr;</div>
+      <div class="grid-child"><span id="dimension-to" >length</span></div>
+    </div>
+    <br><br>
+    <div><span id="error"></span></div>
+    </div>
+    <br><br>
+    <div class="footer">
+      <p>Units conversion powered by <a href="https://pint.readthedocs.io">Pint</a></p>
+      <p><a href="index.html">Suncal-Web Home</a></p>
+    </div>
+    </div>
+    <script type="py" src="src/units.py" config='{"packages": ["pint"]}'></script>
 </body>
 </html>

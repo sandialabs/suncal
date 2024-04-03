@@ -1,149 +1,181 @@
 .dropbtn {
-    background-color: #59afff;
-    color: white;
-    padding: 5px 5px;
-    font-size: 14px;
-    border-color: #0259bd;
-    cursor: pointer;
-    width: 185px;
-    box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.2);
-  }
+  background-color: #59afff;
+  color: white;
+  padding: 5px 5px;
+  font-size: 14px;
+  border-color: #0259bd;
+  cursor: pointer;
+  width: 185px;
+  box-shadow: 0px 8px 16px 0px rgba(0, 0, 0, 0.2);
+}
 
-  html, body {
-    min-height: 100%;
-  }
+html,
+body {
+  min-height: 100%;
+  margin: auto;
+  font-family: 'Raleway', sans-serif;
+  font-size: 16px;
+}
 
-  .footer {
-    background-color: rgb(107, 117, 124); 
-    position: fixed;
-    left: 0;
-    bottom: 0;
-    width: 25%;
-    text-align: left;
-    color: white; 
-    font-weight: bold; 
-    max-height: 35px;
-    box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.2);
+.container {
+  margin: auto;
+  width: 60%
+}
 
-  }
+.risk-grid {
+  display: grid;
+  grid-template-columns: 2fr 3fr;
+  gap: 10px;
+  margin: auto;
+  width: 90%;
+}
 
-  .Label {
-    background-color:#0259bd;
-    color: white;
-    font-size: 14px;
-  }
+.risk-grid-child {
+  padding: 5px;
+  border: 1px solid lightgray;
 
-  .InputVal {
-    border: 1px solid;
-    border-color: black;
-    border-collapse: collapse;
-  }
-  
-  /* The container <div> - needed to position the dropdown content */
-  .dropdown {
-    position: relative;
-    display: inline-block;
-  }
+}
 
-  .dropdown:before {
-    content: "";
-    position: absolute;
-    right: 10px;
-    top: 12px;
-    width: 0; 
-    height: 0; 
-    border-left: 10px solid transparent;
-    border-right: 10px solid transparent;
-    border-top: 10px solid  #0259bd;
+.input-hidden {
+  display: none;
+}
+
+.footer {
+  color: rgb(94, 94, 94);
+  width: 100%;
+  margin-top: 4em;
+  text-align: center;
+  font-size: 12px;
+}
+
+.Label {
+  background-color: #0259bd;
+  color: white;
+  font-size: 14px;
+}
+
+.InputVal {
+  border: 1px solid;
+  border-color: black;
+  border-collapse: collapse;
+}
+
+/* The container <div> - needed to position the dropdown content */
+.dropdown {
+  position: relative;
+  display: inline-block;
+}
+
+.dropdown:before {
+  content: "";
+  position: absolute;
+  right: 10px;
+  top: 12px;
+  width: 0;
+  height: 0;
+  border-left: 10px solid transparent;
+  border-right: 10px solid transparent;
+  border-top: 10px solid #0259bd;
 }
 
 .dropdown:after {
-    content: "";
-    position: absolute;
-    right: 10px;
-    top: 9px;
-    width: 0; 
-    height: 0; 
-    border-left: 10px solid transparent;
-    border-right: 10px solid transparent;
-    border-top: 10px solid #59afff;
+  content: "";
+  position: absolute;
+  right: 10px;
+  top: 9px;
+  width: 0;
+  height: 0;
+  border-left: 10px solid transparent;
+  border-right: 10px solid transparent;
+  border-top: 10px solid #59afff;
 }
-  
-  /* Dropdown Content (Hidden by Default) */
-  .dropdown-content {
-    display: none;
-    position: absolute;
-    background-color: #f9f9f9;
-    min-width: 160px;
-    box-shadow: 0px 0px 8px 16px rgba(0,0,0,0.2);
-    z-index: 1;
-  }
-  
-  /* Links inside the dropdown */
-  .dropdown-content a {
-    color: black;
-    padding: 12px 16px;
-    text-decoration: none;
-    display: block;
-  }
-  
-  /* Change color of dropdown links on hover */
-  .dropdown-content a:hover {background-color: #f1f1f1}
-  
-  /* Show the dropdown menu on hover */
-  .dropdown:hover .dropdown-content {
-    display: block;
-  }
-  
-  /* Change the background color of the dropdown button when the dropdown content is shown */
-  .dropdown:hover .dropbtn {
-    background-color: #0259bd;
-    border-color: #59afff;
-  }
 
-  table, th, td {
-    border: 1px solid;
-    border-color: black;
-    border-collapse: collapse;
-  }
+/* Dropdown Content (Hidden by Default) */
+.dropdown-content {
+  display: none;
+  position: absolute;
+  background-color: #f9f9f9;
+  min-width: 160px;
+  box-shadow: 0px 0px 8px 16px rgba(0, 0, 0, 0.2);
+  z-index: 1;
+}
 
-  table {
-    box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.2);
-  }
+/* Links inside the dropdown */
+.dropdown-content a {
+  color: black;
+  padding: 12px 16px;
+  text-decoration: none;
+  display: block;
+}
 
-  td {
-    padding: 3px;
-    text-align: left;
-    background-color: white;
-    color: black;
-  }
+/* Change color of dropdown links on hover */
+.dropdown-content a:hover {
+  background-color: #f1f1f1
+}
 
-  th {
-    padding: 3px;
-    text-align: left;
-    background-color: #0259bd;
-    color: white;
-  }
+/* Show the dropdown menu on hover */
+.dropdown:hover .dropdown-content {
+  display: block;
+}
+
+/* Change the background color of the dropdown button when the dropdown content is shown */
+.dropdown:hover .dropbtn {
+  background-color: #0259bd;
+  border-color: #59afff;
+}
+
+table,
+th,
+td {
+  border: 1px solid;
+  border-color: black;
+  border-collapse: collapse;
+}
+
+table {
+  box-shadow: 0px 8px 16px 0px rgba(0, 0, 0, 0.2);
+}
+
+td {
+  padding: 3px;
+  text-align: left;
+  background-color: white;
+  color: black;
+}
+
+th {
+  padding: 3px;
+  text-align: left;
+  background-color: #0259bd;
+  color: white;
+}
 
 
 
-  .btnCircle {
-    justify-content: center;
-    align-items: center;
-    width:50;
-    height:50; 
-    font-size: 14;
-    outline:none;
-    border: none;
-    position: absolute; 
-    top: 110px;
-    left: 250px; 
-    display: none;
-    background-color: #59afff;
-    color: white;
-  }
-  
-#inputTable table, #inputTable caption, #inputTable tbody, #inputTable tfoot, #inputTable thead, #inputTable tr, #inputTable th, #inputTable td {
+.btnCircle {
+  justify-content: center;
+  align-items: center;
+  width: 50;
+  height: 50;
+  font-size: 14;
+  outline: none;
+  border: none;
+  position: absolute;
+  top: 110px;
+  left: 250px;
+  display: none;
+  background-color: #59afff;
+  color: white;
+}
+
+#inputTable table,
+#inputTable caption,
+#inputTable tbody,
+#inputTable tfoot,
+#inputTable thead,
+#inputTable tr,
+#inputTable th,
+#inputTable td {
   margin: 0;
   padding: 0;
   border: 0;

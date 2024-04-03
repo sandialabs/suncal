@@ -1,889 +1,380 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
+
+<head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Suncal - Risk Curves</title>
-    <!-- linking to PyScript assets -->
     <link rel="stylesheet" href="style/risk.css" />
-    <link rel="stylesheet" href="https://pyscript.net/latest/pyscript.css" />
-    <script defer src="https://pyscript.net/releases/2023.05.1/pyscript.js"></script>
-  </head>
-  <body>
-    <div class="dropdown"  style = "position: absolute; top: 10px; left: 10px;">
-        <button class="dropbtn" id = "riskType">Risk Curves</button>
-        <div class="dropdown-content">
-          <a href="risk.html" id = "Integral">Integral</a>
-          <a href="#" id = "full">Risk Curves</a>
+    <link rel="stylesheet" href="https://pyscript.net/releases/2024.3.2/core.css">
+    <script type="module" src="https://pyscript.net/releases/2024.3.2/core.js"></script>
+    <script type="module">
+        const loading = document.getElementById('loading');
+        addEventListener('py:ready', () => loading.close());
+        loading.showModal();
+    </script>
+</head>
+
+<body>
+    <dialog id="loading">
+        <h2>Loading...</h2>
+    </dialog>
+    <div class="container">
+        <h1>Suncal Web - Decision Risk Curves</h1>
+    </div>
+    <div class="risk-grid">
+        <div class="risk-grid-child">
+            <table id="SweepSetUp" style="margin-top: 2em;">
+                <tr>
+                    <td ALIGN="center">
+                        <div class="dropdown">
+                            <button class="dropbtn" id="sweepMode">In-tol probability %</button>
+                            <div class="dropdown-content">
+                                <a href="#" id="intolPercent"
+                                    onclick="document.getElementById('sweepMode').textContent='In-tol probability %';">In-tol
+                                    probablility %</a>
+                                <a href="#" id="SL/Proc"
+                                    onclick="document.getElementById('sweepMode').textContent='SL/Process Std. Dev.';">SL/Process
+                                    Std. Dev.</a>
+                            </div>
+                        </div>
+                    </td>
+                    <td ALIGN="center">
+                        <div class="dropdown">
+                            <button class="dropbtn" id="variableSelect1">Sweep (x) variable</button>
+                            <div class="dropdown-content">
+                                <a href="#" id="sweepx"
+                                    onclick="document.getElementById('variableSelect1').textContent='Sweep (x) variable'; dropDownBoxChanges1();">Sweep
+                                    (x) variable</a>
+                                <a href="#" id="stepz"
+                                    onclick="document.getElementById('variableSelect1').textContent='Step (z) variable';dropDownBoxChanges1();">Step
+                                    (z) variable</a>
+                                <a href="#" id="constant"
+                                    onclick="document.getElementById('variableSelect1').textContent='Constant'; enableConstant1();">Constant</a>
+                            </div>
+                        </div>
+                    </td>
+                    <td><input type="number" min="0" value="90" step="0.01" id="var1Constant" name="var1Constant"
+                            disabled> <br> </td>
+                </tr>
+                <tr>
+                    <td><label for="TUR" id="TURLabel">Test Uncertainty Ratio</label></td>
+                    <td ALIGN="center">
+                        <div class="dropdown">
+                            <button class="dropbtn" id="variableSelect2">Step (z) variable</button>
+                            <div class="dropdown-content">
+                                <a href="#" id="sweepx"
+                                    onclick="document.getElementById('variableSelect2').textContent='Sweep (x) variable'; dropDownBoxChanges2();">Sweep
+                                    (x) variable</a>
+                                <a href="#" id="stepz"
+                                    onclick="document.getElementById('variableSelect2').textContent='Step (z) variable'; dropDownBoxChanges2();">Step
+                                    (z) variable</a>
+                                <a href="#" id="constant"
+                                    onclick="document.getElementById('variableSelect2').textContent='Constant'; enableConstant2();">Constant</a>
+                            </div>
+                        </div>
+                    </td>
+                    <td><input type="number" min="0" step="0.01" value="4" id="var2Constant" name="var2Constant"
+                            disabled> <br> </td>
+                </tr>
+                <tr>
+                    <td><label for="GBF" id="GBFLabel">Guardband Factor</label></td>
+                    <td ALIGN="center">
+                        <div class="dropdown">
+                            <button class="dropbtn" id="variableSelect3">Constant</button>
+                            <div class="dropdown-content">
+                                <a href="#" id="sweepx"
+                                    onclick="document.getElementById('variableSelect3').textContent='Sweep (x) variable'; dropDownBoxChanges3();">Sweep
+                                    (x) variable</a>
+                                <a href="#" id="stepz"
+                                    onclick="document.getElementById('variableSelect3').textContent='Step (z) variable'; dropDownBoxChanges3();">Step
+                                    (z) variable</a>
+                                <a href="#" id="constant"
+                                    onclick="document.getElementById('variableSelect3').textContent='Constant'; enableConstant3();">Constant</a>
+                                <a href="#" id="RSS"
+                                    onclick="document.getElementById('variableSelect3').textContent='RSS'; dropDownBoxChanges3();">RSS</a>
+                                <a href="#" id="Dobbert"
+                                    onclick="document.getElementById('variableSelect3').textContent='Dobbert'; dropDownBoxChanges3();">Dobbert</a>
+                                <a href="#" id="RP10"
+                                    onclick="document.getElementById('variableSelect3').textContent='RP10'; dropDownBoxChanges3();">RP10</a>
+                                <a href="#" id="Test95"
+                                    onclick="document.getElementById('variableSelect3').textContent='95% Test'; dropDownBoxChanges3();">95%
+                                    Test</a>
+                            </div>
+                        </div>
+                    </td>
+                    <td><input type="number" min="0" value="1" step="0.01" id="var3Constant" name="var3Constant">
+                        <br>
+                    </td>
+                </tr>
+
+                <tr>
+                    <td><label for="ProcBias" id="ProcBiasLabel">Process Bias %</label></td>
+                    <td ALIGN="center">
+                        <div class="dropdown">
+                            <button class="dropbtn" id="variableSelect4">Constant</button>
+                            <div class="dropdown-content">
+                                <a href="#" id="sweepx"
+                                    onclick="document.getElementById('variableSelect4').textContent='Sweep (x) variable'; dropDownBoxChanges4();">Sweep
+                                    (x) variable</a>
+                                <a href="#" id="stepz"
+                                    onclick="document.getElementById('variableSelect4').textContent='Step (z) variable'; dropDownBoxChanges4();">Step
+                                    (z) variable</a>
+                                <a href="#" id="constant"
+                                    onclick="document.getElementById('variableSelect4').textContent='Constant'; enableConstant4();">Constant</a>
+                            </div>
+                        </div>
+                    </td>
+                    <td><input type="number" min="0" value="0" step="0.01" id="var4Constant" name="var4Constant">
+                        <br>
+                    </td>
+                </tr>
+                <tr>
+                    <td><label for="MeasureBias" id="MeasureBiasLabel">Measurement Bias %</label></td>
+                    <td ALIGN="center">
+                        <div class="dropdown">
+                            <button class="dropbtn" id="variableSelect5">Constant</button>
+                            <div class="dropdown-content">
+                                <a href="#" id="sweepx"
+                                    onclick="document.getElementById('variableSelect5').textContent='Sweep (x) variable'; dropDownBoxChanges5();">Sweep
+                                    (x) variable</a>
+                                <a href="#" id="stepz"
+                                    onclick="document.getElementById('variableSelect5').textContent='Step (z) variable'; dropDownBoxChanges5();">Step
+                                    (z) variable</a>
+                                <a href="#" id="constant"
+                                    onclick="document.getElementById('variableSelect5').textContent='Constant'; enableConstant5();">Constant</a>
+                            </div>
+                        </div>
+                    </td>
+                    <td><input type="number" min="0" value="0" step="0.01" id="var5Constant" name="var5Constant">
+                        <br>
+                    </td>
+                </tr>
+            </table>
+            <br><br>
+
+            <div>
+                <table id="SweepSetUp2" style="margin-top: 2em;">
+                    <tr>
+                        <td><label for="sweepXStart" id="sweepXStartLabel">Sweep (x) Start:</label></td>
+                        <td><input type="number" value="50" step="1" id="sweepXStart" name="sweepXStart"><br></td>
+                    </tr>
+                    <tr>
+                        <td><label for="sweepXStop" id="sweepXStopLabel">Sweep (x) Stop:</label></td>
+                        <td><input type="number" value="90" step="1" id="sweepXStop" name="sweepXStop"><br></td>
+                    </tr>
+                    <tr>
+                        <td><label for="numPoints" id="numPointsLabel"># Points (x):</label></td>
+                        <td><input type="number" value="20" step="1" id="numPoints" name="numPoints"><br></td>
+                    </tr>
+                    <tr>
+                        <td><label for="stepZ" id="stepZLabel">Step Values (z):</label></td>
+                        <td><input type="text" value="1.5, 2, 3, 4" id="stepZ" name="stepZ"><br></td>
+                    </tr>
+                </table>
+                <br><br>
+            </div>
+
+            <div>
+                <table id="PlotSweep" style="margin-top: 2em;">
+                    <tr>
+                        <td><label for="plotType" id="plotTypeLabel">Plot</label></td>
+                        <td ALIGN="center">
+                            <div class="dropdown">
+                                <button class="dropbtn" id="plotSelect">PFA</button>
+                                <div class="dropdown-content">
+                                    <a href="#" id="PFA"
+                                        onclick="document.getElementById('plotSelect').textContent='PFA'">PFA</a>
+                                    <a href="#" id="PFR"
+                                        onclick="document.getElementById('plotSelect').textContent='PFR'">PFR</a>
+                                    <a href="#" id="Both"
+                                        onclick="document.getElementById('plotSelect').textContent='Both'">Both</a>
+                                </div>
+                            </div>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td></td>
+                        <td><input type="checkbox" id="plot3D" name="plot3D">
+                            <label for="plot3D">3DPlot</label><br>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td></td>
+                        <td><input type="checkbox" id="LogScale" name="LogScale">
+                            <label for="LogScale">Log Scale</label><br>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td></td>
+                        <td><button class="dropbtn" id="Plot" py-click="calculate_sweep">Plot</button></td>
+                    </tr>
+                </table>
+            </div>
         </div>
-      </div> 
-    <div>
-    <table id = "SweepSetUp" style = "position: absolute; top: 70px; left: 10px;">
-      <tr>
-        <td ALIGN="center">
-          <div class="dropdown">
-            <button class="dropbtn" id = "sweepMode">In-tol probability %</button>
-          <div class="dropdown-content"> 
-              <a href = "#" id = "intolPercent" onclick = "document.getElementById('sweepMode').textContent = 'In-tol probability %';">In-tol probablility %</a>
-              <a href = "#" id = "SL/Proc" onclick = "document.getElementById('sweepMode').textContent = 'SL/Process Std. Dev.';">SL/Process Std. Dev.</a>
-            </div>
-            </div>
-          </td>    
-        <td ALIGN="center">
-          <div class="dropdown">
-            <button class="dropbtn" id = "variableSelect1">Sweep (x) variable</button>
-          <div class="dropdown-content"> 
-              <a href = "#" id = "sweepx" onclick = "document.getElementById('variableSelect1').textContent = 'Sweep (x) variable'; dropDownBoxChanges1();">Sweep (x) variable</a>
-              <a href = "#" id = "stepz" onclick = "document.getElementById('variableSelect1').textContent = 'Step (z) variable';dropDownBoxChanges1();">Step (z) variable</a>
-              <a href = "#" id = "constant" onclick = "document.getElementById('variableSelect1').textContent = 'Constant'; enableConstant1();">Constant</a>
-            </div>
-            </div>
-          </td>  
-          <td><input type = "number" min = "0"  value = "90" step = "0.01" id = "var1Constant" name = "var1Constant" disabled> <br> </td>
-      </tr>
-      <tr>
-        <td ><label for = "TUR" id = "TURLabel">Test Uncertainty Ratio</label></td>
-        <td ALIGN="center">
-          <div class="dropdown">
-            <button class="dropbtn" id = "variableSelect2">Step (z) variable</button>
-          <div class="dropdown-content"> 
-              <a href = "#" id = "sweepx" onclick = "document.getElementById('variableSelect2').textContent = 'Sweep (x) variable'; dropDownBoxChanges2();">Sweep (x) variable</a>
-              <a href = "#" id = "stepz" onclick = "document.getElementById('variableSelect2').textContent = 'Step (z) variable'; dropDownBoxChanges2();">Step (z) variable</a>
-              <a href = "#" id = "constant" onclick = "document.getElementById('variableSelect2').textContent = 'Constant'; enableConstant2();">Constant</a>
-            </div>
-            </div>
-        </td>  
-        <td><input type = "number" min = "0"  step = "0.01" value = "4" id = "var2Constant" name = "var2Constant" disabled> <br> </td>
-      </tr>
-      <tr>
-        <td ><label for = "GBF" id = "GBFLabel">Guardband Factor</label></td>
-        <td ALIGN="center">
-          <div class="dropdown">
-            <button class="dropbtn" id = "variableSelect3">Constant</button>
-          <div class="dropdown-content"> 
-              <a href = "#" id = "sweepx" onclick = "document.getElementById('variableSelect3').textContent = 'Sweep (x) variable'; dropDownBoxChanges3();">Sweep (x) variable</a>
-              <a href = "#" id = "stepz" onclick = "document.getElementById('variableSelect3').textContent = 'Step (z) variable'; dropDownBoxChanges3();">Step (z) variable</a>
-              <a href = "#" id = "constant" onclick = "document.getElementById('variableSelect3').textContent = 'Constant'; enableConstant3();">Constant</a>
-              <a href = "#" id = "RSS" onclick = "document.getElementById('variableSelect3').textContent = 'RSS'; dropDownBoxChanges3();">RSS</a>
-              <a href = "#" id = "Dobbert" onclick = "document.getElementById('variableSelect3').textContent = 'Dobbert'; dropDownBoxChanges3();">Dobbert</a>
-              <a href = "#" id = "RP10" onclick = "document.getElementById('variableSelect3').textContent = 'RP10'; dropDownBoxChanges3();">RP10</a>
-              <a href = "#" id = "Test95" onclick = "document.getElementById('variableSelect3').textContent = '95% Test'; dropDownBoxChanges3();">95% Test</a>
-            </div>
-            </div>
-        </td>
-        <td><input type = "number" min = "0" value = "1" step = "0.01" id = "var3Constant" name = "var3Constant"> <br> </td>  
-      </tr>
-
-      <tr>
-        <td ><label for = "ProcBias" id = "ProcBiasLabel">Process Bias %</label></td>
-        <td ALIGN="center">
-          <div class="dropdown">
-            <button class="dropbtn" id = "variableSelect4">Constant</button>
-          <div class="dropdown-content"> 
-              <a href = "#" id = "sweepx" onclick = "document.getElementById('variableSelect4').textContent = 'Sweep (x) variable'; dropDownBoxChanges4();">Sweep (x) variable</a>
-              <a href = "#" id = "stepz" onclick = "document.getElementById('variableSelect4').textContent = 'Step (z) variable'; dropDownBoxChanges4();">Step (z) variable</a>
-              <a href = "#" id = "constant" onclick = "document.getElementById('variableSelect4').textContent = 'Constant'; enableConstant4();">Constant</a>
-            </div>
-            </div>
-        </td>  
-        <td><input type = "number" min = "0"  value = "0" step = "0.01" id = "var4Constant" name = "var4Constant" > <br> </td>
-      </tr>
-      <tr>
-        <td ><label for = "MeasureBias" id = "MeasureBiasLabel">Measurement Bias %</label></td>
-        <td ALIGN="center">
-          <div class="dropdown">
-            <button class="dropbtn" id = "variableSelect5">Constant</button>
-          <div class="dropdown-content"> 
-              <a href = "#" id = "sweepx" onclick = "document.getElementById('variableSelect5').textContent = 'Sweep (x) variable'; dropDownBoxChanges5();">Sweep (x) variable</a>
-              <a href = "#" id = "stepz" onclick = "document.getElementById('variableSelect5').textContent = 'Step (z) variable'; dropDownBoxChanges5();">Step (z) variable</a>
-              <a href = "#" id = "constant" onclick = "document.getElementById('variableSelect5').textContent = 'Constant'; enableConstant5();">Constant</a>
-            </div>
-            </div>
-        </td> 
-        <td><input type = "number" min = "0"  value = "0" step = "0.01" id = "var5Constant" name = "var5Constant"> <br> </td> 
-      </tr>
-    </table>
-    <br><br>
+        <div class="risk-grid-child" id="output">Initializing...</div>
     </div>
-    
-    <div>
-      <table id = "SweepSetUp2" style = "position: absolute; top: 310px; left: 10px;">
-        <tr>
-          <td><label for = "sweepXStart" id = "sweepXStartLabel">Sweep (x) Start:</label></td>
-          <td><input type = "number" value = "50" step = "1" id = "sweepXStart" name = "sweepXStart"><br></td>
-        </tr>
-        <tr>
-          <td><label for = "sweepXStop" id = "sweepXStopLabel">Sweep (x) Stop:</label></td>
-          <td><input type = "number" value = "90" step = "1" id = "sweepXStop" name = "sweepXStop"><br></td>
-        </tr>
-        <tr>
-          <td><label for = "numPoints" id = "numPointsLabel"># Points (x):</label></td>
-          <td><input type = "number" value = "20" step = "1" id = "numPoints" name = "numPoints"><br></td>
-        </tr>
-        <tr>
-          <td><label for = "stepZ" id = "stepZLabel">Step Values (z):</label></td>
-          <td><input type = "text" value = "1.5, 2, 3, 4" id = "stepZ" name = "stepZ"><br></td>
-        </tr>
-      </table>
-      <br><br>
+    <div class="footer" style="padding-top: 3em;">
+        <p><a href="index.html">Suncal-Web Home</a></p>
     </div>
-    
-    <div>
-      <table id = "PlotSweep" style = "position: absolute; top: 510px; left: 10px;">
-        <tr>
-          <td><label for = "plotType" id = "plotTypeLabel">Plot</label></td>
-          <td ALIGN="center">
-            <div class="dropdown">
-              <button class="dropbtn" id = "plotSelect">PFA</button>
-            <div class="dropdown-content"> 
-                <a href = "#" id = "PFA" onclick = "document.getElementById('plotSelect').textContent = 'PFA'">PFA</a>
-                <a href = "#" id = "PFR" onclick = "document.getElementById('plotSelect').textContent = 'PFR'">PFR</a>
-                <a href = "#" id = "Both" onclick = "document.getElementById('plotSelect').textContent = 'Both'">Both</a>
-              </div>
-              </div>
-          </td>  
-        </tr>
-        <tr>
-          <td></td>
-          <td><input type="checkbox" id="plot3D" name="plot3D">
-          <label for="plot3D">3DPlot</label><br></td>
-        </tr>
-        <tr>
-          <td></td>
-          <td><input type="checkbox" id="LogScale" name="LogScale">
-          <label for="LogScale">Log Scale</label><br></td>
-          </tr>
-        <tr>
-          <td></td>
-          <td><button class="dropbtn" id = "Plot" onclick = "runPlot()">Plot</button></td>
-        </tr>
-      </table> 
-    </div>
-    <div class="container" style = "position: absolute; top: 10px; left: 600px;">
-      <div id="output"></div>
-    </div>
-    <div class="container" style = "position: absolute; top: 200px; left: 700px;">
-      <div id="output2"></div>
-    </div>
-    <div class="container" style = "position: absolute; top: 10px; left: 1300px;">
-        <div id="output3"></div>
-      </div>
-      <div class="container" style = "position: absolute; top: 200px; left: 1400px; min-height: 100%">
-        <div id="output4"></div>
-        <br><br><br>
-      </div>
-      <br><br>    
-      <div class = "footer">
-        <footer>
-           <div class="copyright text-center">
-            <p class="text-sm"><a href="index.html" style="color: white"><u>SUNCAL-Web Home</u></a> | Made with <a href="https://sandiapsl.github.io" style="color: white"><u>Suncal</u></a> and <a href="https://pyscript.net/" style="color: white"><u>PyScript</u></a></p>
-           </div>
-           <div></div>
-        </footer>
-      </div>
     <script>
-        
-        function dropDownBoxChanges1(){
-          let var1 = document.getElementById('variableSelect1').textContent;
-          let var2 = document.getElementById('variableSelect2').textContent;
-          let var3 = document.getElementById('variableSelect3').textContent;
-          let var4 = document.getElementById('variableSelect4').textContent;
-          let var5 = document.getElementById('variableSelect5').textContent;
-          document.getElementById("var1Constant").disabled = true;
+        /* Javascript to change dropdown selections */
+        function dropDownBoxChanges1() {
+            let var1 = document.getElementById('variableSelect1').textContent;
+            let var2 = document.getElementById('variableSelect2').textContent;
+            let var3 = document.getElementById('variableSelect3').textContent;
+            let var4 = document.getElementById('variableSelect4').textContent;
+            let var5 = document.getElementById('variableSelect5').textContent;
+            document.getElementById("var1Constant").disabled = true;
 
-          if (var1 === var2){
-              document.getElementById('variableSelect2').textContent = 'Constant';
-              document.getElementById("var2Constant").disabled = false; 
-              
-          }
-          else if (var1 === var3){
-              document.getElementById('variableSelect3').textContent = 'Constant';
-              document.getElementById("var3Constant").disabled = false;
-              
-          }
-          else if (var1 === var4){
-              document.getElementById('variableSelect4').textContent = 'Constant';
-              document.getElementById("var4Constant").disabled = false;
-              
-          }
-          else if (var1 === var5){
-              document.getElementById('variableSelect5').textContent = 'Constant';
-              document.getElementById("var5Constant").disabled = false;
-            
-          } 
+            if (var1 === var2) {
+                document.getElementById('variableSelect2').textContent = 'Constant';
+                document.getElementById("var2Constant").disabled = false;
+            }
+            else if (var1 === var3) {
+                document.getElementById('variableSelect3').textContent = 'Constant';
+                document.getElementById("var3Constant").disabled = false;
+            }
+            else if (var1 === var4) {
+                document.getElementById('variableSelect4').textContent = 'Constant';
+                document.getElementById("var4Constant").disabled = false;
+            }
+            else if (var1 === var5) {
+                document.getElementById('variableSelect5').textContent = 'Constant';
+                document.getElementById("var5Constant").disabled = false;
+            }
         }
 
-        function dropDownBoxChanges2(){
-          let var1 = document.getElementById('variableSelect1').textContent;
-          let var2 = document.getElementById('variableSelect2').textContent;
-          let var3 = document.getElementById('variableSelect3').textContent;
-          let var4 = document.getElementById('variableSelect4').textContent;
-          let var5 = document.getElementById('variableSelect5').textContent;
-          document.getElementById("var2Constant").disabled = true;
-          if (var2 === var1){
-              document.getElementById('variableSelect1').textContent = 'Constant';
-              document.getElementById("var1Constant").disabled = false;
-              
-          }
-          else if (var2 === var3){
-              document.getElementById('variableSelect3').textContent = 'Constant';
-              document.getElementById("var3Constant").disabled = false;
-          }
-          else if (var2 === var4){
-              document.getElementById('variableSelect4').textContent = 'Constant';
-              document.getElementById("var4Constant").disabled = false;
-          }
-          else if (var2 === var5){
-              document.getElementById('variableSelect5').textContent = 'Constant';
-              document.getElementById("var5Constant").disabled = false;
-          } 
+        function dropDownBoxChanges2() {
+            let var1 = document.getElementById('variableSelect1').textContent;
+            let var2 = document.getElementById('variableSelect2').textContent;
+            let var3 = document.getElementById('variableSelect3').textContent;
+            let var4 = document.getElementById('variableSelect4').textContent;
+            let var5 = document.getElementById('variableSelect5').textContent;
+            document.getElementById("var2Constant").disabled = true;
+            if (var2 === var1) {
+                document.getElementById('variableSelect1').textContent = 'Constant';
+                document.getElementById("var1Constant").disabled = false;
+            }
+            else if (var2 === var3) {
+                document.getElementById('variableSelect3').textContent = 'Constant';
+                document.getElementById("var3Constant").disabled = false;
+            }
+            else if (var2 === var4) {
+                document.getElementById('variableSelect4').textContent = 'Constant';
+                document.getElementById("var4Constant").disabled = false;
+            }
+            else if (var2 === var5) {
+                document.getElementById('variableSelect5').textContent = 'Constant';
+                document.getElementById("var5Constant").disabled = false;
+            }
         }
 
-        function dropDownBoxChanges3(){
-          let var1 = document.getElementById('variableSelect1').textContent;
-          let var2 = document.getElementById('variableSelect2').textContent;
-          let var3 = document.getElementById('variableSelect3').textContent;
-          let var4 = document.getElementById('variableSelect4').textContent;
-          let var5 = document.getElementById('variableSelect5').textContent;
-          document.getElementById("var3Constant").disabled = true;
-          if (var3 === var1){
-              document.getElementById('variableSelect1').textContent = 'Constant';
-              document.getElementById("var1Constant").disabled = false;
-              
-          }
-          else if (var3 === var2){
-              document.getElementById('variableSelect2').textContent = 'Constant';
-              document.getElementById("var2Constant").disabled = false;
-          }
-          else if (var3 === var4){
-              document.getElementById('variableSelect4').textContent = 'Constant';
-              document.getElementById("var4Constant").disabled = false;
-          }
-          else if (var3 === var5){
-              document.getElementById('variableSelect5').textContent = 'Constant';
-              document.getElementById("var5Constant").disabled = false;
-          } 
+        function dropDownBoxChanges3() {
+            let var1 = document.getElementById('variableSelect1').textContent;
+            let var2 = document.getElementById('variableSelect2').textContent;
+            let var3 = document.getElementById('variableSelect3').textContent;
+            let var4 = document.getElementById('variableSelect4').textContent;
+            let var5 = document.getElementById('variableSelect5').textContent;
+            document.getElementById("var3Constant").disabled = true;
+            if (var3 === var1) {
+                document.getElementById('variableSelect1').textContent = 'Constant';
+                document.getElementById("var1Constant").disabled = false;
+            }
+            else if (var3 === var2) {
+                document.getElementById('variableSelect2').textContent = 'Constant';
+                document.getElementById("var2Constant").disabled = false;
+            }
+            else if (var3 === var4) {
+                document.getElementById('variableSelect4').textContent = 'Constant';
+                document.getElementById("var4Constant").disabled = false;
+            }
+            else if (var3 === var5) {
+                document.getElementById('variableSelect5').textContent = 'Constant';
+                document.getElementById("var5Constant").disabled = false;
+            }
         }
 
-        function dropDownBoxChanges4(){
-          let var1 = document.getElementById('variableSelect1').textContent;
-          let var2 = document.getElementById('variableSelect2').textContent;
-          let var3 = document.getElementById('variableSelect3').textContent;
-          let var4 = document.getElementById('variableSelect4').textContent;
-          let var5 = document.getElementById('variableSelect5').textContent;
-          document.getElementById("var4Constant").disabled = true;
-          if (var4 === var1){
-              document.getElementById('variableSelect1').textContent = 'Constant';
-              document.getElementById("var1Constant").disabled = false;
-              
-          }
-          else if (var4 === var2){
-              document.getElementById('variableSelect2').textContent = 'Constant';
-              document.getElementById("var2Constant").disabled = false;
-          }
-          else if (var4 === var3){
-              document.getElementById('variableSelect3').textContent = 'Constant';
-              document.getElementById("var3Constant").disabled = false;
-          }
-          else if (var4 === var5){
-              document.getElementById('variableSelect5').textContent = 'Constant';
-              document.getElementById("var5Constant").disabled = false;
-          } 
+        function dropDownBoxChanges4() {
+            let var1 = document.getElementById('variableSelect1').textContent;
+            let var2 = document.getElementById('variableSelect2').textContent;
+            let var3 = document.getElementById('variableSelect3').textContent;
+            let var4 = document.getElementById('variableSelect4').textContent;
+            let var5 = document.getElementById('variableSelect5').textContent;
+            document.getElementById("var4Constant").disabled = true;
+            if (var4 === var1) {
+                document.getElementById('variableSelect1').textContent = 'Constant';
+                document.getElementById("var1Constant").disabled = false;
+            }
+            else if (var4 === var2) {
+                document.getElementById('variableSelect2').textContent = 'Constant';
+                document.getElementById("var2Constant").disabled = false;
+            }
+            else if (var4 === var3) {
+                document.getElementById('variableSelect3').textContent = 'Constant';
+                document.getElementById("var3Constant").disabled = false;
+            }
+            else if (var4 === var5) {
+                document.getElementById('variableSelect5').textContent = 'Constant';
+                document.getElementById("var5Constant").disabled = false;
+            }
         }
 
-        function dropDownBoxChanges5(){
-          let var1 = document.getElementById('variableSelect1').textContent;
-          let var2 = document.getElementById('variableSelect2').textContent;
-          let var3 = document.getElementById('variableSelect3').textContent;
-          let var4 = document.getElementById('variableSelect4').textContent;
-          let var5 = document.getElementById('variableSelect5').textContent;
-          document.getElementById("var5Constant").disabled = true;
-          if (var5 === var1){
-              document.getElementById('variableSelect1').textContent = 'Constant';
-              document.getElementById("var1Constant").disabled = false;
-              
-          }
-          else if (var5 === var2){
-              document.getElementById('variableSelect2').textContent = 'Constant';
-              document.getElementById("var2Constant").disabled = false;
-          }
-          else if (var5 === var3){
-              document.getElementById('variableSelect3').textContent = 'Constant';
-              document.getElementById("var3Constant").disabled = false;
-          }
-          else if (var5 === var4){
-              document.getElementById('variableSelect4').textContent = 'Constant';
-              document.getElementById("var4Constant").disabled = false;
-          } 
+        function dropDownBoxChanges5() {
+            let var1 = document.getElementById('variableSelect1').textContent;
+            let var2 = document.getElementById('variableSelect2').textContent;
+            let var3 = document.getElementById('variableSelect3').textContent;
+            let var4 = document.getElementById('variableSelect4').textContent;
+            let var5 = document.getElementById('variableSelect5').textContent;
+            document.getElementById("var5Constant").disabled = true;
+            if (var5 === var1) {
+                document.getElementById('variableSelect1').textContent = 'Constant';
+                document.getElementById("var1Constant").disabled = false;
+            }
+            else if (var5 === var2) {
+                document.getElementById('variableSelect2').textContent = 'Constant';
+                document.getElementById("var2Constant").disabled = false;
+            }
+            else if (var5 === var3) {
+                document.getElementById('variableSelect3').textContent = 'Constant';
+                document.getElementById("var3Constant").disabled = false;
+            }
+            else if (var5 === var4) {
+                document.getElementById('variableSelect4').textContent = 'Constant';
+                document.getElementById("var4Constant").disabled = false;
+            }
         }
 
-        function enableConstant1(){
-          document.getElementById("var1Constant").disabled = false; 
+        function enableConstant1() {
+            document.getElementById("var1Constant").disabled = false;
         }
 
-        function enableConstant2(){
-          document.getElementById("var2Constant").disabled = false; 
+        function enableConstant2() {
+            document.getElementById("var2Constant").disabled = false;
         }
 
-        function enableConstant3(){
-          document.getElementById("var3Constant").disabled = false; 
+        function enableConstant3() {
+            document.getElementById("var3Constant").disabled = false;
         }
 
-        function enableConstant4(){
-          document.getElementById("var4Constant").disabled = false; 
+        function enableConstant4() {
+            document.getElementById("var4Constant").disabled = false;
         }
 
-        function enableConstant5(){
-          document.getElementById("var5Constant").disabled = false; 
+        function enableConstant5() {
+            document.getElementById("var5Constant").disabled = false;
         }
 
-        function createObject(object, variableName){
-            let execString = variableName + " = object";
+        function createObject(object, variableName) {
+            let execString = variableName + "=object";
             eval(execString);
         }
-        function changeCursor(){
+        function changeCursor() {
             document.body.style.cursor = "wait";
         }
-        function runPlot(){
-            changeCursor(); 
-           
-            setTimeout(function() { 
-                const simplePlot = pyodideGlobals.get("generateFig"); 
-                simplePlot();    
-                document.body.style.cursor = "pointer"
-            }, 300)
-        }
-
     </script>
-    <py-config>
-        packages = ["matplotlib", "numpy", "src/whl/suncal-1.6.6-py3-none-any.whl"]
-    </py-config>
-<py-script>
 
-import asyncio    
-from js import createObject, document
-from pyodide.ffi import create_proxy
-from suncal.risk import risk_sweep as risk
-from suncal.common import distributions
-from suncal.common.report import Report
-import matplotlib.pyplot as plt 
-import numpy as np
-createObject(create_proxy(globals()), "pyodideGlobals")
-
-def HTML(text):
-  return text.replace("{{","<").replace("}}",">") 
-
-def setUp():
-    
-    sweepMode = document.getElementById("sweepMode").textContent
-    gbfType = document.getElementById("variableSelect3").textContent
-
-    startX = document.getElementById("sweepXStart").value
-    startX = float(startX)
-
-    stopX = document.getElementById("sweepXStop").value
-    stopX = float(stopX)
-
-    numXVals = document.getElementById("numPoints").value
-    numXVals = int(numXVals)
-
-    xVals = np.linspace(startX, stopX, num=numXVals)
-    xPlot = np.linspace(startX, stopX, num = numXVals)
-
-    stepZ = document.getElementById("stepZ").value
-    stepZ = stepZ.split(',')
-
-
-    zPlot = document.getElementById("stepZ").value
-    zPlot = zPlot.split(',')
-
-    for i in range(len(stepZ)):
-        stepZ[i] = float(stepZ[i])
-
-    for i in range(len(zPlot)):
-        zPlot[i] = float(zPlot[i]) 
-
-    sweepType = document.getElementById("plotSelect").textContent
-    logScale = document.getElementById("LogScale").checked
-    plot3D = document.getElementById("plot3D").checked
-    var1 = document.getElementById("variableSelect1").textContent
-    var2 = document.getElementById("variableSelect2").textContent
-    var3 = document.getElementById("variableSelect3").textContent
-    var4 = document.getElementById("variableSelect4").textContent 
-    var5 = document.getElementById("variableSelect5").textContent
-
-    var1C = document.getElementById("var1Constant").value 
-    var2C = document.getElementById("var2Constant").value 
-    var3C = document.getElementById("var3Constant").value 
-    var4C = document.getElementById("var4Constant").value 
-    var5C = document.getElementById("var5Constant").value 
-
-    var1C = float(var1C)/100
-    var2C = float(var2C)
-    var3C = float(var3C)
-    var4C = float(var4C)/100
-    var5C = float(var5C)/100 
-
-    return xVals, xPlot, stepZ, zPlot, sweepType, sweepMode, logScale, plot3D, var1, var2, var3, var4, var5, var1C, var2C, var3C, var4C, var5C, gbfType
-
-def getCurves(xVals, xPlot, stepZ, zPlot, sweepType, sweepMode, logScale, plot3D, var1, var2, var3, var4, var5, var1C, var2C, var3C, var4C, var5C, gbfType):
- if (gbfType != "Constant"):
-    if (gbfType == "95% Test"):
-        var3C = "test"
-    else:
-        var3C = gbfType.lower()
-
- c = "none"
- if (sweepMode == "In-tol probability %" and sweepType == "Both"):
-    if (var1 == "Sweep (x) variable" and var2 == "Step (z) variable"):
-        for i in range(len(xVals)):
-            xVals[i] = xVals[i]/100
-        d = risk.PFA_sweep_simple(xvar = "itp", zvar = "tur", xvals=xVals, zvals=stepZ,  GBFdflt = var3C, pbias=var4C, tbias=var5C, risk="PFA")
-        c = risk.PFA_sweep_simple(xvar = "itp", zvar = "tur", xvals=xVals, zvals=stepZ,  GBFdflt = var3C, pbias=var4C, tbias=var5C, risk="PFR")
-        tablePlot = "TUR"
-        xPlotLabel = "ITP %"
-    elif (var1 == "Sweep (x) variable" and var3 == "Step (z) variable"): 
-        for i in range(len(xVals)):
-            xVals[i] = xVals[i]/100
-        d = risk.PFA_sweep_simple(xvar = "itp", zvar = "gbf", xvals=xVals, zvals=stepZ, TURdflt = var2C, pbias=var4C, tbias=var5C, risk="PFA")
-        c = risk.PFA_sweep_simple(xvar = "itp", zvar = "gbf", xvals=xVals, zvals=stepZ, TURdflt = var2C, pbias=var4C, tbias=var5C, risk="PFR")
-        tablePlot = "GBF"
-        xPlotLabel = "ITP %"
-    elif (var1 == "Sweep (x) variable" and var4 == "Step (z) variable"):
-        for i in range(len(xVals)):
-            xVals[i] = xVals[i]/100
-        for i in range(len(stepZ)):
-            stepZ[i] = stepZ[i]/100
-        d = risk.PFA_sweep_simple(xvar = "itp", zvar = "pbias", xvals=xVals, zvals=stepZ, TURdflt = var2C, GBFdflt = var3C, tbias=var5C, risk="PFA")
-        c = risk.PFA_sweep_simple(xvar = "itp", zvar = "pbias", xvals=xVals, zvals=stepZ, TURdflt = var2C, GBFdflt = var3C, tbias=var5C, risk="PFR")
-        tablePlot = "Process Bias"
-        xPlotLabel = "ITP %"
-    elif (var1 == "Sweep (x) variable" and var5 == "Step (z) variable"):
-        for i in range(len(xVals)):
-            xVals[i] = xVals[i]/100
-        for i in range(len(stepZ)):
-            stepZ[i] = stepZ[i]/100
-        d = risk.PFA_sweep_simple(xvar = "itp", zvar = "tbias", xvals=xVals, zvals=stepZ, TURdflt = var2C, GBFdflt = var3C, pbias=var4C, risk="PFA")
-        c = risk.PFA_sweep_simple(xvar = "itp", zvar = "tbias", xvals=xVals, zvals=stepZ, TURdflt = var2C, GBFdflt = var3C, pbias=var4C, risk="PFR")
-        tablePlot = "Test Bias"
-        xPlotLabel = "ITP %"
-
-
-    elif (var2 == "Sweep (x) variable" and var1 == "Step (z) variable"): 
-        for i in range(len(stepZ)):
-            stepZ[i] = stepZ[i]/100
-        d = risk.PFA_sweep_simple(xvar = "tur", zvar = "itp", xvals=xVals, zvals=stepZ,  GBFdflt = var3C, pbias=var4C, tbias=var5C, risk="PFA")
-        c = risk.PFA_sweep_simple(xvar = "tur", zvar = "itp", xvals=xVals, zvals=stepZ,  GBFdflt = var3C, pbias=var4C, tbias=var5C, risk="PFR")
-        tablePlot = "ITP %"
-        xPlotLabel = "TUR"
-    elif (var2 == "Sweep (x) variable" and var3 == "Step (z) variable"): 
-        d = risk.PFA_sweep_simple(xvar = "tur", zvar = "gbf", xvals=xVals, zvals=stepZ, itpdflt=var1C, pbias=var4C, tbias=var5C, risk="PFA")
-        c = risk.PFA_sweep_simple(xvar = "tur", zvar = "gbf", xvals=xVals, zvals=stepZ, itpdflt=var1C, pbias=var4C, tbias=var5C, risk="PFR")
-        tablePlot = "GBF"
-        xPlotLabel = "TUR"
-    elif (var2 == "Sweep (x) variable" and var4 == "Step (z) variable"): 
-        for i in range(len(stepZ)):
-            stepZ[i] = stepZ[i]/100
-        d = risk.PFA_sweep_simple(xvar = "tur", zvar = "pbias", xvals=xVals, zvals=stepZ, itpdflt=var1C, GBFdflt = var3C, tbias=var5C, risk="PFA")
-        c = risk.PFA_sweep_simple(xvar = "tur", zvar = "pbias", xvals=xVals, zvals=stepZ, itpdflt=var1C, GBFdflt = var3C, tbias=var5C, risk="PFR")
-        tablePlot = "Process Bias"
-        xPlotLabel = "TUR"
-    elif (var2 == "Sweep (x) variable" and var5 == "Step (z) variable"): 
-        for i in range(len(stepZ)):
-            stepZ[i] = stepZ[i]/100
-        d = risk.PFA_sweep_simple(xvar = "tur", zvar = "tbias", xvals=xVals, zvals=stepZ, itpdflt=var1C, GBFdflt = var3C, pbias=var4C, risk="PFA")
-        c = risk.PFA_sweep_simple(xvar = "tur", zvar = "tbias", xvals=xVals, zvals=stepZ, itpdflt=var1C, GBFdflt = var3C, pbias=var4C, risk="PFR")
-        tablePlot = "Test Bias"
-        xPlotLabel = "TUR"
-
-
-    elif (var3 == "Sweep (x) variable" and var1 == "Step (z) variable"):
-        for i in range(len(stepZ)):
-            stepZ[i] = stepZ[i]/100
-        d = risk.PFA_sweep_simple(xvar = "gbf", zvar = "itp", xvals=xVals, zvals=stepZ, TURdflt = var2C, pbias=var4C, tbias=var5C, risk="PFA")
-        c = risk.PFA_sweep_simple(xvar = "gbf", zvar = "itp", xvals=xVals, zvals=stepZ, TURdflt = var2C, pbias=var4C, tbias=var5C, risk="PFR")
-        tablePlot = "ITP %"
-        xPlotLabel = "GBF"
-    elif (var3 == "Sweep (x) variable" and var2 == "Step (z) variable"):
-        d = risk.PFA_sweep_simple(xvar = "gbf", zvar = "tur", xvals=xVals, zvals=stepZ, itpdflt=var1C, pbias=var4C, tbias=var5C, risk="PFA")
-        c = risk.PFA_sweep_simple(xvar = "gbf", zvar = "tur", xvals=xVals, zvals=stepZ, itpdflt=var1C, pbias=var4C, tbias=var5C, risk="PFR")
-        tablePlot = "TUR"
-        xPlotLabel = "GBF"
-    elif (var3 == "Sweep (x) variable" and var4 == "Step (z) variable"):
-        for i in range(len(stepZ)):
-            stepZ[i] = stepZ[i]/100
-        d = risk.PFA_sweep_simple(xvar = "gbf", zvar = "pbias", xvals=xVals, zvals=stepZ, itpdflt=var1C, TURdflt = var2C, tbias=var5C, risk="PFA")
-        c = risk.PFA_sweep_simple(xvar = "gbf", zvar = "pbias", xvals=xVals, zvals=stepZ, itpdflt=var1C, TURdflt = var2C, tbias=var5C, risk="PFR")
-        tablePlot = "Process Bias"
-        xPlotLabel = "GBF"
-    elif (var3 == "Sweep (x) variable" and var5 == "Step (z) variable"):
-        for i in range(len(stepZ)):
-            stepZ[i] = stepZ[i]/100
-        d = risk.PFA_sweep_simple(xvar = "gbf", zvar = "tbias", xvals=xVals, zvals=stepZ, itpdflt=var1C, TURdflt = var2C, pbias=var4C, risk="PFA")
-        c = risk.PFA_sweep_simple(xvar = "gbf", zvar = "tbias", xvals=xVals, zvals=stepZ, itpdflt=var1C, TURdflt = var2C, pbias=var4C, risk="PFR")
-        tablePlot = "Test Bias"
-        xPlotLabel = "GBF"
-
-
-    elif (var4 == "Sweep (x) variable" and var1 == "Step (z) variable"):
-        for i in range(len(xVals)):
-            xVals[i] = xVals[i]/100
-        for i in range(len(stepZ)):
-            stepZ[i] = stepZ[i]/100
-        d = risk.PFA_sweep_simple(xvar = "pbias", zvar = "itp", xvals=xVals, zvals=stepZ, TURdflt = var2C, GBFdflt = var3C, tbias=var5C, risk="PFA")
-        c = risk.PFA_sweep_simple(xvar = "pbias", zvar = "itp", xvals=xVals, zvals=stepZ, TURdflt = var2C, GBFdflt = var3C, tbias=var5C, risk="PFR")
-        tablePlot = "ITP %"
-        xPlotLabel = "Process Bias"
-    elif (var4 == "Sweep (x) variable" and var2 == "Step (z) variable"):
-        for i in range(len(xVals)):
-            xVals[i] = xVals[i]/100
-        d = risk.PFA_sweep_simple(xvar = "pbias", zvar = "tur", xvals=xVals, zvals=stepZ, itpdflt=var1C,  GBFdflt = var3C,  tbias=var5C, risk="PFA")
-        c = risk.PFA_sweep_simple(xvar = "pbias", zvar = "tur", xvals=xVals, zvals=stepZ, itpdflt=var1C,  GBFdflt = var3C,  tbias=var5C, risk="PFR")
-        tablePlot = "TUR"
-        xPlotLabel = "Process Bias"
-    elif (var4 == "Sweep (x) variable" and var3 == "Step (z) variable"):
-        for i in range(len(xVals)):
-            xVals[i] = xVals[i]/100
-        d = risk.PFA_sweep_simple(xvar = "pbias", zvar = "gbf", xvals=xVals, zvals=stepZ, itpdflt=var1C, TURdflt = var2C, tbias=var5C, risk="PFA")
-        c = risk.PFA_sweep_simple(xvar = "pbias", zvar = "gbf", xvals=xVals, zvals=stepZ, itpdflt=var1C, TURdflt = var2C, tbias=var5C, risk="PFR")
-        tablePlot = "GBF"
-        xPlotLabel = "Process Bias"
-    elif (var4 == "Sweep (x) variable" and var5 == "Step (z) variable"):
-        for i in range(len(xVals)):
-            xVals[i] = xVals[i]/100
-        for i in range(len(stepZ)):
-            stepZ[i] = stepZ[i]/100
-        d = risk.PFA_sweep_simple(xvar = "pbias", zvar = "tbias", xvals=xVals, zvals=stepZ, itpdflt=var1C, TURdflt = var2C, GBFdflt = var3C, risk="PFA")
-        c = risk.PFA_sweep_simple(xvar = "pbias", zvar = "tbias", xvals=xVals, zvals=stepZ, itpdflt=var1C, TURdflt = var2C, GBFdflt = var3C, risk="PFR")
-        tablePlot = "Test Bias"
-        xPlotLabel = "Process Bias"
-
-
-    elif (var5 == "Sweep (x) variable" and var1 == "Step (z) variable"):
-        for i in range(len(xVals)):
-            xVals[i] = xVals[i]/100
-        for i in range(len(stepZ)):
-            stepZ[i] = stepZ[i]/100
-        d = risk.PFA_sweep_simple(xvar = "tbias", zvar = "itp", xvals=xVals, zvals=stepZ, TURdflt = var2C, GBFdflt = var3C, pbias=var4C, risk="PFA")
-        c = risk.PFA_sweep_simple(xvar = "tbias", zvar = "itp", xvals=xVals, zvals=stepZ, TURdflt = var2C, GBFdflt = var3C, pbias=var4C, risk="PFR")
-        tablePlot = "ITP %"
-        xPlotLabel = "Test Bias"
-    elif (var5 == "Sweep (x) variable" and var2 == "Step (z) variable"):
-        for i in range(len(xVals)):
-            xVals[i] = xVals[i]/100
-        d = risk.PFA_sweep_simple(xvar = "tbias", zvar = "tur", xvals=xVals, zvals=stepZ, itpdflt=var1C, GBFdflt = var3C, pbias=var4C, risk="PFA")
-        c = risk.PFA_sweep_simple(xvar = "tbias", zvar = "tur", xvals=xVals, zvals=stepZ, itpdflt=var1C, GBFdflt = var3C, pbias=var4C, risk="PFR")
-        tablePlot = "TUR"
-        xPlotLabel = "Test Bias"
-    elif (var5 == "Sweep (x) variable" and var3 == "Step (z) variable"):
-        for i in range(len(xVals)):
-            xVals[i] = xVals[i]/100
-        d = risk.PFA_sweep_simple(xvar = "tbias", zvar = "gbf", xvals=xVals, zvals=stepZ, itpdflt=var1C, TURdflt = var2C, pbias=var4C, risk="PFA")
-        c = risk.PFA_sweep_simple(xvar = "tbias", zvar = "gbf", xvals=xVals, zvals=stepZ, itpdflt=var1C, TURdflt = var2C, pbias=var4C, risk="PFR")
-        tablePlot = "GBF"
-        xPlotLabel = "Test Bias"
-    elif (var5 == "Sweep (x) variable" and var4 == "Step (z) variable"):
-        for i in range(len(xVals)):
-            xVals[i] = xVals[i]/100
-        for i in range(len(stepZ)):
-            stepZ[i] = stepZ[i]/100
-        d = risk.PFA_sweep_simple(xvar = "tbias", zvar = "pbias", xvals=xVals, zvals=stepZ, itpdflt=var1C, TURdflt = var2C, GBFdflt = var3C, risk="PFA")
-        c = risk.PFA_sweep_simple(xvar = "tbias", zvar = "pbias", xvals=xVals, zvals=stepZ, itpdflt=var1C, TURdflt = var2C, GBFdflt = var3C, risk="PFR")
-        tablePlot = "Process Bias"
-        xPlotLabel = "Test Bias"
-
- elif (sweepMode == "In-tol probability %"):
-    if (var1 == "Sweep (x) variable" and var2 == "Step (z) variable"):
-        for i in range(len(xVals)):
-            xVals[i] = xVals[i]/100
-        d = risk.PFA_sweep_simple(xvar = "itp", zvar = "tur", xvals=xVals, zvals=stepZ,  GBFdflt = var3C, pbias=var4C, tbias=var5C, risk=sweepType)
-        tablePlot = "TUR"
-        xPlotLabel = "ITP %"
-    elif (var1 == "Sweep (x) variable" and var3 == "Step (z) variable"): 
-        for i in range(len(xVals)):
-            xVals[i] = xVals[i]/100
-        d = risk.PFA_sweep_simple(xvar = "itp", zvar = "gbf", xvals=xVals, zvals=stepZ, TURdflt = var2C, pbias=var4C, tbias=var5C, risk=sweepType)
-        tablePlot = "GBF"
-        xPlotLabel = "ITP %"
-    elif (var1 == "Sweep (x) variable" and var4 == "Step (z) variable"):
-        for i in range(len(xVals)):
-            xVals[i] = xVals[i]/100
-        for i in range(len(stepZ)):
-            stepZ[i] = stepZ[i]/100
-        d = risk.PFA_sweep_simple(xvar = "itp", zvar = "pbias", xvals=xVals, zvals=stepZ, TURdflt = var2C, GBFdflt = var3C, tbias=var5C, risk=sweepType)
-        tablePlot = "Process Bias"
-        xPlotLabel = "ITP %"
-    elif (var1 == "Sweep (x) variable" and var5 == "Step (z) variable"):
-        for i in range(len(xVals)):
-            xVals[i] = xVals[i]/100
-        for i in range(len(stepZ)):
-            stepZ[i] = stepZ[i]/100
-        d = risk.PFA_sweep_simple(xvar = "itp", zvar = "tbias", xvals=xVals, zvals=stepZ, TURdflt = var2C, GBFdflt = var3C, pbias=var4C, risk=sweepType)
-        tablePlot = "Test Bias"
-        xPlotLabel = "ITP %"
-
-
-    elif (var2 == "Sweep (x) variable" and var1 == "Step (z) variable"): 
-        for i in range(len(stepZ)):
-            stepZ[i] = stepZ[i]/100
-        d = risk.PFA_sweep_simple(xvar = "tur", zvar = "itp", xvals=xVals, zvals=stepZ,  GBFdflt = var3C, pbias=var4C, tbias=var5C, risk=sweepType)
-        tablePlot = "ITP %"
-        xPlotLabel = "TUR"
-    elif (var2 == "Sweep (x) variable" and var3 == "Step (z) variable"): 
-        d = risk.PFA_sweep_simple(xvar = "tur", zvar = "gbf", xvals=xVals, zvals=stepZ, itpdflt=var1C, pbias=var4C, tbias=var5C, risk=sweepType)
-        tablePlot = "GBF"
-        xPlotLabel = "TUR"
-    elif (var2 == "Sweep (x) variable" and var4 == "Step (z) variable"): 
-        for i in range(len(stepZ)):
-            stepZ[i] = stepZ[i]/100
-        d = risk.PFA_sweep_simple(xvar = "tur", zvar = "pbias", xvals=xVals, zvals=stepZ, itpdflt=var1C, GBFdflt = var3C, tbias=var5C, risk=sweepType)
-        tablePlot = "Process Bias"
-        xPlotLabel = "TUR"
-    elif (var2 == "Sweep (x) variable" and var5 == "Step (z) variable"): 
-        for i in range(len(stepZ)):
-            stepZ[i] = stepZ[i]/100
-        d = risk.PFA_sweep_simple(xvar = "tur", zvar = "tbias", xvals=xVals, zvals=stepZ, itpdflt=var1C, GBFdflt = var3C, pbias=var4C, risk=sweepType)
-        tablePlot = "Test Bias"
-        xPlotLabel = "TUR"
-
-
-    elif (var3 == "Sweep (x) variable" and var1 == "Step (z) variable"):
-        for i in range(len(stepZ)):
-            stepZ[i] = stepZ[i]/100
-        d = risk.PFA_sweep_simple(xvar = "gbf", zvar = "itp", xvals=xVals, zvals=stepZ, TURdflt = var2C, pbias=var4C, tbias=var5C, risk=sweepType)
-        tablePlot = "ITP %"
-        xPlotLabel = "GBF"
-    elif (var3 == "Sweep (x) variable" and var2 == "Step (z) variable"):
-        d = risk.PFA_sweep_simple(xvar = "gbf", zvar = "tur", xvals=xVals, zvals=stepZ, itpdflt=var1C, pbias=var4C, tbias=var5C, risk=sweepType)
-        tablePlot = "TUR"
-        xPlotLabel = "GBF"
-    elif (var3 == "Sweep (x) variable" and var4 == "Step (z) variable"):
-        for i in range(len(stepZ)):
-            stepZ[i] = stepZ[i]/100
-        d = risk.PFA_sweep_simple(xvar = "gbf", zvar = "pbias", xvals=xVals, zvals=stepZ, itpdflt=var1C, TURdflt = var2C, tbias=var5C, risk=sweepType)
-        tablePlot = "Process Bias"
-        xPlotLabel = "GBF"
-    elif (var3 == "Sweep (x) variable" and var5 == "Step (z) variable"):
-        for i in range(len(stepZ)):
-            stepZ[i] = stepZ[i]/100
-        d = risk.PFA_sweep_simple(xvar = "gbf", zvar = "tbias", xvals=xVals, zvals=stepZ, itpdflt=var1C, TURdflt = var2C, pbias=var4C, risk=sweepType)
-        tablePlot = "Test Bias"
-        xPlotLabel = "GBF"
-
-
-    elif (var4 == "Sweep (x) variable" and var1 == "Step (z) variable"):
-        for i in range(len(xVals)):
-            xVals[i] = xVals[i]/100
-        for i in range(len(stepZ)):
-            stepZ[i] = stepZ[i]/100
-        d = risk.PFA_sweep_simple(xvar = "pbias", zvar = "itp", xvals=xVals, zvals=stepZ, TURdflt = var2C, GBFdflt = var3C, tbias=var5C, risk=sweepType)
-        tablePlot = "ITP %"
-        xPlotLabel = "Process Bias"
-    elif (var4 == "Sweep (x) variable" and var2 == "Step (z) variable"):
-        for i in range(len(xVals)):
-            xVals[i] = xVals[i]/100
-        d = risk.PFA_sweep_simple(xvar = "pbias", zvar = "tur", xvals=xVals, zvals=stepZ, itpdflt=var1C,  GBFdflt = var3C,  tbias=var5C, risk=sweepType)
-        tablePlot = "TUR"
-        xPlotLabel = "Process Bias"
-    elif (var4 == "Sweep (x) variable" and var3 == "Step (z) variable"):
-        for i in range(len(xVals)):
-            xVals[i] = xVals[i]/100
-        d = risk.PFA_sweep_simple(xvar = "pbias", zvar = "gbf", xvals=xVals, zvals=stepZ, itpdflt=var1C, TURdflt = var2C, tbias=var5C, risk=sweepType)
-        tablePlot = "GBF"
-        xPlotLabel = "Process Bias"
-    elif (var4 == "Sweep (x) variable" and var5 == "Step (z) variable"):
-        for i in range(len(xVals)):
-            xVals[i] = xVals[i]/100
-        for i in range(len(stepZ)):
-            stepZ[i] = stepZ[i]/100
-        d = risk.PFA_sweep_simple(xvar = "pbias", zvar = "tbias", xvals=xVals, zvals=stepZ, itpdflt=var1C, TURdflt = var2C, GBFdflt = var3C, risk=sweepType)
-        tablePlot = "Test Bias"
-        xPlotLabel = "Process Bias"
-
-  
-    elif (var5 == "Sweep (x) variable" and var1 == "Step (z) variable"):
-        for i in range(len(xVals)):
-            xVals[i] = xVals[i]/100
-        for i in range(len(stepZ)):
-            stepZ[i] = stepZ[i]/100
-        d = risk.PFA_sweep_simple(xvar = "tbias", zvar = "itp", xvals=xVals, zvals=stepZ, TURdflt = var2C, GBFdflt = var3C, pbias=var4C, risk=sweepType)
-        tablePlot = "ITP %"
-        xPlotLabel = "Test Bias"
-    elif (var5 == "Sweep (x) variable" and var2 == "Step (z) variable"):
-        for i in range(len(xVals)):
-            xVals[i] = xVals[i]/100
-        d = risk.PFA_sweep_simple(xvar = "tbias", zvar = "tur", xvals=xVals, zvals=stepZ, itpdflt=var1C, GBFdflt = var3C, pbias=var4C, risk=sweepType)
-        tablePlot = "TUR"
-        xPlotLabel = "Test Bias"
-    elif (var5 == "Sweep (x) variable" and var3 == "Step (z) variable"):
-        for i in range(len(xVals)):
-            xVals[i] = xVals[i]/100
-        d = risk.PFA_sweep_simple(xvar = "tbias", zvar = "gbf", xvals=xVals, zvals=stepZ, itpdflt=var1C, TURdflt = var2C, pbias=var4C, risk=sweepType)
-        tablePlot = "GBF"
-        xPlotLabel = "Test Bias"
-    elif (var5 == "Sweep (x) variable" and var4 == "Step (z) variable"):
-        for i in range(len(xVals)):
-            xVals[i] = xVals[i]/100
-        for i in range(len(stepZ)):
-            stepZ[i] = stepZ[i]/100
-        d = risk.PFA_sweep_simple(xvar = "tbias", zvar = "pbias", xvals=xVals, zvals=stepZ, itpdflt=var1C, TURdflt = var2C, GBFdflt = var3C, risk=sweepType)
-        tablePlot = "Process Bias"
-        xPlotLabel = "Test Bias"
-    
-
- else:
-    xPlotLabel = "SL/Sigma_0"
-    tablePlot = "SL/Sigma_0"
-    if (var1 == "Sweep (x) variable" and var2 == "Step (z) variable"):
-        d = risk.PFA_sweep_simple(xvar = 'sig0', sig0 = 0.90, xvals=xVals, zvals=stepZ, GBFdflt = var3C, pbias=var4C, tbias=var5C, risk=sweepType)
-        tablePlot = "TUR"
-    elif (var1 == "Sweep (x) variable" and var3 == "Step (z) variable"): 
-        d = risk.PFA_sweep_simple(xvar = 'sig0', zvar = "gbf", xvals=xVals, zvals=stepZ, TURdflt = var2C, pbias=var4C, tbias=var5C, risk=sweepType)
-        tablePlot = "GBF"
-    elif (var1 == "Sweep (x) variable" and var4 == "Step (z) variable"):
-        for i in range(len(stepZ)):
-            stepZ[i] = stepZ[i]/100
-        d = risk.PFA_sweep_simple(xvar = 'sig0', zvar = "pbias", xvals=xVals, zvals=stepZ, TURdflt = var2C, GBFdflt = var3C, tbias=var5C, risk=sweepType)
-        tablePlot = "Process Distribution Bias"
-    elif (var1 == "Sweep (x) variable" and var5 == "Step (z) variable"):
-        for i in range(len(stepZ)):
-            stepZ[i] = stepZ[i]/100
-        d = risk.PFA_sweep_simple(xvar = 'sig0', zvar = "tbias", xvals=xVals, zvals=stepZ, TURdflt = var2C, GBFdflt = var3C, pbias=var4C, risk=sweepType)
-        tablePlot = "Test Bias"
-    
-    
-    elif (var1 == "Step (z) variable" and var2 == "Sweep (x) variable"):
-        d = risk.PFA_sweep_simple(zvar = 'sig0', xvar = "tur", sig0 = 0.90, xvals=xVals, zvals=stepZ, GBFdflt = var3C, pbias=var4C, tbias=var5C, risk=sweepType)
-        xPlotLabel = "TUR"
-    elif (var1 == "Step (z) variable" and var3 == "Sweep (x) variable"): 
-        d = risk.PFA_sweep_simple(zvar = 'sig0', xvar = "gbf", xvals=xVals, zvals=stepZ, TURdflt = var2C, pbias=var4C, tbias=var5C, risk=sweepType)
-        xPlotLabel = "GBF"
-    elif (var1 == "Step (z) variable" and var4 == "Sweep (x) variable"):
-        for i in range(len(xVals)):
-            xVals[i] = xVals[i]/100
-        d = risk.PFA_sweep_simple(zvar = 'sig0', xvar = "pbias", xvals=xVals, zvals=stepZ, TURdflt = var2C, GBFdflt = var3C, tbias=var5C, risk=sweepType)
-        xPlotLabel = "Process Bias"
-    elif (var1 == "Step (z) variable" and var5 == "Sweep (x) variable"):
-        for i in range(len(xVals)):
-            xVals[i] = xVals[i]/100
-        d = risk.PFA_sweep_simple(zvar = 'sig0', xvar = "tbias", xvals=xVals, zvals=stepZ, TURdflt = var2C, GBFdflt = var3C, pbias=var4C, risk=sweepType)
-        xPlotLabel = "Test Bias"
- 
- return c, d, tablePlot, xPlotLabel
-
-def generateFig():
-   
-    xVals, xPlot, stepZ, zPlot, sweepType, sweepMode, logScale, plot3D, var1, var2, var3, var4, var5, var1C, var2C, var3C, var4C, var5C, gbfType = setUp()
-    c, d, tablePlot, xPlotLabel = getCurves(xVals, xPlot, stepZ, zPlot, sweepType, sweepMode, logScale, plot3D, var1, var2, var3, var4, var5, var1C, var2C, var3C, var4C, var5C, gbfType)
-    
-    
-    if (sweepType == "Both"):
-        A = c.copy()
-        for i in range(len(A)):
-            for j in range(len(A[i])):
-                A[i][j] = A[i][j]*100
-    
-    B = d.copy()
-    for i in range(len(B)):
-        for j in range(len(B[i])):
-            B[i][j] = B[i][j]*100
-    
-    if (plot3D):
-        xx, zz = np.meshgrid(xPlot, zPlot)
-        fig = plt.figure()
-        ax  = plt.axes(projection = '3d')
-        ax.plot_surface(xx, zz, d, cmap='coolwarm')
-        ax.set_xlabel(xPlotLabel)
-        ax.set_ylabel(tablePlot)
-        ax.set_zlabel(sweepType + " %")
-        if (logScale):
-            plt.yscale("log")
-        if (sweepType == "Both"):
-            document.getElementById("output3").style.display = "initial"
-            document.getElementById("output4").style.display = "initial"
-            fig2 = plt.figure()
-            ax2  = plt.axes(projection = '3d')
-            ax2.plot_surface(xx, zz, c, cmap='coolwarm')
-            ax2.set_xlabel(xPlotLabel)
-            ax2.set_ylabel(tablePlot)
-            ax2.set_zlabel("PFR %")
-            ax.set_zlabel("PFA %") 
-            if (logScale):
-                plt.yscale("log")
-        else: 
-            document.getElementById("output3").style.display = "none"
-            document.getElementById("output4").style.display = "none"
-    else:
-        stepZLegend = [] 
-        if document.getElementById("variableSelect1").textContent == "Step (z) variable" or document.getElementById("variableSelect4").textContent == "Step (z) variable" or document.getElementById("variableSelect5").textContent == "Step (z) variable":
-            for i in range(len(stepZ)):
-                stepZLegend.append(stepZ[i]*100)
-        else: 
-            stepZLegend = stepZ
-        if (sweepType == "Both"):
-            document.getElementById("output3").style.display = "initial"
-            document.getElementById("output4").style.display = "initial"
-            fig = plt.figure()
-            for i in range(len(B)): 
-                plt.plot(xPlot,B[i], label = tablePlot + " = " + str(stepZLegend[i]))
-
-            plt.xlabel(xPlotLabel)
-            plt.ylabel("PFA %")
-            plt.legend()
-            if (logScale):
-                plt.yscale("log")
-            fig2 = plt.figure()
-            for i in range(len(A)):
-                plt.plot(xPlot, A[i], label = tablePlot + " = " + str(stepZLegend[i]))
-            plt.xlabel(xPlotLabel)
-            plt.ylabel("PFR %")
-            plt.legend()
-            if (logScale):
-                plt.yscale("log")
-        else: 
-            document.getElementById("output3").style.display = "none"
-            document.getElementById("output4").style.display = "none"
-            fig = plt.figure()
-            for i in range(len(B)):
-                plt.plot(xPlot, B[i], label = tablePlot + " = " + str(stepZLegend[i]))
-            plt.xlabel(xPlotLabel)
-            plt.ylabel(sweepType + " %")
-            plt.legend()
-            if (logScale):
-                plt.yscale("log")
-    
-    type = xPlotLabel
-    Element("output").write(fig)
-    tableElement = createTable(B, stepZ, xVals, tablePlot, type)
-    Element("output2").element.innerHTML = HTML(tableElement)
-    if (sweepType == "Both"):
-        Element("output3").write(fig2)
-        tableElement = createTable(A, stepZ, xVals, tablePlot, type)
-        Element("output4").element.innerHTML = HTML(tableElement)
-    
-def createTable(data, stepZ, xVals, tablePlot, type):
-    data = np.array(data)
-    data = data.transpose()
-    tableElement = "{{table style = 'position: absolute; top: 300px; left: 0px;'}}{{tr}}{{th}}"+ type + "{{/th}}"
-    for i in range(len(stepZ)): 
-        tableElement = tableElement + "{{th}}" + str(tablePlot) + " = " + str(stepZ[i]) + "{{/th}}" 
-    tableElement = tableElement + "{{br}}{{/tr}}"  
-
-    for i in range(len(data)):
-        try:
-            tableElement = tableElement + "{{tr}}" + "{{td}}" + str(round(xVals[i],2 - int(np.floor(np.log10(abs(xVals[i]))))-1)) + "{{/td}}"
-        except: 
-            tableElement = tableElement + "{{tr}}" + "{{td}}" + str(round(xVals[i],2)) + "{{/td}}"
-        for j in range(len(data[i])):
-            try:
-                tableElement = tableElement +  "{{td}}"+ str(round(data[i][j],2 - int(np.floor(np.log10(abs(data[i][j]))))-1)) + "{{/td}}"
-            except:
-                tableElement = tableElement + "{{td}}" + str(round(data[i][j],2)) + "{{/td}}"
-        tableElement = tableElement + "{{br}}{{/tr}}"
-    tableElement = tableElement + "{{/table}}"
-    return(tableElement)
-
-generateFig()
-</py-script>
+    <script type="py" src="src/riskcurves.py" config='{"packages": ["src/whl/suncal-1.6.6-py3-none-any.whl"]}'></script>
 </body>
+
 </html>

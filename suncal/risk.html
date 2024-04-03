@@ -1,505 +1,158 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Suncal - Risk</title>
-    <!-- linking to PyScript assets -->
-    <link rel="stylesheet" href="style/risk.css" />
-    <link rel="stylesheet" href="https://pyscript.net/latest/pyscript.css" />
-    <script defer src="https://pyscript.net/releases/2023.05.1/pyscript.js"></script>
-  </head>
-  <body>
-
-  <div id = "layout" >  
-    <div class="dropdown"  style = "position: absolute; top: 10px; left: 50px;">
-      <button class="dropbtn" id = "mode">Integral</button>
-      <div class="dropdown-content">
-        <a href="#" id = "Integral">Integral</a>
-        <a href="riskcurves.html" id = "RiskCurves">Risk Curves</a>
-      </div>
-    </div>
-    <div class="dropdown"  style = "position: absolute; top: 60px; left: 50px;">
-      <button class="dropbtn" id = "mode">Simple</button>
-      <div class="dropdown-content">
-        <a href="#" id = "simple" onclick="document.getElementById('layout').innerHTML=document.getElementById('SimpleLayout').innerHTML; runSimpleCalc();">Simple</a>
-        <a href="#" id = "full" onclick = "document.getElementById('layout').innerHTML=document.getElementById('FullLayout').innerHTML; runCalc();">Full</a>
-      </div>
-    </div>
-    <div id = "inputTable">
-    <table class = "invisibleBorder"  style = "position: absolute; top: 120px; left: 50px;">
-      <tr>
-        <td ><label for = "TUR" id = "TURLabel">Total Uncertainty Ratio:&nbsp</label></td>
-        <td><input type = "number" value = "2.0" min = "0" max = "100" step = "0.1" id = "TUR" name = "TUR" required onchange = "runSimpleCalc()" style = "border: 1px solid;" style = "border: 1px solid;"></td>
-      </tr >
-      <tr>
-        <td><label for = "ITP" id = "ITPLabel">In-tolerance Probability:&nbsp</label></td>
-        <td><input type = "number" onchange = "runSimpleCalc()" value = "95.0" min = "0" max = "99.99" step = "1" id = "ITP" name = "ITP" style = "border: 1px solid;" required></td>
-      </tr>
-      <tr>
-        <td><label for = "GBF" id = "GBFLabel">Guardband Factor:&nbsp</label></td>
-        <td><input type = "number" onchange = "runSimpleCalc()" value = "0.9" min = "0" max = "100" step = "0.1" id = "GBF" name = "GBF" style = "border: 1px solid;" required> </td>
-      </tr>
-    </table>
-    <table id = "inputTable" style="position: absolute; top: 225px; left: 50px;">
-      <tr>
-        <td>Test Measurement:&nbsp</td>
-        <td><div class="slidecontainer" >
-          <input type="range" onchange = "runSimpleCalc()" min="-5" max="5" value="0" step = "0.01" class="slider" id="myRange" style = "position:absolute; top:3px;">
-        </div></td>
-      </tr>
-    </table>
-    </div>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Suncal - Measurement Decision Risk</title>
+  <link rel="stylesheet" href="style/risk.css" />
+  <link rel="stylesheet" href="https://pyscript.net/releases/2024.3.2/core.css">
+  <script type="module" src="https://pyscript.net/releases/2024.3.2/core.js"></script>
+  <script type="module">
+      const loading = document.getElementById('loading');
+      addEventListener('py:ready', () => loading.close());
+      loading.showModal();
+    </script>
+</head>
+<body>
+  <dialog id="loading">
+    <h2>Loading...</h2>
+  </dialog>
+  <div class="container">
+    <h1>Suncal Web - Decision Risk Calculator</h1>
   </div>
-   
-  <div class="container" style = "position: absolute; top: 10px; left: 540px;">
-    <div id="plot"></div>
-    <div id="output"></div>
-  </div>
-
-  <!---------------------------------------------------SimpleLayout----------------------------------------------->
-  <div id = "SimpleLayout" style="visibility:hidden;">
-  <div class="dropdown"  style = "position: absolute; top: 10px; left: 50px;">
-    <button class="dropbtn" id = "mode">Integral</button>
-      <div class="dropdown-content">
-        <a href="#" id = "Integral">Integral</a>
-        <a href="RiskCurves.html" id = "RiskCurves">Risk Curves</a>
-      </div>
-  </div>
-  <div class="dropdown"  style = "position: absolute; top: 60px; left: 50px;">
-    <button class="dropbtn" id = "mode">Simple</button>
-    <div class="dropdown-content">
-      <a href="#" id = "simple" onclick="document.getElementById('layout').innerHTML=document.getElementById('SimpleLayout').innerHTML; runSimpleCalc();">Simple</a>
-      <a href="#" id = "full" onclick = "document.getElementById('layout').innerHTML=document.getElementById('FullLayout').innerHTML; runCalc();">Full</a>
-    </div> 
-  </div>
-  <div id = "inputTable">
-    <table class = "invisibleBorder"  style = "position: absolute; top: 120px; left: 50px;">
-      <tr>
-        <td ><label for = "TUR" id = "TURLabel">Total Uncertainty Ratio:&nbsp</label></td>
-        <td><input type = "number" value = "2.0" min = "0" max = "100" step = "0.1" id = "TUR" name = "TUR" required onchange="runSimpleCalc()" style = "border: 1px solid;" style = "border: 1px solid;"></td>
-      </tr >
-      <tr>
-        <td><label for = "ITP" id = "ITPLabel">In-tolerance Probability:&nbsp</label></td>
-        <td><input type = "number" onchange = "runSimpleCalc()" value = "95.0" min = "0" max = "99.99" step = "1" id = "ITP" name = "ITP" style = "border: 1px solid;" required></td>
-      </tr>
-      <tr>
-        <td><label for = "GBF" id = "GBFLabel">Guardband Factor:&nbsp</label></td>
-        <td><input type = "number" onchange = "runSimpleCalc()" value = "0.9" min = "0" max = "100" step = "0.1" id = "GBF" name = "GBF" style = "border: 1px solid;" required> </td>
-      </tr>
-    </table>
-    </div>
-    <div id ="inputTable">
-    <table style="position: absolute; top: 225px; left: 50px;">
-      <tr>
-        <td>Test Measurement:&nbsp</td>
-        <td><div class="slidecontainer">
-          <input type="range" onchange = "runSimpleCalc()" min="-5" max="5" value="0" step = "0.01" class="slider" id="myRange" style = "position:absolute; top:3px;">
-        </div></td>
-      </tr>
-    </table>
-    </div>
-    </div>
-
-<!---------------------------------------------------SimpleLayout----------------------------------------------->
-
-<!----------------------------------------------------FullLayout------------------------------------------------>
-</div>
-<div id = "FullLayout" style = "visibility:hidden;">
-  <div class="dropdown"  style = "position: absolute; top: 10px; left: 50px;">
-    <button class="dropbtn" id = "mode">Integral</button>
-      <div class="dropdown-content">
-        <a href="#" id = "Integral">Integral</a>
-        <a href="riskcurves.html" id = "RiskCurves">Risk Curves</a>
-      </div>
-  </div>
-  <div class="dropdown"  style = "position: absolute; top: 60px; left: 50px;">
-    <button class="dropbtn" id = "mode">Full</button>
-    <div class="dropdown-content">
-      <a href="#" id = "simple" onclick="document.getElementById('layout').innerHTML=document.getElementById('SimpleLayout').innerHTML; runSimpleCalc();">Simple</a>
-      <a href="#" id = "full" onclick = "document.getElementById('layout').innerHTML=document.getElementById('FullLayout').innerHTML; runCalc();">Full</a>
-    </div>
-
-
-  </div>
-  <div id = inputTable style="position: absolute; top: 120px; left: 50px;">
-  <table>
-    <tr>
-      <td><label for = "LowL" id = "LowLLabel">Lower Specification Limit:&nbsp</label></td>
-      <td><input type = "number" onchange = "runCalc()" value = "-1" step = "0.1" id = "LowL" name = "LowL" style = "border: 1px solid;"></td>
-    </tr>
-    <tr>
-      <td><label for = "UpL" id = "UpLLabel">Upper Specification Limit:&nbsp</label></td>
-      <td><input type = "number" onchange = "runCalc()" value = "1" step = "0.1" id = "UpL" name = "UpL" style = "border: 1px solid;"></td>
-    </tr>
-  </table>
-  </div>
-
-  <div id = "processDistribution" style = "position: absolute; top: 195px; left: 50px;">
-    <label for="processDist">Process Distribution:</label><br>
-
-    <table id = "processTable" >
-      <tr >
-        <th >Parameter</th>
-        <th >Value</th>
-      </tr>
-
-      <tr >
-        <td  class = "select">Distribution</td>   
-        <td ALIGN="center">
-          <div class="dropdown">
-            <button class="dropbtn" id = "mode2" style = "width: 188px">normal</button>
-          <div class="dropdown-content" style = "width: 188px"> 
-              <a href = "#" id = "normalProc" onclick = "document.getElementById('stdLabel').textContent = 'std'; myDeleteRow(); document.getElementById('mode2').textContent = 'normal';  document.getElementById('MedianLabel').textContent = 'Median'; runCalc();">normal</a>
-              <a href = "#" id = "triangularProc" onclick = "document.getElementById('stdLabel').textContent = 'a'; myDeleteRow(); document.getElementById('mode2').textContent = 'triangular';  document.getElementById('MedianLabel').textContent = 'Median'; runCalc();"> triangular</a>
-              <a href = "#" id = "uniformProc" onclick = "document.getElementById('stdLabel').textContent = 'a'; myDeleteRow();document.getElementById('mode2').textContent = 'uniform'; document.getElementById('MedianLabel').textContent = 'Median'; runCalc();"> uniform</a>
-              <a href = "#" id = "betaProc" onclick = "document.getElementById('stdLabel').textContent = 'alpha'; myAddRow(); document.getElementById('MedianLabel').textContent = 'shift'; runCalc();">gamma</a> 
-            </div>
-            </div>
-
-          </td>
-      </tr>
-      <tr>
-        <td ><label for = "Median" id = "MedianLabel">Median</label></td>
-        <td >
-          <input type = "number" onchange = "runCalc()" value = "0.0" step = "0.1" id = "Median" name = "Median"> <br> 
-        </td>
-      </tr>
-      <tr >
-        <td ><label for = "std" id = "stdLabel">std</label></td>
-        <td >
-          <input type = "number" onchange = "runCalc()" value = "1.0" step = "0.1" id = "std" name = "std"> <br> 
-        </td>
-      </tr>
-    </table> 
-  </div>
-
-  <div id = "Test Measurement" style = "position: absolute; top: 420px; left: 50px;">
-    <label for="testMeasure">Test Measurement:</label><br>
-
-    <table id = "testTable">
-      <tr>
-        <th>Parameter</th>
-        <th>Value</th>
-      </tr>
-
-      <tr>
-        <td class = "select">Distribution</td>   
-        <td ALIGN="center">
-        <div class="dropdown">
-          <button class="dropbtn" id = "mode3" style = "width: 188px" >normal</button>
-        <div class="dropdown-content" style = "width: 188px"> 
-            <a href = "#" id = "normalTest" onclick = "document.getElementById('std2Label').textContent = 'std'; myDeleteRow2(); document.getElementById('mode3').textContent = 'normal'; runCalc();">normal</a>
-            <a href = "#" id = "triangularTest" onclick = "document.getElementById('std2Label').textContent = 'a'; myDeleteRow2(); document.getElementById('mode3').textContent = 'triangular'; runCalc();"> triangular</a>
-            <a href = "#" id = "uniformTest" onclick = "document.getElementById('std2Label').textContent = 'a'; myDeleteRow2(); document.getElementById('mode3').textContent = 'uniform'; runCalc();"> uniform</a>
-            <a href = "#" id = "betaTest" onclick = "document.getElementById('std2Label').textContent = 'alpha'; myAddRow2(); document.getElementById('biasLabel').textContent = 'Bias'; runCalc();">gamma</a>    
-          </div>
-          </div>
-         </td>
-      </tr>
-      <tr>
-        <td>Measurement</td>
-        <td><input type="number" onchange = "runCalc()" min="-20" max="20" value="0.0" step = "0.1" id="myRangeFull" style = "width: 188px;"></td>
-      </tr>
-      <tr>
-        <td><label for = "bias" id = "biasLabel">Bias</label></td>
-        <td>
-          <input type = "number" onchange = "runCalc()" value = "0.0" step = "0.1" id = "bias" name = "bias"> <br> 
-        </td>
-      </tr>
-      <tr>
-        <td><label for = "std2" id = "std2Label">std</label></td>
-        <td>
-          <input type = "number" onchange = "runCalc()" value = "1.0" step = "0.1" id = "std2" name = "std2"> <br> 
-        </td>
-      </tr>
-    </table> 
-
-  </div>
-  <div id = "Guardband" style = "position: absolute; top: 700px; left: 50px;">
-    <input type="checkbox" id="guardband" name="guardband" onchange = "useGuardband(); runCalc();">
-    <label for="guardband">Guardband:</label><br>
-
-    <div id = inputTable>
+  <div class="risk-grid" style="margin-top: 2em; margin-bottom: 2em;">
+    <div class="risk-grid-child">
       <table>
         <tr>
-          <td><label for = "lowerGuard" id = "lowerGuardLabel">Lower Guardband(Relative):&nbsp</label></td>
-          <td><input type = "text" onchange = "runCalc()" value = "0" step = "0.1" id = "lowerGuard" name = "lowerGuard" disabled style = "border: 1px solid;"></td>
+          <td><label for="LowL" id="LowLLabel">Lower Specification Limit:&nbsp</label></td>
+          <td><input type="number" py-change="calculate" value="-1" step="0.1" id="LowL" name="LowL"
+              style="border: 1px solid;"></td>
         </tr>
         <tr>
-          <td><label for = "upperGuard" id = "upperGuardLabel">Upper Guardband(Relative):&nbsp</label></td>
-          <td><input type = "text" onchange = "runCalc()" value = "0" step = "0.1" id = "upperGuard" name = "upperGuard" disabled style = "border: 1px solid;"></td>
-        </tr>
-        <tr>
-          <td><label for = "TargetPFA" id = "TargetPFALabel">Target PFA (%):&nbsp</label></td>
-          <td><input type = "text" value = "0.8" min = "0" max = "1" step = "0.01" id = "TargetPFA" name = "TargetPFA" disabled style = "border: 1px solid; width: 188px;"></td>
+          <td><label for="UpL" id="UpLLabel">Upper Specification Limit:&nbsp</label></td>
+          <td><input type="number" py-change="calculate" value="1" step="0.1" id="UpL" name="UpL"
+              style="border: 1px solid;"></td>
         </tr>
       </table>
-  </div>
-  </div>
-  <div style = "position: absolute; top: 840px; left: 50px;">
-    <button class="dropbtn" id="calculateGBF" onclick = changeText() disabled>Calculate Guardband</button>
-    <div id = "displayStuff"></div>
-  </div>
-  </div>
 
+      <div id="processDistribution" style="margin-top: 2em;">
+        <label for="processDist">Process Distribution:</label><br>
+        <table id="processTable">
+          <tr>
+            <th>Parameter</th>
+            <th>Value</th>
+          </tr>
+          <tr>
+            <td class="select">Distribution</td>
+            <td ALIGN="center">
+              <div class="dropdown">
+                <button class="dropbtn" id="procdist" style="width: 188px">normal</button>
+                <div class="dropdown-content" style="width: 188px">
+                  <a href="#" id="normalProc" py-click="update_process_rows">normal</a>
+                  <a href="#" id="triangularProc" py-click="update_process_rows">triangular</a>
+                  <a href="#" id="uniformProc" py-click="update_process_rows">uniform</a>
+                  <a href="#" id="gammaProc" py-click="update_process_rows">gamma</a>
+                </div>
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td><label for="Median" id="MedianLabel">Median</label></td>
+            <td><input type="number" py-change="calculate" value="0.0" step="0.1" id="Median" name="Median"> <br></td>
+          </tr>
+          <tr>
+            <td><label for="std" id="stdLabel">std</label></td>
+            <td><input type="number" py-change="calculate" value="0.51" step="0.1" id="std" name="std"> <br></td>
+          </tr>
+          <tr id="procBetaRow" class="input-hidden">
+            <td><label for="beta" id="betaLabel">beta</label></td>
+            <td><input type="number" py-change="calculate" value="1.0" step="0.1" id="beta" name="beta"> <br> </td>
+          </tr>
+        </table>
+      </div>
 
-<!----------------------------------------------------FullLayout------------------------------------------------>  
+      <div id="Test Measurement" style="margin-top: 2em;">
+        <label for="testMeasure">Test Measurement:</label><br>
+        <table id="testTable">
+          <tr>
+            <th>Parameter</th>
+            <th>Value</th>
+          </tr>
+          <tr>
+            <td class="select">Distribution</td>
+            <td ALIGN="center">
+              <div class="dropdown">
+                <button class="dropbtn" id="measdist" style="width: 188px">normal</button>
+                <div class="dropdown-content" style="width: 188px">
+                  <a href="#" id="normalMeas" py-click="update_measure_rows">normal</a>
+                  <a href="#" id="triangularMeas" py-click="update_measure_rows">triangular</a>
+                  <a href="#" id="uniformMeas" py-click="update_measure_rows">uniform</a>
+                  <a href="#" id="gammaMeas" py-click="update_measure_rows">gamma</a>
+                </div>
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td>Measurement</td>
+            <td><input type="number" py-change="calculate" min="-20" max="20" value="0.0" step="0.1" id="measurement"
+                style="width: 188px;"></td>
+          </tr>
+          <tr>
+            <td><label for="bias" id="biasLabel">Bias</label></td>
+            <td><input type="number" py-change="calculate" value="0.0" step="0.1" id="bias" name="bias"> <br></td>
+          </tr>
+          <tr>
+            <td><label for="std2" id="std2Label">std</label></td>
+            <td><input type="number" py-change="calculate" value="0.125" step="0.1" id="std2" name="std2"> <br></td>
+          </tr>
+          <tr id="measBetaRow" class="input-hidden">
+            <td><label for="beta2" id="betaLabel2">beta</label></td>
+            <td><input type="number" py-change="calculate" value="1.0" step="0.1" id="beta2" name="beta2"> <br> </td>
+          </tr>
+        </table>
+      </div>
+
+      <div id="Guardband" style="margin-top: 2em;">
+        <input type="checkbox" id="guardband" name="guardband" py-change="enable_guardband">
+        <label for="guardband">Guardband:</label><br>
+        <div>
+          <table>
+            <tr>
+              <td><label for="lowerGuard" id="lowerGuardLabel">Lower Guardband(Relative):&nbsp</label></td>
+              <td><input type="text" py-change="calculate" value="0" step="0.1" id="lowerGuard" name="lowerGuard"
+                  disabled style="border: 1px solid;"></td>
+            </tr>
+            <tr>
+              <td><label for="upperGuard" id="upperGuardLabel">Upper Guardband(Relative):&nbsp</label></td>
+              <td><input type="text" py-change="calculate" value="0" step="0.1" id="upperGuard" name="upperGuard"
+                  disabled style="border: 1px solid;"></td>
+            </tr>
+            <tr>
+              <td><label for="TargetPFA" id="TargetPFALabel">Target PFA (%):&nbsp</label></td>
+              <td><input type="text" value="0.8" min="0" max="1" step="0.01" id="TargetPFA" name="TargetPFA"
+                  style="border: 1px solid; width: 188px;"></td>
+            </tr>
+          </table>
+        </div>
+      </div>
+      <div style="margin-top: 2em;">
+        <button class="dropbtn" id="calculateGBF" py-click="calc_guardband">Calculate Guardband</button>
+        <div id="displayStuff"></div>
+      </div>
+    </div>
+    <div class="risk-grid-child">
+      <div id="plot">
+        <p>Initializing...</p>
+      </div>
+      <div id="output">
+      </div>
+    </div>
+  </div>
   <br><br>
-  <div class = "footer">
-    <footer>
-       <div class="copyright text-center">
-        <p class="text-sm"><a href="index.html" style="color: white"><u>SUNCAL-Web Home</u></a> | Made with <a href="https://sandiapsl.github.io" style="color: white"><u>Suncal</u></a> and <a href="https://pyscript.net/" style="color: white"><u>PyScript</u></a></p>
-       </div>
-       <div></div>
-    </footer>
+  <div class="footer" style="padding-top: 3em;">
+    <p><a href="index.html">Suncal-Web Home</a></p>
   </div>
- 
-  <script>
-    function createObject(object, variableName){
-            let execString = variableName + " = object";
-            eval(execString);
-    }
 
-    function runSimpleCalc(){
-      const simpleCalc = pyodideGlobals.get("calcSimplePlots"); 
-      simpleCalc(); 
-    }
-
-    function runCalc(){
-      const calc = pyodideGlobals.get("calcPlots");
-      calc();
-    }
-
-    function changeText(){
-      const getNumber = pyodideGlobals.get("getNum");
-      let x = getNumber();
-      document.getElementById("lowerGuard").value = x;
-      document.getElementById("upperGuard").value = x;
-      if (x != "nan"){
-        runCalc(); 
-      }
-    } 
-
-    function myDeleteRow(){
-        let x = document.getElementById("mode2").textContent; 
-        if (x === 'gamma'){
-          document.getElementById("processTable").deleteRow(-1);
-        }
-    }
-
-    function myAddRow(){
-        let x = document.getElementById("mode2").textContent;
-        if (x != 'gamma'){
-          document.getElementById("processTable").insertRow(-1).innerHTML = '<tr><td><label for = "beta" id = "betaLabel">beta</label></td><td><input type = "number" onchange = "runCalc()" value = "1.0" step = "0.1" id = "beta" name = "beta"> <br> </td></tr>';
-          document.getElementById('mode2').textContent = 'gamma';
-        }
-      }
-
-
-    function myAddRow2(){
-      let x = document.getElementById("mode3").textContent;
-      if (x != 'gamma'){
-        document.getElementById("testTable").insertRow(-1).innerHTML = '<tr><td><label for = "beta2" id = "betaLabel2">beta</label></td><td><input type = "number" onchange = "runCalc()" value = "1.0" step = "0.1" id = "beta2" name = "beta2"> <br> </td></tr>';
-        document.getElementById('mode3').textContent = 'gamma';
-      }
-    }
-
-    function myDeleteRow2(){
-        let x = document.getElementById("mode3").textContent;
-        if (x === 'gamma'){
-          document.getElementById("testTable").deleteRow(-1);
-        }
-    }
-
-    function useGuardband(){
-        var checkBox = document.getElementById("guardband");
-        if (checkBox.checked){
-            document.getElementById("lowerGuard").disabled = false;
-            document.getElementById("upperGuard").disabled = false;
-            document.getElementById("TargetPFA").disabled = false;
-            document.getElementById("calculateGBF").disabled = false;  
-        }
-        else {
-          document.getElementById("lowerGuard").disabled = true;
-          document.getElementById("upperGuard").disabled = true;
-          document.getElementById("TargetPFA").disabled =  true; 
-          document.getElementById("calculateGBF").disabled = true;
-        }
-    }
-  </script>
-  <py-config>
-    packages = ["src/whl/suncal-1.6.6-py3-none-any.whl"]
-  </py-config>
-
-<py-script>
-
-import asyncio
-from js import createObject, document
-from pyodide.ffi import create_proxy
-import matplotlib.pyplot as plt
-from suncal.risk.risk_model import RiskModel, RiskModelSimple
-from suncal.common import distributions
-from suncal.common.report import Report
-
-Report.apply_css = False  # Use this page's CSS, not Suncal's built-in CSS
-
-
-createObject(create_proxy(globals()), "pyodideGlobals")
-
-calc = RiskModel()
-calcsimple = RiskModelSimple()
-figure = plt.figure()
-
-def calcPlots():
-    procMedian = document.getElementById("Median").value
-    procMedian = float(procMedian) 
-    testMedian = document.getElementById("bias").value
-    testMedian = float(testMedian)     
-    measurement = document.getElementById("myRangeFull").value
-    measurement = float(measurement)
-    lowerSpec = document.getElementById("LowL").value
-    upperSpec = document.getElementById("UpL").value
-    lowerSpec = float(lowerSpec)
-    upperSpec = float(upperSpec)
-    calc.speclimits = (lowerSpec, upperSpec)
-    procDistChoice = document.getElementById("mode2").textContent
-    testDistChoice = document.getElementById("mode3").textContent
-
-    if (procDistChoice == "gamma"):
-      alpha = document.getElementById("std").value
-      alpha = float(alpha)
-      beta = document.getElementById("beta").value
-      beta = float(beta)
-      procdist = distributions.get_distribution(procDistChoice, alpha = alpha, beta = beta)
-      procdist.set_shift(procMedian)
-    elif (procDistChoice == "normal"):
-      standardDev = document.getElementById("std").value
-      standardDev = float(standardDev)
-      procdist = distributions.get_distribution(procDistChoice, std = standardDev, median = procMedian)
-    else: 
-      aVal = document.getElementById("std").value
-      aVal = float(aVal)
-      procdist = distributions.get_distribution(procDistChoice, a = aVal, median = procMedian)
-    calc.process_dist = procdist
-
-    if (testDistChoice == "gamma"):
-      alpha = document.getElementById("std2").value
-      alpha = float(alpha)
-      beta = document.getElementById("beta2").value
-      beta = float(beta)
-      testdist = distributions.get_distribution(testDistChoice, alpha = alpha, beta = beta, shift = measurement - testMedian)
-    elif (testDistChoice == "normal"):
-      standardDev = document.getElementById("std2").value
-      standardDev = float(standardDev)
-      testdist = distributions.get_distribution(testDistChoice, std = standardDev, median = measurement - testMedian)
-    else: 
-      aVal = document.getElementById("std2").value
-      aVal = float(aVal)
-      testdist = distributions.get_distribution(testDistChoice, a = aVal, median = measurement)
-    calc.measure_dist = testdist
-    calc.testbias = testMedian
-
-    useGB = document.getElementById("guardband").checked
-    if (useGB):
-      gb1 = document.getElementById("lowerGuard").value
-      gb1 = float(gb1)
-      gb2 = document.getElementById("upperGuard").value
-      gb2 = float(gb2)
-    else:
-      gb1 = 0 
-      gb2 = 0
-    calc.gbofsts = (gb1, gb2)
-    out = calc.calculate().report
-    document.getElementById("output").innerHTML = ''
-    display(out.summary(), target="output", append=False)
-    out.plot.joint(figure)
-    display(figure, target="plot", append=False)
-
-
-def calcSimplePlots():
-    tur = document.getElementById("TUR").value
-    itp = document.getElementById("ITP").value
-    gbf = document.getElementById("GBF").value
-    sliderRange = document.getElementById("myRange").value
-    tur = float(tur)
-    itp = float(itp)
-    gbf = float(gbf)
-    itp = itp/100
-    sliderRange = float(sliderRange)
-
-    calcsimple.gbf = gbf
-    calcsimple.tur = tur
-    calcsimple.itp = itp
-    #calc.set_testmedian(sliderRange)
-
-    out = calcsimple.calculate().report
-    document.getElementById("output").innerHTML = ''  # append=False doesn't seem to work. Clearing old output here.
-    display(out.summary(), target="output", append=False)
-    out.plot.joint(figure)
-    display(figure, target="plot", append=False)
-
-def getNum(): 
-  procMedian = document.getElementById("Median").value
-  procMedian = float(procMedian)
-  lowerSpec = document.getElementById("LowL").value
-  upperSpec = document.getElementById("UpL").value
-  lowerSpec = float(lowerSpec)
-  upperSpec = float(upperSpec)
-  procDistChoice = document.getElementById("mode2").textContent
-  testDistChoice = document.getElementById("mode3").textContent
-
-  if (procDistChoice == "gamma"):
-    alpha = document.getElementById("std").value
-    alpha = float(alpha)
-    beta = document.getElementById("beta").value
-    beta = float(beta)
-    procdist = distributions.get_distribution(procDistChoice, alpha = alpha, beta = beta)
-  elif (procDistChoice == "normal"):
-    standardDev = document.getElementById("std").value
-    standardDev = float(standardDev)
-    procdist = distributions.get_distribution(procDistChoice, std = standardDev, median = procMedian)
-  else:
-    aVal = document.getElementById("std").value
-    aVal = float(aVal)
-    procdist = distributions.get_distribution(procDistChoice, a = aVal, median = procMedian)
-
-  measurement = document.getElementById("myRangeFull").value
-  measurement = float(measurement)
-  testMedian = document.getElementById("bias").value
-  testMedian = float(testMedian)
-  if (testDistChoice == "gamma"):
-    alpha = document.getElementById("std2").value
-    alpha = float(alpha)
-    beta = document.getElementById("beta2").value
-    beta = float(beta)
-    testdist = distributions.get_distribution(testDistChoice, alpha = alpha, beta = beta, shift = measurement - testMedian)
-  elif (testDistChoice == "normal"):
-    standardDev = document.getElementById("std2").value
-    standardDev = float(standardDev)
-    testdist = distributions.get_distribution(testDistChoice, std = standardDev, median = measurement - testMedian)
-  else: 
-    aVal = document.getElementById("std2").value
-    aVal = float(aVal)
-    testdist = distributions.get_distribution(testDistChoice, a = aVal, median = measurement)
-  calc.process_dist = procdist
-  calc.measure_dist = testdist
-  calc.speclimits = (lowerSpec, upperSpec)
-
-  pfaTarget = document.getElementById('TargetPFA').value
-  pfaTarget = float(pfaTarget) 
-  pfaTarget = pfaTarget/100 
-  calc.guardband_pfa(pfa=pfaTarget)
-  guardBand = calc.gbofsts
-  guardBandString = str(guardBand[0])
-  if guardBandString == "nan":
-    return(guardBandString)
- 
-  guardBand = guardBand[0]
-  guardBand = round(guardBand, 7)
-  return(guardBand)
-
-calcSimplePlots()
-</py-script>
+  <script type="py" src="src/risk.py" config='{"packages": ["src/whl/suncal-1.6.6-py3-none-any.whl"]}'></script>
 </body>
 </html>

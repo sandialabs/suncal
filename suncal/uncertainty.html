@@ -1,37 +1,36 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
+<head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
 
     <title>Suncal - Uncertainty Propagation</title>
 
-    <link rel="preconnect" href="https://fonts.googleapis.com">
+<!--    <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Raleway&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+-->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.7/dist/katex.css" integrity="sha384-YiVwk+MBV52+yIvvplLwDxm3iGDI7dYb731lqsN9ASGBpIpJ/dte35lBIuR5oGFU" crossorigin="anonymous">
     <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.7/dist/katex.js" integrity="sha384-8JJEhHkwY0VI06p7huKe7LqvYgDhSS69qJxWSQGwlB8FmDnAgPKgZGk5Ui0VyuNH" crossorigin="anonymous"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.7/dist/contrib/auto-render.min.js" integrity="sha384-+VBxd3r6XgURycqtZ117nYw44OOcIax56Z4dCRWbxyPt0Koah1uHoK0o4+/RRE05" crossorigin="anonymous"></script>
-    <link rel="stylesheet" type="text/css" href="style/style.css" />
-    <link rel="stylesheet" href="https://pyscript.net/latest/pyscript.css" />
-    <script defer src="https://pyscript.net/releases/2023.03.1/pyscript.js"></script>
-
-  </head>
+    <link rel="stylesheet" href="style/style.css" />
+    <link rel="stylesheet" href="https://pyscript.net/releases/2024.3.2/core.css">
+    <script type="module" src="https://pyscript.net/releases/2024.3.2/core.js"></script>
+    <script type="module">
+      const loading = document.getElementById('loading');
+      addEventListener('py:ready', () => loading.close());
+      loading.showModal();
+  </script>
+</head>
 
   <body>
-    <py-config>
-      packages = ["src/whl/suncal-1.6.3-py3-none-any.whl"]
-
-      [[fetch]]
-      files = ["uncertainty.py"]
-      from = "src"
-      to_folder = "."
-    </py-config>
-
     <div class="container">
       <h1>Suncal Web (Beta) - Uncertainty Propagation</h1>
     </div>
+    <dialog id="loading">
+      <h2>Loading...</h2>
+  </dialog>
 
 <div class="container uncert" id="suncal-input">
 <div class="suncal-input-grid">
@@ -43,8 +42,9 @@
                         Press the arrow button to save the model and continue.">&nbsp;<img src="img/help.svg"></span>
         </div>
 
-        <input type="text" id="model" value="f = x" py-input="uncert.update_model()" />
-        <button class="button tooltip fade" id="button-model" type="button" py-click="uncert.set_model()" >&rarr;</button>
+        <input type="text" id="model" value="f = x" py-input="uncert.update_model" />
+        <button class="button tooltip fade" id="button-model" type="button" py-click="uncert.set_model"
+           data-title="Click to accept the measurement model and continue">&rarr;</button>
         <br>
         <div id="model-preview"></div>
   </div>
@@ -54,10 +54,10 @@
       <span class="infobutton tooltip fade" data-title="The free variables in the Measurement Model were extracted and are shown here. Select each variable from the dropdown to enter its value and uncertainty.">&nbsp;<img src="img/help.svg"></span>
     </div>
   <div class="varselect">
-        Variable: <select name="variable" id="variable-select" py-change="uncert.select_variable()"></select><br>
+        Variable: <select name="variable" id="variable-select" py-change="uncert.select_variable"></select><br>
         <div class="uncert-grid">
           <div class="uncert-grid-child">Value/Units:</div>
-          <div class="uncert-grid-child"><input type="text" class="value-input" id="varvalue" value="1" py-change="uncert.set_var_value()" /></div>
+          <div class="uncert-grid-child"><input type="text" class="value-input" id="varvalue" value="1" py-change="uncert.set_var_value" /></div>
           <div class="uncert-grid-help tooltip fade" data-title="Enter the expected or measured value. Optionally include units either spelled out or standard abbreviations. Always use a space between number and unit.">&nbsp;<img src="img/help.svg"></div>
 
           <div class="uncert-grid-child">u<sub>c</sub></div>
@@ -68,15 +68,15 @@
           <div class="uncert-grid-child"><span id="var-degf">inf</span></div>
           <div class="uncert-grid-help tooltip fade" data-title="Effective degrees of freedom of this variable.">&nbsp;<img src="img/help.svg"></div>
 
-          <div class="uncert-grid-child"><button class="button" id="button-add-comp" type="button" py-click="uncert.add_component()" >Add Uncertainty</button></div>
+          <div class="uncert-grid-child"><button class="button" id="button-add-comp" type="button" py-click="uncert.add_component" >Add Uncertainty</button></div>
         </div>
       <br>
       <div class="varselect input-hidden" id="uncert-box">
-        Uncertainty Component: <select name="component" id="component-select" py-change="uncert.select_component()"></select>
+        Uncertainty Component: <select name="component" id="component-select" py-change="uncert.select_component"></select>
         <div class="uncert-grid" id="uncert-entries">
           <div class="uncert-grid-child">Distribution</div>
           <div class="uncert-grid-child">
-            <select name="distribution" id="distribution" py-change="uncert.set_comp_value()">
+            <select name="distribution" id="distribution" py-change="uncert.set_comp_value">
               <option value="normal">Normal</option>
               <option value="uniform">Uniform</option>
               <option value="triangular">Triangular</option>
@@ -85,23 +85,23 @@
           <div class="uncert-grid-help tooltip fade" data-title="Select the probability distribution for this uncertainty component.">&nbsp;<img src="img/help.svg"></div>
 
           <div class="uncert-grid-child" id="uncert-label">Uncertainty</div>
-          <div class="uncert-grid-child"><input type="text" class="value-input" id="uncertvalue" value="1" placeholder="uncertainty"  py-change="uncert.set_comp_value()"/></div>
+          <div class="uncert-grid-child"><input type="text" class="value-input" id="uncertvalue" value="1" placeholder="uncertainty"  py-change="uncert.set_comp_value"/></div>
           <div class="uncert-grid-help tooltip fade" data-title="Enter the uncertainty value of the component.">&nbsp;<img src="img/help.svg"></div>
 
           <div class="uncert-grid-child">Units</div>
-          <div class="uncert-grid-child"><input type="text" class="value-input" id="uncertunits" value="" placeholder="units"  py-change="uncert.set_comp_value()"/></div>
+          <div class="uncert-grid-child"><input type="text" class="value-input" id="uncertunits" value="" placeholder="units"  py-change="uncert.set_comp_value"/></div>
           <div class="uncert-grid-help tooltip fade" data-title="Optionally enter units for this uncertainty component as an abbreviation or spelled out. Must be compatible with the units entered for the Measured Value.">&nbsp;<img src="img/help.svg"></div>
 
           <div class="uncert-grid-child" id="cov-label">Coverage Factor</div>
-          <div class="uncert-grid-child" id="cov-input"><input type="text" class="value-input" id="coverage" value="2" placeholder="coverage factor" py-change="uncert.set_comp_value('coverage')"/></div>
+          <div class="uncert-grid-child" id="cov-input"><input type="text" class="value-input" id="coverage" value="2" placeholder="coverage factor" py-change="uncert.set_comp_value"/></div>
           <div class="uncert-grid-help tooltip fade" id="cov-help" data-title="Enter the coverage factor (k-value) for this uncertainty component. Level of Confidence will be automatically calculated.">&nbsp;<img src="img/help.svg"></div>
 
           <div class="uncert-grid-child" id="conf-label">Confidence</div>
-          <div class="uncert-grid-child" id="conf-input"><input type="text" class="value-input small" id="confidence" value="95.45%" placeholder="confidence" py-change="uncert.set_comp_value('confidence')"/></div>
+          <div class="uncert-grid-child" id="conf-input"><input type="text" class="value-input small" id="confidence" value="95.45%" placeholder="confidence" py-change="uncert.set_comp_value"/></div>
           <div class="uncert-grid-help tooltip fade" id="conf-help" data-title="Enter level of confidence for this uncertainty component. Coverage factor will be automatically calculated.">&nbsp;<img src="img/help.svg"></div>
 
           <div class="uncert-grid-child">Degrees Freedom</div>
-          <div class="uncert-grid-child"><input type="text" class="value-input" id="degf" value="inf" placeholder="degrees freedom"  py-change="uncert.set_comp_value('degf')"/></div>
+          <div class="uncert-grid-child"><input type="text" class="value-input" id="degf" value="inf" placeholder="degrees freedom"  py-change="uncert.set_comp_value"/></div>
           <div class="uncert-grid-help tooltip fade" data-title="Enter degrees of freedom for this component. Use `inf` for infinite.">&nbsp;<img src="img/help.svg"></div>
 
           <div class="uncert-grid-child" id="uncert-entry-error" style="color: red;"></div>
@@ -110,11 +110,11 @@
       <br>
 
       <div class="correlation-box" id="correlation-box">
-        <input type="checkbox" id="enable-correlations" py-change="uncert.enable_correlations()">
+        <input type="checkbox" id="enable-correlations" py-change="uncert.enable_correlations">
         <label for="enable-correlations">Correlations</label>
         <div class="input-hidden" id="correlations-entries">
-          <select name="correlation-vars" id="correlation-vars" py-change="uncert.select_correlation()"></select>
-          <input type="number" id="correlation-value" value="0" min="-1" max="1" step=".001" py-input="uncert.set_correlation()" >
+          <select name="correlation-vars" id="correlation-vars" py-change="uncert.select_correlation"></select>
+          <input type="number" id="correlation-value" value="0" min="-1" max="1" step=".001" py-input="uncert.set_correlation" >
           <span class="infobutton tooltip fade"
             data-title="Select the variable pair to correlate from the dropdown, then enter the correlation coefficient as a value from -1 to 1.">&nbsp;<img src="img/help.svg"></span>
         </div>
@@ -123,15 +123,15 @@
   </div>
 
   <div class="uncert-grid-child input-hidden" id="div-calculate">
-    <button class="button" id="button-calculate" type="button" py-click="uncert.calculate()">Calculate!</button><br>
+    <button class="button" id="button-calculate" type="button" py-click="uncert.calculate">Calculate!</button><br>
   </div>
 </div>
 </div>
 
-<div class="container uncert input-hidden" id="suncal-output" >
+<div class="container uncert input-hidden" id="suncal-output">
 <div class="output-grid" id="suncal-output">
   <div class="uncert-grid-child">
-    <select name="outputpage" id="outputpage" py-change="uncert.output_change()">
+    <select name="outputpage" id="outputpage" py-change="uncert.output_change">
       <option value="summary">Summary</option>
       <option value="comparison">Comparison Plots</option>
       <option value="expanded">Expanded Uncertainty</option>
@@ -146,48 +146,48 @@
     <div id="uncert-controls">
       <div class="input-hidden output-units" id="output-units">
         Units:
-        <input type="text" id="output-units-value" placeholder="units" py-change="uncert.change_units()"/>
+        <input type="text" id="output-units-value" placeholder="units" py-change="uncert.change_units"/>
         <span class="infobutton tooltip fade"
         data-title="Enter the desired units of the model. If more than one function, list the units for each
                     function separated by semicolons.">&nbsp;<img src="img/help.svg"></span>
       </div>
       <div class="input-hidden" id="uncert-control-comparison">
-        <input type="checkbox" id="uncert-control-comparison-joint" py-change="uncert.output_change()">
+        <input type="checkbox" id="uncert-control-comparison-joint" py-change="uncert.output_change">
         <label for="uncert-control-comparison-joint">Joint PDF</label>
       </div>
       <div class="input-hidden" id="uncert-control-expanded">
         Level of Confidence
-        <input type="number" id="report-expanded-confs" value="95" min="1" max="99" step="1" py-input="uncert.output_change()"/> %
+        <input type="number" id="report-expanded-confs" value="95" min="1" max="99" step="1" py-input="uncert.output_change"/> %
       </div>
       <div class="input-hidden" id="uncert-control-derivation">
-        <input type="checkbox" id="uncert-control-derivation-values" py-change="uncert.output_change()">
+        <input type="checkbox" id="uncert-control-derivation-values" py-change="uncert.output_change">
         <label for="uncert-control-derivation-values">Show values</label>
       </div>
       <div class="input-hidden" id="uncert-control-validity">
-        <input type="number" class="small" id="uncert-control-validity-figs" value="1" min="1" max="6" step="1" py-change="uncert.output_change()">
+        <input type="number" class="small" id="uncert-control-validity-figs" value="1" min="1" max="6" step="1" py-change="uncert.output_change">
         <label for="uncert-control-validity-figs">Significant Figures</label>
       </div>
       <div class="input-hidden" id="uncert-control-mcfit">
         <div class="input-hidden" id="mcfit-function-select" style="margin-bottom: 20px;">
           Function:
-          <select name="mcfit-function" id="mcfit-function" py-change="uncert.output_change()"></select>
+          <select name="mcfit-function" id="mcfit-function" py-change="uncert.output_change"></select>
         </div>
         Fit distribution:
-        <select name="mcfit-dist" id="uncert-control-mcfit-dist" py-change="uncert.output_change()" >
+        <select name="mcfit-dist" id="uncert-control-mcfit-dist" py-change="uncert.output_change" >
           <option value="norm">Normal</option>
           <option value="uniform">Uniform</option>
           <option value="triangular">Triangular</option>
         </select>
       </div>
       <div class="input-hidden" id="uncert-control-mcinputs">
-        <input type="checkbox" id="uncert-control-mcinputs-joint" py-change="uncert.output_change()">
+        <input type="checkbox" id="uncert-control-mcinputs-joint" py-change="uncert.output_change">
         <label for="uncert-control-mcinputs-joint">Joint PDF</label>
       </div>
 
       <div>
-        <button class="button" id="button-download" type="button" py-click="file_save(uncert.results.report.all)"
+        <button class="button" id="button-download" type="button" py-click="file_save"
           style="margin-top: 100px; margin-bottom: 50px;" >Download Report</button>
-        <button class="button" id="button-back" type="button" py-click="uncert.back()"
+        <button class="button" id="button-back" type="button" py-click="uncert.back"
           >Back</button>
       </div>
     </div>
@@ -202,14 +202,11 @@
 
 <br><br>
 <div class="footer">
-  <p><button class="button" id="button-restart" type="button" py-click="uncert.restart()">Restart</button><br></p>
+  <p><button class="button" id="button-restart" type="button" py-click="uncert.restart">Restart</button><br></p>
   <p><a href="index.html">Suncal-Web Home</a></p>
 </div>
 
-<py-script>
-from uncertainty import Uncert, file_save
-uncert = Uncert()
-</py-script>
+<script type="py" src="src/uncertainty.py"  config='{"packages": ["src/whl/suncal-1.6.6-py3-none-any.whl"]}'></script>
 
 <script>
   delimiters = [
