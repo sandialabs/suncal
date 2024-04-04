@@ -150,7 +150,13 @@ th {
   color: white;
 }
 
-
+.gbbutton {
+  width: 188px;
+  margin: .5em;
+  padding: .5em;
+  background-color: #0259bd;
+  color: white;
+}
 
 .btnCircle {
   justify-content: center;
