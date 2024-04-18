@@ -6,6 +6,7 @@ The Suncal-Web interface currently provides these tools as a beta-test:
 - [Decision Risk Calculator (simple)](risktur.html): Calculate probability of false accept and reject based on Test Uncertainty Ratios
 - [Decision Risk Calculator](risk.html): Calculate probability of false accept and reject using arbitrary probability distributions
 - [Decision Risk Curves](riskcurves.html): Generate plots of decision risk versus guardbanding, in-tolerance probability, or TURs
+- [Decision Risk Probability of Conformance](risk_conform.html): Plot the probability of conformance versus measured value
 - [Distribution Explorer](distributions.html): Sample from probability distributions and combine using Monte Carlo (typically for training purposes).
 - [Student T Calculator](student.html): Calculate coverage factor, level of confidence, and degrees of freedom
 - [Units Converter](units.html): Convert between measurement units
