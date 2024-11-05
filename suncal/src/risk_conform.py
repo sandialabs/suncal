@@ -51,9 +51,8 @@ def calculate(event=None) -> None:
     document.getElementById('lowerGuard').disabled = not guardbandon
     document.getElementById('upperGuard').disabled = not guardbandon
 
-    with zp.XyPlot(xname='Measurement Result',
-                   yname='Probability of Conformance %') as plt:
-        zp.Line(xvals, prob)
+    with zp.Graph().axesnames('Measurement Result', 'Probability of Conformance %') as plt:
+        zp.PolyLine(xvals, prob)
         if math.isfinite(TL):
             zp.VLine(TL).color('black').stroke('--')
         if math.isfinite(TU):
