@@ -303,5 +303,68 @@ class Settings:
         return {'n': self.sigfigs,
                 'fmt': self.numformat}
 
+    @property
+    def mqa_performance(self) -> bool:
+        ''' MQA performance/utility enabled '''
+        return self._settings.value('mqa/performance', False, type=bool)
+
+    @mqa_performance.setter
+    def mqa_performance(self, value: bool) -> None:
+        ''' MQA features to enable '''
+        self._settings.setValue('mqa/performance', value)
+
+    @property
+    def mqa_cal(self) -> bool:
+        ''' MQA Calibration column enabled '''
+        return self._settings.value('mqa/calibration', False, type=bool)
+
+    @mqa_cal.setter
+    def mqa_cal(self, value: bool) -> None:
+        self._settings.setValue('mqa/calibration', value)
+
+    @property
+    def mqa_cost(self) -> bool:
+        ''' MQA Cost column enabled '''
+        return self._settings.value('mqa/cost', False, type=bool)
+
+    @mqa_cost.setter
+    def mqa_cost(self, value: bool) -> None:
+        self._settings.setValue('mqa/cost', value)
+
+    @property
+    def mqa_tur(self) -> bool:
+        ''' MQA TUR column enabled '''
+        return self._settings.value('mqa/tur', False, type=bool)
+
+    @mqa_tur.setter
+    def mqa_tur(self, value: bool) -> None:
+        self._settings.setValue('mqa/tur', value)
+
+    @property
+    def mqa_tar(self) -> bool:
+        ''' MQA TAR column enabled '''
+        return self._settings.value('mqa/tar', True, type=bool)
+
+    @mqa_tar.setter
+    def mqa_tar(self, value: bool) -> None:
+        self._settings.setValue('mqa/tar', value)
+
+    @property
+    def mqa_pfa(self) -> bool:
+        ''' MQA PFA column enabled '''
+        return self._settings.value('mqa/pfa', True, type=bool)
+
+    @mqa_pfa.setter
+    def mqa_pfa(self, value: bool) -> None:
+        self._settings.setValue('mqa/pfa', value)
+
+    @property
+    def mqa_desc(self) -> bool:
+        return self._settings.value('mqa/desc', False, type=bool)
+
+    @mqa_desc.setter
+    def mqa_desc(self, value: bool) -> None:
+        self._settings.setValue('mqa/desc', value)
+
 
 gui_settings = Settings()

@@ -3,9 +3,6 @@ from collections import namedtuple
 import numpy as np
 
 
-FitParams = namedtuple('FitParams', ['t', 'deltas', 'b', 'cov', 'syx', 'y0', 'u0'])
-
-
 def fitpoly(x, y, m=1):
     ''' Fit polynomial, order m, with zero intercept
 

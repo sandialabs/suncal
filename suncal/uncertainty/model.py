@@ -11,6 +11,7 @@ import sympy
 from pint import DimensionalityError
 
 from ..common import uparser, matrix, unitmgr
+from ..common.limit import Limit
 from .variables import Variables
 from .results.gum import GumResults, GumOutputData
 from .results.monte import McResults
@@ -27,6 +28,7 @@ class ModelBase:
     def __init__(self):
         self.variables = Variables()
         self.descriptions = {}
+        self.tolerances: dict[str, Limit] = {}
 
     def var(self, name):
         ''' Get a variable from the model
@@ -183,9 +185,10 @@ class Model(ModelBase):
         Ux = self.variables.covariance_symbolic()
         if len(Cx[0]) > 0:
             Uy = matrix.matmul(matrix.matmul(Cx, Ux), CxT)
-        else:  # No variables in model
+            uncerts = {f'u_{name}': sympy.sqrt(x) for name, x in zip(self.functionnames, matrix.diagonal(Uy))}
+        else:   # No variables in model
             Uy = Ux
-        uncerts = {f'u_{name}': sympy.sqrt(x) for name, x in zip(self.functionnames, matrix.diagonal(Uy))}
+            uncerts = {f'u_{name}': 0 for name in self.functionnames}
         degf = self._degrees_freedom(Cx)
         return GumOutputData(uncerts, Uy, Ux, Cx, degf, self.basesympys, self.sympys)
 
@@ -217,7 +220,7 @@ class Model(ModelBase):
             warns.append('Overflow in GUM uncertainty calculation')
 
         outnumeric = GumOutputData(uncerts, Uy, Ux, Cx, degf, expected, self.sympys)
-        return GumResults(outnumeric, symbolic, self.variables.info,  self.constants, self.descriptions, warns)
+        return GumResults(outnumeric, symbolic, self.variables.info, self.constants, self.descriptions, warns, self.tolerances)
 
     def monte_carlo(self, samples=1000000, copula='gaussian'):
         ''' Calculate Monte Carlo samples
@@ -242,7 +245,7 @@ class Model(ModelBase):
             if not all(np.isfinite(np.atleast_1d(np.float64(unitmgr.strip_units(value))))):
                 warns.append(f'Some Monte-Carlo samples in {fname} are NaN. Ignoring in statistics.')
 
-        return McResults(values, self.variables.info, samplevalues, self, self.descriptions, warns)
+        return McResults(values, self.variables.info, samplevalues, self, self.descriptions, warns, self.tolerances)
 
     def calculate(self, samples=1000000):
         ''' Run GUM and Monte Carlo calculation and generate a report '''
@@ -398,7 +401,7 @@ class ModelCallable(Model):
             if dx == 0:
                 dx = 1E-6
                 if unitmgr.has_units(uncerts[name]):
-                    dx *= unitmgr.split_units(uncerts[name])[1]
+                    dx *= unitmgr.get_units(uncerts[name])
             d1[name] = d1[name] + dx
             d2 = means.copy()
             d2[name] = d2[name] - dx
@@ -443,7 +446,7 @@ class ModelCallable(Model):
             warns.append('Overflow in GUM uncertainty calculation')
 
         outnumeric = GumOutputData(uncerts, Uy, Ux, Cx, degf, expected, None)
-        return GumResults(outnumeric, None, self.variables.info, None, None)
+        return GumResults(outnumeric, None, self.variables.info, None, None, self.tolerances)
 
     def monte_carlo(self, samples=1000000, copula='gaussian'):
         ''' Calculate Monte Carlo samples
@@ -463,4 +466,4 @@ class ModelCallable(Model):
             if not all(np.isfinite(np.atleast_1d(np.float64(unitmgr.strip_units(value))))):
                 warns.append(f'Some Monte-Carlo samples in {fname} are NaN. Ignoring in statistics.')
 
-        return McResults(values, self.variables.info, samples, self, warns)
+        return McResults(values, self.variables.info, samples, self, warns, self.tolerances)

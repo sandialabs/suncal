@@ -32,7 +32,7 @@ class GumSweepResults:
         values = [g.expected for g in self.gumresults]
         expected = {}
         for funcname in self.functionnames:
-            units = unitmgr.split_units(values[0][funcname])[1]
+            units = unitmgr.get_units(values[0][funcname])
             units = str(units) if units else None
             expected[funcname] = unitmgr.make_quantity(
                 np.asarray([unitmgr.strip_units(v[funcname]) for v in values]), units)
@@ -43,7 +43,7 @@ class GumSweepResults:
         values = [g.uncertainty for g in self.gumresults]
         uncertainty = {}
         for funcname in self.functionnames:
-            units = unitmgr.split_units(values[0][funcname])[1]
+            units = unitmgr.get_units(values[0][funcname])
             units = str(units) if units else None
             uncertainty[funcname] = unitmgr.make_quantity(
                 np.asarray([unitmgr.strip_units(v[funcname]) for v in values]), units)
@@ -81,7 +81,7 @@ class McSweepResults:
         values = [g.expected for g in self.mcresults]
         expected = {}
         for funcname in self.functionnames:
-            units = unitmgr.split_units(values[0][funcname])[1]
+            units = unitmgr.get_units(values[0][funcname])
             units = str(units) if units else None
             expected[funcname] = unitmgr.make_quantity(
                 np.asarray([unitmgr.strip_units(v[funcname]) for v in values]), units)
@@ -92,7 +92,7 @@ class McSweepResults:
         values = [mc.uncertainty for mc in self.mcresults]
         uncertainty = {}
         for funcname in self.functionnames:
-            units = unitmgr.split_units(values[0][funcname])[1]
+            units = unitmgr.get_units(values[0][funcname])
             units = str(units) if units else None
             uncertainty[funcname] = unitmgr.make_quantity(
                 np.asarray([unitmgr.strip_units(v[funcname]) for v in values]), units)

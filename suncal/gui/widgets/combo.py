@@ -33,10 +33,11 @@ class ComboLabel(QtWidgets.QWidget):
         self._label = QtWidgets.QLabel(label)
         self._combo = QtWidgets.QComboBox()
         if items:
-            self.combo.addItems(items)
+            self._combo.addItems(items)
         layout = QtWidgets.QHBoxLayout()
         layout.addWidget(self._label)
         layout.addWidget(self._combo)
+        layout.addStretch()
         self.setLayout(layout)
 
     def __getattr__(self, name):
@@ -69,8 +70,8 @@ class SpinWidget(QtWidgets.QWidget):
 
 class FloatLineEdit(QtWidgets.QLineEdit):
     ''' Line Edit with float validator '''
-    def __init__(self, text='', low=None, high=None):
-        super().__init__(text)
+    def __init__(self, text='', low=None, high=None, parent=None):
+        super().__init__(text, parent=parent)
         self._validator = QtGui.QDoubleValidator()
         if low is not None:
             self._validator.setBottom(low)
@@ -89,10 +90,33 @@ class FloatLineEdit(QtWidgets.QLineEdit):
         self.setText(str(value))
 
 
+class PercentLineEdit(QtWidgets.QWidget):
+    ''' FloatLineEdit with a % label that converts value to/from percent '''
+    editingFinished = QtCore.pyqtSignal()
+
+    def __init__(self, text='', parent=None):
+        super().__init__(parent=parent)
+        self.floatline = FloatLineEdit(text, low=0, high=100, parent=self)
+        layout = QtWidgets.QHBoxLayout()
+        layout.addWidget(self.floatline)
+        layout.addWidget(QtWidgets.QLabel('%'))
+        layout.setContentsMargins(0, 0, 0, 0)
+        self.setLayout(layout)
+        self.floatline.editingFinished.connect(self.editingFinished)
+
+    def value(self):
+        ''' Get the value as a fraction 0-1 '''
+        return self.floatline.value() / 100
+
+    def setValue(self, value):
+        ''' Set the value as a fraction 0-1 '''
+        self.floatline.setValue(value * 100)
+
+
 class IntLineEdit(QtWidgets.QLineEdit):
     ''' Line Edit with integer validator '''
-    def __init__(self, text='', low=None, high=None):
-        super().__init__(text)
+    def __init__(self, text='', low=None, high=None, parent=None):
+        super().__init__(text, parent=parent)
         self._validator = QtGui.QIntValidator()
         if low is not None:
             self._validator.setBottom(low)
@@ -111,8 +135,8 @@ class DoubleLineEdit(QtWidgets.QWidget):
     ''' Widget with two line edits for Doubles '''
     editingFinished = QtCore.pyqtSignal()
 
-    def __init__(self, value1=0, value2=0, label1='', label2=''):
-        super().__init__()
+    def __init__(self, value1=0, value2=0, label1='', label2='', parent=None):
+        super().__init__(parent=parent)
         self.line1 = QtWidgets.QLineEdit(str(value1))
         self.line2 = QtWidgets.QLineEdit(str(value2))
         self.line1.setValidator(InfValidator())
@@ -145,6 +169,8 @@ class DoubleLineEdit(QtWidgets.QWidget):
 
 class LineEditLabelWidget(QtWidgets.QWidget):
     ''' Class for a line edit and label '''
+    changed = QtCore.pyqtSignal()
+
     def __init__(self, label='', text=''):
         super().__init__()
         self._label = QtWidgets.QLabel(label)
@@ -155,6 +181,7 @@ class LineEditLabelWidget(QtWidgets.QWidget):
         layout.addStretch()
         layout.setContentsMargins(0, 0, 0, 0)
         self.setLayout(layout)
+        self._text.editingFinished.connect(self.changed)
 
     def __getattr__(self, name):
         ''' Get all other attributes from the lineedit widget '''

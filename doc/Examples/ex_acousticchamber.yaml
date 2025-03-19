@@ -1,0 +1,80 @@
+- functions:
+  - desc: ''
+    expr: g*P_0*A*S/r/V_0
+    name: c
+    units: Pa/V
+  inputs:
+  - autocorrelate: true
+    desc: ''
+    mean: 386.0
+    name: A
+    numnewmeas: null
+    uncerts:
+    - degf: .inf
+      desc: null
+      dist: normal
+      k: 2
+      name: u(A)
+      unc: '.1'
+      units: centimeter ** 2
+    units: centimeter ** 2
+  - autocorrelate: true
+    desc: ''
+    mean: 83.5
+    name: P_0
+    numnewmeas: null
+    uncerts:
+    - degf: .inf
+      desc: null
+      dist: normal
+      k: 2
+      name: u(P_0)
+      unc: '.085'
+      units: kilopascal
+    units: kilopascal
+  - autocorrelate: true
+    desc: ''
+    mean: 2.3
+    name: S
+    numnewmeas: null
+    uncerts:
+    - degf: .inf
+      desc: null
+      dist: normal
+      k: 2
+      name: u(S)
+      unc: '25'
+      units: micrometer
+    units: centimeter
+  - autocorrelate: true
+    desc: ''
+    mean: 1.419
+    name: V_0
+    numnewmeas: null
+    uncerts:
+    - degf: .inf
+      desc: null
+      dist: normal
+      k: 2
+      name: u(V_0)
+      unc: '.016'
+      units: meter ** 3
+    units: meter ** 3
+  - autocorrelate: true
+    desc: ''
+    mean: 1.4
+    name: g
+    numnewmeas: null
+    uncerts: []
+    units: null
+  - autocorrelate: true
+    desc: ''
+    mean: 40.0
+    name: r
+    numnewmeas: null
+    uncerts: []
+    units: volt
+  mode: uncertainty
+  name: uncertainty
+  samples: 1000000
+  unitdefs: stadia = 185*meter

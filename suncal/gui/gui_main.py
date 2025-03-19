@@ -5,7 +5,7 @@ from PyQt6 import QtWidgets, QtGui, QtCore
 
 from .. import version
 from ..project import Project, ProjectUncert, ProjectRisk, ProjectDataSet, ProjectDistExplore, ProjectReverse, \
-                      ProjectSweep, ProjectReverseSweep, ProjectCurveFit
+                      ProjectSweep, ProjectReverseSweep, ProjectCurveFit, ProjectMqa, ProjectMeasSys
 from ..common import report
 from . import gui_common
 from . import widgets
@@ -23,6 +23,8 @@ from . import page_sweep
 from . import page_wizard
 from . import page_distexplore
 from . import page_interval
+from . import page_mqa
+from . import page_meassys
 from . import tool_ttable
 from . import tool_units
 from . import tool_risk
@@ -33,6 +35,7 @@ from .help_strings import MainHelp
 class CalculationsListWidget(QtWidgets.QListWidget):
     ''' List for showing calculations in project '''
     itemRenamed = QtCore.pyqtSignal(int, str)  # Index, new text string
+    duplicate = QtCore.pyqtSignal(object)
 
     def __init__(self, parent=None):
         super().__init__(parent=parent)
@@ -45,6 +48,8 @@ class CalculationsListWidget(QtWidgets.QListWidget):
         item.setFlags(item.flags() | QtCore.Qt.ItemFlag.ItemIsEditable)
         iconame = {'uncertainty': 'target',
                    'wizard': 'wizard',
+                   'mqa': 'map',
+                   'system': 'trace',
                    'curvefit': 'curvefit',
                    'risk': 'risk',
                    'sweep': 'targetlist',
@@ -73,8 +78,11 @@ class CalculationsListWidget(QtWidgets.QListWidget):
         if item:
             menu = QtWidgets.QMenu(self)
             actRename = QtGui.QAction('Rename', self)
+            actDuplicate = QtGui.QAction('Duplicate', self)
             menu.addAction(actRename)
+            menu.addAction(actDuplicate)
             actRename.triggered.connect(lambda event, x=item: self.editItem(x))
+            actDuplicate.triggered.connect(lambda event, x=item: self.duplicate.emit(x))
             menu.popup(event.globalPos())
 
 
@@ -82,6 +90,7 @@ class ProjectDockWidget(QtWidgets.QWidget):
     ''' Project Dock '''
     addcomponent = QtCore.pyqtSignal()
     remcomponent = QtCore.pyqtSignal(int)
+    dupcomponent = QtCore.pyqtSignal(int)
 
     def __init__(self, parent=None):
         super().__init__(parent=parent)
@@ -96,6 +105,12 @@ class ProjectDockWidget(QtWidgets.QWidget):
         self.setLayout(layout)
         self.btnAddRem.plusclicked.connect(self.addcomponent)
         self.btnAddRem.minusclicked.connect(self.remove)
+        self.projectlist.duplicate.connect(self.duplicate)
+
+    def duplicate(self, item):
+        idx = self.projectlist.row(item)
+        if idx >= 0:
+            self.dupcomponent.emit(idx)
 
     def remove(self):
         ''' Remove an item from the project dock '''
@@ -119,45 +134,44 @@ class InsertCalcWidget(QtWidgets.QWidget):
         super().__init__(parent=parent)
         self.btnUnc = widgets.ToolButton('Uncertainty\nPropagation', 'target')
         self.btnCurve = widgets.ToolButton('Curve Fit', 'curvefit')
-        self.btnRisk = widgets.ToolButton('Risk\nAnalysis', 'risk')
-        self.btnSweep = widgets.ToolButton('Uncertainty\nSweep', 'targetlist')
-        self.btnReverse = widgets.ToolButton('Reverse\nPropagation', 'calipers')
-        self.btnReverseSweep = widgets.ToolButton('Reverse\nSweep', 'rulersweep')
-        self.btnDataset = widgets.ToolButton('Data Sets &&\nANOVA', 'boxplot')
+        self.btnRisk = widgets.ToolButton('Global\nRisk', 'risk')
+        self.btnMqa = widgets.ToolButton('End-to-end\nMQA', 'map')
+        self.btnDataset = widgets.ToolButton('R && R\nData', 'boxplot')
         self.btnInterval = widgets.ToolButton('Calibration\nIntervals', 'interval')
-        self.btnDist = widgets.ToolButton('Distribution\nExplorer', 'dists')
-        self.btnWizard = widgets.ToolButton('Uncertainty Wizard', 'wizard')
-        self.btnWizard.setFixedSize(84*3+10, int(84/1.5))
+        self.btnSystem = widgets.ToolButton('All-in-one Measurement\nSystem Uncertainty', 'trace')
+        self.btnSystem.setFixedSize(84*3+10, 84)
 
         self.btnUnc.clicked.connect(lambda x: self.newcomp.emit('uncertainty'))
         self.btnCurve.clicked.connect(lambda x: self.newcomp.emit('curvefit'))
         self.btnRisk.clicked.connect(lambda x: self.newcomp.emit('risk'))
-        self.btnSweep.clicked.connect(lambda x: self.newcomp.emit('sweep'))
-        self.btnReverse.clicked.connect(lambda x: self.newcomp.emit('reverse'))
-        self.btnReverseSweep.clicked.connect(lambda x: self.newcomp.emit('reversesweep'))
+        self.btnMqa.clicked.connect(lambda x: self.newcomp.emit('mqa'))
         self.btnDataset.clicked.connect(lambda x: self.newcomp.emit('data'))
-        self.btnDist.clicked.connect(lambda x: self.newcomp.emit('distributions'))
         self.btnInterval.clicked.connect(lambda x: self.newcomp.emit('interval'))
-        self.btnWizard.clicked.connect(lambda x: self.newcomp.emit('wizard'))
+        self.btnSystem.clicked.connect(lambda x: self.newcomp.emit('system'))
 
-        glayout = QtWidgets.QGridLayout()
-        glayout.addWidget(self.btnUnc, 0, 0)
-        glayout.addWidget(self.btnReverse, 0, 1)
-        glayout.addWidget(self.btnDataset, 0, 2)
-        glayout.addWidget(self.btnSweep, 1, 0)
-        glayout.addWidget(self.btnReverseSweep, 1, 1)
-        glayout.addWidget(self.btnCurve, 1, 2)
-        glayout.addWidget(self.btnRisk, 2, 0)
-        glayout.addWidget(self.btnInterval, 2, 1)
-        glayout.addWidget(self.btnDist, 2, 2)
+        g1layout = QtWidgets.QHBoxLayout()
+        g1layout.addWidget(self.btnSystem)
+        glayout = QtWidgets.QHBoxLayout()
+        glayout.addWidget(self.btnUnc)
+        glayout.addWidget(self.btnDataset)
+        glayout.addWidget(self.btnCurve)
+        g2layout = QtWidgets.QHBoxLayout()
+        g2layout.addWidget(self.btnRisk)
+        g2layout.addWidget(self.btnInterval)
+        g2layout.addWidget(self.btnMqa)
 
         layout = QtWidgets.QVBoxLayout()
         layout.setAlignment(QtCore.Qt.AlignmentFlag.AlignHCenter)
         layout.addStretch()
-        layout.addWidget(QtWidgets.QLabel('Select Calculation Type'))
+        layout.addSpacing(20)
+        layout.addWidget(QtWidgets.QLabel('Individual Uncertainty Components:'))
         layout.addLayout(glayout)
-        layout.addSpacing(15)
-        layout.addWidget(self.btnWizard)
+        layout.addSpacing(20)
+        layout.addWidget(QtWidgets.QLabel('Statistical Tools:'))
+        layout.addLayout(g2layout)
+        layout.addSpacing(20)
+        layout.addWidget(QtWidgets.QLabel('All-in-one:'))
+        layout.addLayout(g1layout)
         layout.addStretch()
         self.setLayout(layout)
 
@@ -225,6 +239,7 @@ class MainGUI(QtWidgets.QMainWindow):
         self.pginsert.newcomp.connect(self.add_component)
         self.dockwidget.addcomponent.connect(self.insert_clicked)
         self.dockwidget.remcomponent.connect(self.remove_component)
+        self.dockwidget.dupcomponent.connect(self.duplicate_component)
         self.dockwidget.projectlist.itemRenamed.connect(self.rename)
 
         # Menu
@@ -247,12 +262,56 @@ class MainGUI(QtWidgets.QMainWindow):
         actHelp.triggered.connect(self.open_page_help)
 
         # Project Menu
-        self.actInsertCalc = QtGui.QAction('Add Calculation...', self)
+        self.actInsertCalc = QtGui.QAction('Add &Calculation...', self)
         self.actInsertCalc.triggered.connect(self.insert_clicked)
-        self.actCalcAll = QtGui.QAction('Calculate All', self)
+        self.actCalcAll = QtGui.QAction('Calculate &All', self)
         self.actCalcAll.triggered.connect(self.calculate_all)
-        self.actSaveReport = QtGui.QAction('Save Project Report...', self)
+        self.actSaveReport = QtGui.QAction('Save Project &Report...', self)
         self.actSaveReport.triggered.connect(self.save_report)
+
+        # Add > Submenu
+        self.insert_menu = QtWidgets.QMenu('&Insert')
+        self.actAddUncert = QtGui.QAction('&Uncertainty Propagation', self)
+        self.actAddRR = QtGui.QAction('&Repeatability && Reproducibility Data', self)
+        self.actAddCurve = QtGui.QAction('&Curve Fit', self)
+        self.actAddReverse = QtGui.QAction('Re&verse Uncertainty Propagation', self)
+        self.actWizard = QtGui.QAction('Uncertainty &Wizard', self)
+        self.actSweep = QtGui.QAction('Uncertainty &Sweep', self)
+        self.actRevSweep = QtGui.QAction('Reverse Uncertainty S&weep', self)
+        self.actRisk = QtGui.QAction('&Global Risk', self)
+        self.actInterval = QtGui.QAction('Calibration &Intervals', self)
+        self.actMqa = QtGui.QAction('&End-to-end Measurement &Quality Assurance', self)
+        self.actSystem = QtGui.QAction('&All-in-one Measurement Uncertainty', self)
+        self.actExplore = QtGui.QAction('Distribution E&xplorer', self)
+        self.actAddUncert.triggered.connect(lambda: self.add_component('uncertainty'))
+        self.actAddRR.triggered.connect(lambda: self.add_component('data'))
+        self.actAddCurve.triggered.connect(lambda: self.add_component('curvefit'))
+        self.actAddReverse.triggered.connect(lambda: self.add_component('reverse'))
+        self.actSweep.triggered.connect(lambda: self.add_component('sweep'))
+        self.actRevSweep.triggered.connect(lambda: self.add_component('reversesweep'))
+        self.actRisk.triggered.connect(lambda: self.add_component('risk'))
+        self.actInterval.triggered.connect(lambda: self.add_component('interval'))
+        self.actMqa.triggered.connect(lambda: self.add_component('mqa'))
+        self.actExplore.triggered.connect(lambda: self.add_component('distributions'))
+        self.actWizard.triggered.connect(lambda: self.add_component('wizard'))
+        self.actSystem.triggered.connect(lambda: self.add_component('system'))
+
+        self.insert_menu.addAction(self.actSystem)
+        self.insert_menu.addSeparator()
+        self.insert_menu.addAction(self.actAddUncert)
+        self.insert_menu.addAction(self.actAddRR)
+        self.insert_menu.addAction(self.actAddCurve)
+        self.insert_menu.addSeparator()
+        self.insert_menu.addAction(self.actAddReverse)
+        self.insert_menu.addAction(self.actSweep)
+        self.insert_menu.addAction(self.actRevSweep)
+        self.insert_menu.addAction(self.actWizard)
+        self.insert_menu.addSeparator()
+        self.insert_menu.addAction(self.actRisk)
+        self.insert_menu.addAction(self.actInterval)
+        self.insert_menu.addAction(self.actMqa)
+        self.insert_menu.addSeparator()
+        self.insert_menu.addAction(self.actExplore)
 
         self.menuProj = QtWidgets.QMenu('&Project')
         self.menuProj.addAction(actNew)
@@ -260,6 +319,7 @@ class MainGUI(QtWidgets.QMainWindow):
         self.menuProj.addAction(actSave)
         self.menuProj.addSeparator()
         self.menuProj.addAction(self.actInsertCalc)
+        self.menuProj.addMenu(self.insert_menu)
         self.menuProj.addAction(self.actCalcAll)
         self.menuProj.addAction(self.actSaveReport)
         self.menuProj.addSeparator()
@@ -274,19 +334,24 @@ class MainGUI(QtWidgets.QMainWindow):
         self.actUnits.triggered.connect(self.showunits)
         self.actTtable = QtGui.QAction('&t-Table', self)
         self.actTtable.triggered.connect(self.showttable)
-        self.actRiskCalc = QtGui.QAction('&Risk Calculator', self)
+        self.actRiskCalc = QtGui.QAction('Basic &Risk Calculator', self)
         self.actRiskCalc.triggered.connect(self.showrisk)
         self.actRiskSweep = QtGui.QAction('Risk &Curves', self)
         self.actRiskSweep.triggered.connect(self.showrisksweep)
+        self.actDistExplore = QtGui.QAction('&Distribution Explorer', self)
+        self.actDistExplore.triggered.connect(self.showdistexplore)
         self.menuTools.addAction(self.actUnits)
         self.menuTools.addAction(self.actTtable)
+        self.menuTools.addSeparator()
         self.menuTools.addAction(self.actRiskCalc)
         self.menuTools.addAction(self.actRiskSweep)
+        self.menuTools.addSeparator()
+        self.menuTools.addAction(self.actDistExplore)
         self.menubar.addMenu(self.menuTools)
 
         self.menuWind = QtWidgets.QMenu('&Window')
         self.actViewProj = self.projdock.toggleViewAction()
-        self.actViewProj.setText('Show project tree')
+        self.actViewProj.setText('&Show project tree')
         self.menuWind.addAction(self.actViewProj)
         self.menubar.addMenu(self.menuWind)
 
@@ -328,6 +393,14 @@ class MainGUI(QtWidgets.QMainWindow):
             item.nsamples = gui_settings.samples
             self.project.add_item(item)
             widget = page_wizard.UncertWizard(item)
+        elif typename == 'mqa':
+            item = ProjectMqa()
+            self.project.add_item(item)
+            widget = page_mqa.MqaWidget(item)
+        elif typename == 'system':
+            item = ProjectMeasSys()
+            self.project.add_item(item)
+            widget = page_meassys.MeasSysPage(item)
         elif typename == 'curvefit':
             item = ProjectCurveFit()
             item.seed = gui_settings.randomseed
@@ -423,6 +496,8 @@ class MainGUI(QtWidgets.QMainWindow):
         self.menubar.insertMenu(self.menucomponentbefore, widget.get_menu())
         self.projstack.addWidget(widget)
         self.topstack.setCurrentIndex(self.PG_TOP_PROJECT)
+        with suppress(AttributeError):
+            widget.change_help.connect(self.set_page_help)
         with gui_common.BlockedSignals(self.dockwidget.projectlist):
             self.dockwidget.projectlist.setCurrentRow(self.dockwidget.projectlist.count()-1)
         self.changepage(self.projstack.count()-1)
@@ -436,6 +511,19 @@ class MainGUI(QtWidgets.QMainWindow):
         if self.project.count() == 0:
             self.topstack.setCurrentIndex(self.PG_TOP_INSERT)
             self.set_page_help()
+
+    def duplicate_component(self, idx):
+        ''' Make a copy of the component in the project '''
+        widget = self.projstack.widget(idx)
+        widget.update_proj_config()
+        item = self.project.items[idx]
+        config = item.get_config()
+        new = item.__class__()
+        new.load_config(config)
+        self._add_widget(config.get('mode'), new)
+        self.project.items.append(new)
+        self.dockwidget.projectlist.setCurrentRow(self.dockwidget.projectlist.count())
+        self.topstack.setCurrentIndex(self.PG_TOP_PROJECT)
 
     def changepage(self, index):
         ''' Change the current component page '''
@@ -494,6 +582,54 @@ class MainGUI(QtWidgets.QMainWindow):
         for item in self.project.items:
             config.append(item.get_config())
 
+    def _add_widget(self, mode, item):
+        if mode in ['uncertainty', 'wizard']:
+            widget = page_uncert.UncertPropWidget(item)
+            widget.newtype.connect(self.change_component)
+        elif mode == 'wizard':
+            widget = page_wizard.UncertWizard(item)
+        elif mode == 'sweep':
+            widget = page_sweep.UncertSweepWidget(item)
+            widget.newtype.connect(self.change_component)
+        elif mode == 'reverse':
+            widget = page_reverse.UncertReverseWidget(item)
+            widget.newtype.connect(self.change_component)
+        elif mode == 'reversesweep':
+            widget = page_sweep.UncertReverseSweepWidget(item)
+            widget.newtype.connect(self.change_component)
+        elif mode == 'risk':
+            widget = page_risk.RiskWidget(item)
+        elif mode == 'curvefit':
+            widget = page_curvefit.CurveFitWidget(item)
+        elif mode == 'data':
+            widget = page_dataset.DataSetWidget(item)
+        elif mode == 'distributions':
+            widget = page_distexplore.DistExploreWidget(item)
+        elif mode == 'mqa':
+            widget = page_mqa.MqaWidget(item)
+        elif mode == 'system':
+            widget = page_meassys.MeasSysPage(item)
+        elif mode == 'intervaltest':
+            widget = page_interval.IntervalA3Widget(item)
+        elif mode == 'intervaltestasset':
+            widget = page_interval.IntervalA3WidgetAssets(item)
+        elif mode == 'intervalbinom':
+            widget = page_interval.IntervalS2Widget(item)
+        elif mode == 'intervalbinomasset':
+            widget = page_interval.IntervalS2WidgetAssets(item)
+        elif mode == 'intervalvariables':
+            widget = page_interval.IntervalVariablesWidget(item)
+        elif mode == 'intervalvariablesasset':
+            widget = page_interval.IntervalVariablesWidgetAssets(item)
+        else:
+            raise NotImplementedError
+        self.dockwidget.projectlist.addItem(mode, item.name)
+        self.menubar.insertMenu(self.menucomponentbefore, widget.get_menu())
+        widget.get_menu().menuAction().setVisible(False)
+        self.projstack.addWidget(widget)
+        with suppress(AttributeError):
+            widget.change_help.connect(self.set_page_help)
+
     def load_project(self):
         ''' Load a project from file, prompting user for filename '''
         fname, self.openconfigfolder = QtWidgets.QFileDialog.getOpenFileName(
@@ -506,46 +642,8 @@ class MainGUI(QtWidgets.QMainWindow):
             if self.project is not None:
                 for i, item in enumerate(self.project.items):
                     mode = self.project.get_mode(i)
-                    if mode in ['uncertainty', 'wizard']:
-                        widget = page_uncert.UncertPropWidget(item)
-                        widget.newtype.connect(self.change_component)
-                    elif mode == 'wizard':
-                        widget = page_wizard.UncertWizard(item)
-                    elif mode == 'sweep':
-                        widget = page_sweep.UncertSweepWidget(item)
-                        widget.newtype.connect(self.change_component)
-                    elif mode == 'reverse':
-                        widget = page_reverse.UncertReverseWidget(item)
-                        widget.newtype.connect(self.change_component)
-                    elif mode == 'reversesweep':
-                        widget = page_sweep.UncertReverseSweepWidget(item)
-                        widget.newtype.connect(self.change_component)
-                    elif mode == 'risk':
-                        widget = page_risk.RiskWidget(item)
-                    elif mode == 'curvefit':
-                        widget = page_curvefit.CurveFitWidget(item)
-                    elif mode == 'data':
-                        widget = page_dataset.DataSetWidget(item)
-                    elif mode == 'distributions':
-                        widget = page_distexplore.DistExploreWidget(item)
-                    elif mode == 'intervaltest':
-                        widget = page_interval.IntervalA3Widget(item)
-                    elif mode == 'intervaltestasset':
-                        widget = page_interval.IntervalA3WidgetAssets(item)
-                    elif mode == 'intervalbinom':
-                        widget = page_interval.IntervalS2Widget(item)
-                    elif mode == 'intervalbinomasset':
-                        widget = page_interval.IntervalS2WidgetAssets(item)
-                    elif mode == 'intervalvariables':
-                        widget = page_interval.IntervalVariablesWidget(item)
-                    elif mode == 'intervalvariablesasset':
-                        widget = page_interval.IntervalVariablesWidgetAssets(item)
-                    else:
-                        raise NotImplementedError
-                    self.dockwidget.projectlist.addItem(mode, item.name)
-                    self.menubar.insertMenu(self.menucomponentbefore, widget.get_menu())
-                    widget.get_menu().menuAction().setVisible(False)
-                    self.projstack.addWidget(widget)
+                    self._add_widget(mode, item)
+
                 self.dockwidget.projectlist.setCurrentRow(0)
                 self.projdock.setVisible(True)
                 self.topstack.setCurrentIndex(self.PG_TOP_PROJECT)
@@ -596,6 +694,10 @@ class MainGUI(QtWidgets.QMainWindow):
         ''' Show a window with risk sweeper '''
         dlg = tool_riskcurves.RiskSweeper(parent=self)
         dlg.show()
+
+    def showdistexplore(self):
+        ''' Show distribution explorer '''
+        self.add_component('distributions')
 
     def calculate_all(self):
         ''' Run calculate() on all project components '''

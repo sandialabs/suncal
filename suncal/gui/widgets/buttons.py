@@ -110,3 +110,28 @@ class ToolButton(QtWidgets.QToolButton):
         if self.iconname:
             icon = icons.icon(self.iconname)
             self.setIcon(icon)
+
+
+class SmallToolButton(ToolButton):
+    ''' A smaller tool icon button with no text '''
+    def __init__(self, iconname: str = None, parent=None):
+        super().__init__(text='', iconname=iconname, parent=parent)
+        self.setIconSize(QtCore.QSize(24, 24))
+        self.setFixedSize(44, 44)
+        self.setToolButtonStyle(QtCore.Qt.ToolButtonStyle.ToolButtonIconOnly)
+
+
+class RightButton(SmallToolButton):
+    ''' Button with right arrow icon '''
+    def __init__(self, parent=None):
+        super().__init__('right', parent=parent)
+        self.setFixedSize(30, 30)
+        self.setToolTip('Next')
+
+
+class LeftButton(SmallToolButton):
+    ''' Button with right arrow icon '''
+    def __init__(self, parent=None):
+        super().__init__('left', parent=parent)
+        self.setFixedSize(30, 30)
+        self.setToolTip('Back')

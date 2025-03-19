@@ -1,0 +1,100 @@
+- desc: ''
+  equipment: []
+  gbrules:
+  - idn: 3aa6123c63654177b8a587284b824e2c
+    method: rds
+    name: 4:1 RDS
+    threshold: 4.0
+  - idn: e3f8cca1f3d1409d8f3b2b8e7b9da494
+    method: cpfa
+    name: 1% CPFA
+    threshold: 1.0
+  mode: mqa
+  name: mqa
+  quantities:
+  - costs:
+      annual:
+        adjust: 0
+        cal: 0
+        downtime:
+          adj: 0
+          cal: 0
+          rep: 0
+        nuut: 1
+        pe: 1
+        repair: 0
+        spare_startup: 0
+        suut: 1
+        uut: 0
+      item:
+        cfa: 0
+        cfr: 0
+    enditem: true
+    guardband:
+      accept_limit:
+        high: '1'
+        low: '-1'
+        nominal: '0'
+        units: ''
+      method: none
+      rule: e3f8cca1f3d1409d8f3b2b8e7b9da494
+    measurand:
+      degrade:
+        high: '19.808'
+        low: '19.575'
+        nominal: null
+        units: ''
+      description: ''
+      eopr_pct: 0.95
+      eopr_pdf: null
+      eopr_true: true
+      fail:
+        high: '19.827'
+        low: '19.48'
+        nominal: null
+        units: ''
+      name: Cannon Ball
+      psr: 1.0
+      testpoint: 19.7
+      tolerance:
+        high: '19.81'
+        low: '19.51'
+        nominal: null
+        units: ''
+      units: centimeter
+    measurement:
+      calibration:
+        mte_adjust: null
+        mte_repair: null
+        p_discard: 0
+        policy: never
+        repair_limit: null
+        stress_post: null
+        stress_pre: null
+      equation: ''
+      indirect: {}
+      interval:
+        reliability: none
+        years: 1.0
+      mte:
+        accuracy_eopr: 0.95
+        accuracy_plusminus: 0.004
+        equipment: null
+        name: Guang Lu DM101 Caliper
+        quantity: null
+        range: null
+      testpoints: {}
+      typea: null
+      typeb:
+      - degf: .inf
+        desc: ''
+        dist: normal
+        name: Repeatability
+        unc: 0.0648
+        units: null
+      - a: 0.001
+        degf: .inf
+        desc: ''
+        dist: resolution
+        name: Resolution
+        units: null

@@ -112,6 +112,30 @@ class ReportUncertainty:
 
         rpt = report.Report(**kwargs)
         rpt.table(rows, hdr)
+
+        gumpoc = self._results.gum.prob_conform()
+        mcpoc = self._results.montecarlo.prob_conform()
+        hdr = ['Function', 'Method', 'Tolerance', 'Probability of Conformance']
+        rows = []
+        for fname in self._functionnames:
+            if fname in gumpoc:
+                rows.append((
+                    report.Math(fname),
+                    'GUM',
+                    str(self._results.gum.tolerances.get(fname, 'NA')),
+                    report.Number(gumpoc.get(fname)*100, fmin=1, postfix=' %')
+                ))
+            if fname in mcpoc:
+                rows.append((
+                    report.Math(fname),
+                    'Monte Carlo',
+                    str(self._results.montecarlo.tolerances.get(fname, 'NA')),
+                    report.Number(mcpoc.get(fname)*100, fmin=1, postfix=' %')
+                ))
+        if rows:
+            rpt.hdr('Tolerances', level=3)
+            rpt.table(rows, hdr)
+
         return rpt
 
     def summary_withplots(self, **kwargs):
@@ -409,6 +433,12 @@ class UncertaintyPlot:
                 mcline = self.montecarlo.plot.axis.pdf(funcname, ax=ax, interval=interval, k=k, shortest=shortest, **kwargs)
             gumline = self.gum.plot.axis.pdf(funcname, ax=ax, interval=interval, k=k, **kwargs)
 
+            if (tol := self._results.gum.tolerances.get(funcname)):
+                if np.isfinite(tol.flow):
+                    ax.axvline(tol.flow, color='C3', ls='--', label='Tolerance')
+                if np.isfinite(tol.fhigh):
+                    ax.axvline(tol.fhigh, color='C3', ls='--')
+
             if legend:
                 # Intervals will take the default legend. Add this as secondary legend.
                 ax.add_artist(ax.legend((gumline, mcline), ('GUM Approximation', 'Monte Carlo'),
@@ -426,7 +456,7 @@ class UncertaintyPlot:
             if labeldesc:
                 ax.set_xlabel(self._results.descriptions.get(funcname, ''))
             else:
-                _, units = unitmgr.split_units(self._results.gum.expected[funcname])
+                units = unitmgr.get_units(self._results.gum.expected[funcname])
                 ax.set_xlabel(report.mathstr_to_latex(funcname) + report.Unit(units).latex(bracket=True))
 
     def joint_pdf(self, functions=None, fig=None, overlay=False, cmap='viridis', cmapmc='viridis',
@@ -486,7 +516,8 @@ class UncertaintyPlot:
                     axgum.set_title('GUM Approximation')
         fig.tight_layout()
 
-    def joint_scatter(self, functions=None, fig=None, overlay=False, labeldesc=False, **kwargs):
+    def joint_scatter(self, functions=None, fig=None, overlay=False, labeldesc=False,
+                      conf=None, **kwargs):
         ''' Plot joint PDF, with Monte Carlo as scatter plot
 
             Args:
@@ -494,6 +525,7 @@ class UncertaintyPlot:
                 fig (plt.Figure): Matplotlib Figure
                 overlay (bool): Plot GUM and MC results on the same axis
                 labeldesc (bool): Use "description" as axis label instead of variable name
+                conf (float): Level of confidence for displaying confidence region
          '''
         fig, _ = plotting.initplot(fig)
         fig.clf()
@@ -516,8 +548,10 @@ class UncertaintyPlot:
                     axgum = fig.add_subplot(noutputs-1, (noutputs-1)*2, row*(noutputs-1)*2+col*2-1)
                     axmc = fig.add_subplot(noutputs-1, (noutputs-1)*2, row*(noutputs-1)*2+col*2)
 
-                self.gum.plot.axis.joint_pdf(func1, func2, ax=axgum, cmap='viridis', legend=True, labeldesc=labeldesc, **kwargs)
-                self.montecarlo.plot.axis.scatter(func1, func2, ax=axmc, labeldesc=labeldesc, **kwargs)
+                self.gum.plot.axis.joint_pdf(func1, func2, ax=axgum, cmap='viridis', legend=True,
+                                             labeldesc=labeldesc, conf=conf, **kwargs)
+                self.montecarlo.plot.axis.scatter(func1, func2, ax=axmc, labeldesc=labeldesc,
+                                                  conf=conf, **kwargs)
 
                 if not overlay:
                     plotting.equalize_scales(axmc, axgum)

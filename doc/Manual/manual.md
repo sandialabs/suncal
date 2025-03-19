@@ -1,6 +1,6 @@
 ---
 title: Suncal User's Guide
-date: February 15, 2024
+date: March 18, 2025
 author:
 - Sandia National Laboratories^[Sandia National Laboratories is a multimission laboratory managed and operated by National Technology and Engineering Solutions of Sandia, LLC., a wholly owned subsidiary of Honeywell International, Inc., for the U.S. Department of Energy’s National Nuclear Security Administration under contract DE-NA-0003525.]
 - uncertainty@sandia.gov
@@ -25,8 +25,10 @@ The available calculation types are:
 - Reverse uncertainty sweep to calculate multiple reverse uncertainty propagations
 - Analyze measured data sets for repeatability and reproducibility, including computation of autocorrelation and analysis of variance
 - Curve fitting, accounting for uncertainty in x and y measurements, and providing uncertainty in the output curve
-- Risk analysis for determining probability of false accept and false reject and guardbanded acceptance limits
+- Calculation of features in discrete measured waveform data, such as maximum value, minimum value, and rise/fall times.
+- Global risk analysis for determining probability of false accept and false reject and guardbanded acceptance limits
 - Calibration interval analysis for finding optimal interval lengths
+- End-to-end Measurement Quality Assurance calculations based on NCSLI Recommended Practice 19 (draft)
 - T-Table calculator for determining values based on a Student's-t distribution
 
 
@@ -61,21 +63,22 @@ The Monte Carlo simulations make use of the Mersenne Twister random number gener
 Suncal's user interface is available on Windows and Mac operating systems. For Linux systems, install and run as a [Python package](#python-usage).
 On Windows, two options are available. A standalone EXE file can be run without administrator privileges. If admin rights are available, an installer EXE can be run to install the program for faster operation. On Mac operating systems, the APP can be copied to the Applications folder and run directly from there.
 
-
-# Calculations
-
-When the user interface is launched, the Select Calculation Type menu displays (see {*@fig:startup}).
-Select one of the calculation options, or alternatively load a setup file from disk using the **Project** menu.
-The **Project** menu also contains options for adding additional calculations, saving the current setup, or saving a report of all output results.
-The **Window** menu provides options for calculating t-table values and showing a list of all calculations in the project.
+When the user interface is launched, top menu is displayed (see {*@fig:startup}).
+There are two general categories of calcuation types: Uncertainty Components, and Statistical Tools.
+Uncertainty components include GUM uncertainty propagation, repeatability and reproducibility, and curve fitting uncertainty calculations.
+The statistical tools include global risk calculations, calibration interval assessment, and end-to-end measurement quality assurance.
+Additionally, an "All-in-one" option combines GUM uncertianty, repeatability/reproducibility, and curve fitting into a single tool.
+Select one of the calculation types, or alternatively load a setup file from disk using the **Project** menu.
+The **Project** menu also contains options for adding other types of calculations, saving the current setup, or saving a report of all output results.
 
 ![Select Calculation Type page](figs/Figure_2_1.png){#fig:startup}
 
-Upon selecting a calculation type, an additional menu becomes available.
-This menu changes based on the calculation type and provides options specific to that calculation, such as loading in specific data from a CSV file or saving a report of that calculation's output.
-
 The following sections list the specific details of each calculation type.
 
+
+# Uncertainty Calculations
+
+The Uncertainty Component calculations take measured data or a measurement model and compute the uncertainty assoicated with that measurement.
 
 ## Uncertainty Propagation
 
@@ -89,17 +92,9 @@ At the same time, a Monte-Carlo uncertainty propagation is performed in accordan
 
 Both calculation methods also provide a method for computing expanded uncertainties. The GUM method uses the Welch-Satterthwaite (W-S) approximation to determine an effective degree of freedom and determine the resulting k-factor for a given confidence interval. It should be noted that the W-S formula is technically only valid for uncorrelated input variables, although Suncal will use it even for problems involving correlations. The Monte Carlo method determines expanded uncertainty intervals by taking either the shortest or symmetric percentiles of the output probability distribution.
 
-### Wizard Interface
+### Uncertainty Interface
 
-Selecting the **Uncertainty Wizard** button from the main menu opens a guided interface for entering a measurement model and uncertainties associated with each input variable.
-The wizard is limited to a single function in the measurement model, but provides a simpler step-by-step approach for entering the data.
-The **Help** button in the wizard interface shows more details about the prompt for information to ensure the correct values are entered.
-After calculating, results from the wizard interface are identical to results from the standard interface described below.
-
-
-### Standard Uncertainty Interface
-
-The standard uncertainty interface provides a few more options for uncertainty propagation calculations, but does not provide the simple, step-by-step guidance.
+The standard uncertainty interface provides all options for uncertainty propagation calculations.
 Start by clicking the **Uncertainty Propagation** button from the main screen.
 
 ![Uncertainty Propagation Page](figs/Figure_2_2.png){#fig:uncertpropview}
@@ -124,6 +119,7 @@ After entering an expression, the field should render the expression as a math f
 If the field turns red, there was an error parsing the expression, which could mean a missing parenthesis, unrecognized function, or other error.
 Additional functions can be entered and calculated in parallel using the plus (+) button or right-click menu to add or remove measurement functions.
 These equations may be chained together, for example "f = a + b", and "g = 2*f".
+For each function, an optional tolerance may be entered for computing probability of conformance to that tolerance.
 
 Once a function is entered, the **Uncertainties** table is filled in with the variable names extracted from the measurement model equations.
 In this table, the nominal measured value, measurement units, and a description of each variable can be entered, along with one or more uncertainty components for each measurement variable.
@@ -284,9 +280,10 @@ This plot should be checked to ensure that enough samples were run to adequately
 The Full Report view combines all the previous output data into a single page.
 
 
-## Reverse Propagation
+## Reverse Uncertainty Propagation
 
 The Reverse Uncertainty Propagation calculator runs the same calculation as the regular Uncertainty Propagation, but in the other direction.
+Start a new Reverse calculation by selecting **Reverse Propagation** from the **Project > Insert** menu, or alternatively, convert a regular Uncertainty Propagation into a reverse calculation by selecting **New reverse calculation from model** from the **Uncertainty** menu.
 Given a required uncertainty in the output of a measurement model, it will solve for the uncertainty in one of the input variables.
 This can be useful, for example, when selecting measurement equipment to use in order to meet a particular uncertainty requirement.
 
@@ -309,6 +306,7 @@ The Monte Carlo method shows the results and a histogram of the reverse Monte Ca
 
 Uncertainty sweeps perform multiple forward or reverse uncertainty calculations over a range of inputs.
 The mean value or any parameter defining the uncertainty of any component may be swept over any range of values.
+Sweep Calculations may be added using the **Uncertainty Sweep** or **Reverse Uncertainty Sweep** from the **Project > Insert** menu.
 
 The Sweep interface adds a **Sweep** section where the sweep parameters can be defined.
 Right-click on the sweep table to add a sweep parameter as a column of the table. A dialog box will appear allowing you to select the sweep parameter (mean, uncertainty, degrees of freedom, or correlation), and the variable to sweep.
@@ -324,9 +322,9 @@ Each of these outputs present one calculation of the sweep at a time, and have a
 ![Sweep index slider, changing correlation coefficient of magnitude/phase example](figs/Figure_2_10.png){#fig:sweepslider}
 
 
-## Data Sets and Analysis of Variance
+## Repeatability & Reproducibility
 
-The Data Sets and Analysis of Variance function allows you to load experimental data for analysis and for use in other uncertainty calculations.
+The Repeatability & Reproducibility (R&R) function (labeled as "Data Sets" in older Suncal versions) allows you to load experimental data for analysis and for use in other uncertainty calculations.
 
 Data values can be entered manually, copied/pasted from Excel, or loaded from a CSV file.
 When loading from a CSV file using the **Load data from CSV** menu option, the full CSV file will be shown in a table.
@@ -336,7 +334,6 @@ Note that missing data is acceptable, and will be disregarded in the ANOVA calcu
 
 As an example, each column (group) in the table could be a different measurement temperature, while each row would list one measurement of multiples made at that temperature,
 or each column could be a day in which multiple measurements (rows) were taken under identical conditions.
-
 
 ![Data set loaded from CSV](figs/Figure_2_11.png){#fig:datasets}
 
@@ -360,8 +357,9 @@ After entering the summarized values, the group statistics and analysis of varia
 ## Curve Fitting
 
 The curve fitting calculation takes x and y data, with optional uncertainty in x and/or y, and computes the best fitting line, polynomial, or exponential function.
+It also may be used to extract waveform features from the data points, such as maximum/minimum values, threshold crossing times, or pusle widths.
 Data can be entered manually or loaded from a file or an uncertainty sweep calculation.
-In contrast to other curve fitting calculators (such as in Excel), this one allows for uncertainty in both x and in y to be entered and accounted for.
+In contrast to many other curve fitting calculators (such as in Excel), Suncal allows for uncertainty in both x and in y to be entered and accounted for.
 The model to fit can be:
 
 - Line: $y = a + bx$
@@ -420,6 +418,8 @@ Internally, the dates are converted to ordinal time before being applied to the 
 
 After the x, y data is entered, click **Calculate** to show the results.
 The Fit Plot view shows the fit line and optionally the confidence and prediction bands, expanded to the desired confidence level.
+Fit coefficients and their uncertainties are displayed below the plot, along with goodness-of-fit metrics.
+
 For straight line fits, the confidence band determines the confidence that the data is actually following this fit line. It is calculated from
 
 $$u_{conf}(x) = \sigma_y \sqrt{\frac{1}{N} + \frac{(x - \bar x)^2}{\Sigma (x_i - \bar x)^2}}$$
@@ -442,10 +442,6 @@ $$u_{conf}(x) = \sqrt{\nabla f^T \cdot C \cdot \nabla f}$$
 $$u_{pred}(x) = \sqrt{u_{conf}^2 + \sigma_y^2}$$
 
 
-### Prediction
-
-The Prediction output view allows the selection of an arbitrary x value and calculates the expected y value and associated prediction uncertainty.
-
 ### Residual Plots
 
 The Residual plots provide diagnostic tools on the regression. A histogram, a plot of the raw residuals, and normal probability plot can help determine whether the selected model (line, polynomial, etc.) is adequate to describe the data.
@@ -456,9 +452,52 @@ If the model is adequate, the residuals are expected to fall in a roughly normal
 The Correlations view shows the correlation coefficient between the fit parameters. In some problems, the slope and intercept may be highly correlated, for example.
 
 
-## Risk Analysis
+### Tolerances
 
-The Risk Analysis calculation computes the risk associated with process and/or test distributions falling outside of specification limits.
+On the Curve Fit input page, use the **Tolerances** tab to enter any tolerances assoicated with the fit parameters.
+The tolerances will be used to compute probability of conformance with the tolerance.
+For example, contact resistance is determined from the y-intercept of a line fit to measured resistance vs length data points.
+Enable the tolerance on fit parameter **a** to determine whether that contact resistance meets its specification.
+The computed probability of conformance values will be displayed below the computed fit parameters.
+
+### Predictions
+
+Use the **Predictions** tab on the input page to enter one or more x values at which to predict a y value and its uncertainty.
+Each prediction has may be given a name, and an optional tolerance used for computing probability of conformance to that tolerance.
+
+Select **Prediction** from the output type dropdown to view the predicted values.
+
+### Waveform Features
+
+Various waveform features and their uncertainties may also be extracted from the data points. Features include:
+
+* Maximum value and time of maximum value
+* Minimum value and time of minimum value
+* Peak-to-peak value
+* Rise and Fall Time (defined as time between 10% and 90% of peak-to-peak)
+* Threshold crossing time (rising or falling edge)
+* Pulse Width defined as Full-width Half-Maximum
+
+These features and uncertainties are calculated using the methods in [@delker].
+On the **Waveform** tab, add features to compute using the **+** button.
+For each feature, enter a unique name and select the feature type.
+For threshold crossings, a threshold value must be entered. The **Clip Low** and **Clip High**
+values may be entered to limit the range over which to compute. This may be useful, for example,
+when computing a rise time and fall time to only focus on the relevant part of the waveform.
+Each feature may take an optional tolerance for computing probability of conformance to that tolerance.
+
+Select the **Waveform Features** from the dropdown on the output page to view the feature values and plot individual features.
+
+# Statistical Tools
+
+Additional tools are available for computing common statistical functions used in metrology.
+
+## Measurement Decision Risk
+
+Specific risk calculations are available directly in the above uncertainty component tools by entering tolerances where appropriate.
+For global (average) risk calculations, select the Global Risk tool.
+It computes the risk associated with process and/or test distributions falling outside of specification limits.
+
 
 ### Simple Risk Tool
 
@@ -467,9 +506,9 @@ Parameters are entered in terms of a test uncertainty ratio (TUR), in-tolerance 
 
 ![Simple risk analysis tool based on TUR and ITP](figs/Figure_2_13.png){#fig:risksimple}
 
-### Risk Calculation
+### Global Risk
 
-By selectin **Risk Analysis** from the main project menu, a more full-featured risk calculation is presented.
+By selecting **Global Risk** from the main project menu, a more full-featured risk calculation is presented.
 Probability distributions for the process/population and the test measurement are entered, along with absolute acceptance limits and guardband limits.
 Unlike the Simple Risk Tool, no assumptions are made about distribution type; non-normal distributions can also be entered and are integrated numerically using the same approach.
 The "Process Risk" considers only the process distribution, and is calculated as the probability of the process distribution falling outside the limit.
@@ -505,7 +544,7 @@ Step values are entered as a comma-separated list of individual values.
 
 ## Calibration Intervals
 
-The Calibration Interval Analysis calculator assists in determining optimal calibration interval lengths given historical data on calibration assets.
+The Calibration Interval Analysis tool assists in determining optimal calibration interval lengths given historical data on calibration assets.
 Upon selecting the Calibration Intervals button, a window is displayed with some options for what type of data is available.
 The calculation method depends on whether only pass or fail states are known for historical calibration data, or if actual values were saved.
 
@@ -542,9 +581,47 @@ For more information on the calculations behind the A3 and S2 methods, and the d
 NASA Handbook 8739 [@NASA8739] details the calculations and options used in the variables method.
 
 
+## End-to-end Measurement Quality Assurance (beta)
+
+Suncal provides a beta-version implementation of the end-to-end measurement quality assurance (MQA) model described in the draft
+of NCSLI Recommended Practice 19 [@RP19].
+
+Select the **End-to-end MQA** button to add this calculation.
+Multiple end-item quantities may be added to the table.
+For each quantity, enter the details into the table. Some columns include popup menus providing more options.
+Additional columns may be shown by selecting the options from the **MQA** menu.
+Columns include:
+
+- **Quantity**: Name of the quantity
+- **Testpoint**: The testpoint or nominal value of the quantity
+- **Units**: Measurement units (for recordkeeping only - no units conversion is currently done)
+- **Tolerance**: The tolerance or specification being measured on this quantity
+- **Utility**: Enter performance limits if different than the tolerance limit
+- **EOPR**: End-of-period reliability of the quantity. Use the dropdown to switch between Observed (measured using the same equipment in the table) or True (determined using other more accurate means).
+- **Equipment**: Enter the equipment specification used to check this quantity. Use the dropdown to select different options:
+  + **Tolerance**: A tolerance plus reliability
+  + **Equipment List**: Select predefined equipment from the equipment list, and the accuracy will be calculated from the testpoint
+  + **Another Quantity**: Use the tolerance and average-over-period reliability of another quantity in the table
+  + **Indirect Measurement**: Combine multiple measurements using the GUM equation
+- **Guardband**: Enter the acceptance limit, or select from the guardbanding policies
+- **Measurement**: Enter a renewal policy and historical calibration interval. The dropdown allows exploring new intervals along the same reliability decay curve.
+- **Costs**: Provides entry of cost model details
+
+The results are computed immediately as the data is changed, and may be seen by expanding the results panel on the right side of the window.
+Different results may be displayed using the dropdown menu in the upper right.
+The **Reliability** option shows the beginning-of-period, end-of-period, and average-over-period reliabilities, along with global probability of false accept and reject of the item.
+The **Uncertainty** dropdown shows the measurement uncertainty, accounting for all upstream calibrations.
+Three options in the dropdown allow for viewing plots of reliability curves.
+Finally, the **Costs** option shows a summary of calibration and performance costs for the device.
+
+A full report of all quantities is available by clicking the "Generate Report" button in the lower right of the window.
+
+![MQA Calculation of the Solar Experiment example in RP-19](figs/Figure_2_19.png){#fig:mqa}
+
+
 ## Distribution Explorer
 
-You can draw random samples from distributions and perform manual Monte Carlo simulations from the Distribution Explorer window.
+You can draw random samples from distributions and perform manual Monte Carlo simulations from the Distribution Explorer window, available from the **Project > Insert** menu.
 It is included in the calculator software mainly for educational purposes.
 To run a Monte Carlo simulation, define one or more Input Distributions, and add another distribution but set the its name field to a formula using the previously defined expressions as inputs. Expressions should be entered using the same syntax as the [Uncertainty Propagation](#inputs) function input.
 Click **Sample** to pull random samples from a distribution and see the resulting histogram. A distribution can be fit to the sampled data and probability plot shown to validate the fit to the data.
@@ -572,16 +649,16 @@ The **Examples** folder in the source repository contains several saved projects
 
 ## Data sharing
 
-In many calculation functions, data from one calculation result can be loaded as the input to another calculation.
-For example, the prediction band at a specific x date of a curve fit calculation (see {*@fig:importdistribution}) can be imported into a risk analysis
-calculation (select **Import Process Distribution** in the **Risk** menu) to determine the probability of an out-of-tolerance condition at a given date.
+In many calculation functions, data from one calculation result can be loaded as the input to another calculation (select **Type A Measurement Data** from the **Uncertainty** menu, then click **Import From**).
+For example, the prediction band at a specific x value of a curve fit calculation can be used as an uncertainty component in an Uncertainty Propagation calculation.
 Results of an uncertainty sweep or ANOVA data set can be loaded into a curve fit calculation (by selecting **Insert Data From Project** from the **Curve Fit** menu)
 or even another sweep calculation.
-Double-click the desired data source in the **Data Source** table. Some sources require extra information, such as a particular x-value 
-when importing data from the confidence or prediction band of a curve fit.
+Double-click the desired data source in the **Data Source** table.
 Importing data is a one-time event. If the original calculation data changes, the data will need to be re-imported into the second calculation.
 
 ![Loading a data set summary into a curve fit](figs/Figure_3_1.png){#fig:importdistribution}
+
+[](#example-calculations) provides some examples.
 
 
 ## Reports
@@ -793,7 +870,10 @@ This is because the GUM method is normalizing all the uniform distributions befo
 Many circuits using these components will be manufactured with the specification that the time constant must be between 1.55 and 1.65 ms.
 What is the probability that any given circuit will fall outside the specification?
 
-To answer this question, add a Risk calculation. From the **Project** menu, select **Add Calculation** and choose **Risk Analysis**.
+The uncertainty propagation above determines the uncertainty of an average or typical RC circuit, while individual circuits will be measured to determine their compliance. While the Tolerance feature in the Uncertainty Propagation tool could be used, it would determine the probability that an average RC circuit conforms with the tolerance, without regard for any test measurements made on individual circuits.
+Because the question deals with averages, a Global Risk calculation is needed. 
+
+From the **Project** menu, select **Add Calculation** and choose **Global Risk**.
 The previous uncertainty propagation problem provides the Process Distribution needed for the risk calculation.
 This distribution can be automatically copied into the Process Distribution using the **Risk** menu and selecting **Import distribution**.
 From the dialog box, different distributions that have already been calculated are available for loading into the Risk calculation.
@@ -837,10 +917,11 @@ Import the data in this file by selecting **Insert Data From** from the **Curve 
 After clicking **OK**, the data will display in the preview plot.
 The curve fit function and options can be selected. Here, the default of fitting a line using vertical distances is sufficient.
 
+We are interested in the resistance at zero length. In the **Predictions** tab, enter a new prediction value, named "2Rc", with X-Value of 0. 
+
 Click **Calculate** to display the fit line and its prediction band.
 The slope and intercept, their uncertainties, and goodness-of-fit parameters are shown.
-The parameter of interest, however, is a prediction of the line at zero length.
-To obtain this parameter, select **Prediction** from the drop-down list box, and enter an x-value of **0** in the X-Values table.
+Select **Prediction** from the drop-down list box to see the curve predicted at 0 length.
 The predicted value and its uncertainty are plotted as the orange errorbar and shown in the table (see {*@fig:contactresistance}).
 For these measurements, the contact resistance ($\times2$ for the 2 contacts) is 50.91 kOhm with 95% uncertainty of 34.36 kOhm.
 Dividing by two to obtain the resistance of a single contact gives
@@ -863,7 +944,7 @@ This problem involves using a reverse uncertainty propagation in order to find t
 Because there are two free variables (density and mass), there are infinite solutions to the problem.
 However, one variable can be sweept while solving the reverse uncertainty requirement for the other variable, and any solution falling under the resulting curve will be acceptable to meet the maximum density uncertainty.
 
-To enter this setup into Suncal, add a **Reverse Sweep** to a new Project.
+To enter this setup into Suncal, add a **Reverse Sweep** to a new Project by selecting **Reverse Sweep** from the **Project > Insert** menu.
 Enter the measurement model and nominal quantities for mass and diameter.
 Add the mass and diameter uncertainties, including the different units (mg and $\mu$m).
 Next, enter the target uncertianty under the **Target** section.
@@ -904,20 +985,11 @@ To predict the drift over the next year to the calibration due date of July 1, 2
 Import the data we just loaded into the curve fit by selecting **Insert Data From** from the **Curve Fit** menu.
 Double-click **Summarized Array** to select it as the data source.
 Suncal will predefine the first columns as x, y, and u(y).
-Click **OK** to load the data, then click **Calculate** to find the line fit.
+Click **OK** to load the data.
+On the **Predictions** tab, add a new prediction and enter the X-Value of "2019-07-01". Enable a tolerance and enter the tolerance value of 180 ± 5.
+Then click **Calculate** to find the line fit and predicted value.
 
-Next, use the fit line and its uncertainty to calculate the probability of the pressure gage falling outside the 185 PSI limit on the next calibration date.
-Add a new Risk Analysis to the project by selecting **Add Calculation** from the **Project** menu and clicking **Risk Analysis**.
-From the **Risk** menu, select **Import Distribution**.
-Double click **curvefit** as the data source, then select **Prediction (LSQ)** in the table.
-Select **Process Distribution** from the **Assigned Variable** dropdown to indicate this column should be imported as the Process Disitribution.
-Next, set the **X Value** field to **07-01-2019** as the date at which to predict the pressure and its uncertainty.
-A normal distribution should be displayed, determined from the prediction band on that date.
-Click **OK** to accept this distribution.
-
-There is no Test Measurement in this example, so deselect **Test Measurement**.
-Next, enter the specification limits of **175** and **185**.
-The Process Risk will calculate a 17% chance of the gauge being above 185 on this date based on historical drift ({*@fig:driftrisk}).
+Select **Prediction** from the output dropdown to show the predicted pressure value on July 1, 2019 and its uncertainty.  THe Probability of Conformance column shows an 84.3% probability the gage will still be in tolerance by the next calibration ({*@fig:driftrisk}).
 This risk may be high enough to warrant an adjustment or repair to the gauge to prevent it from drifting out of specification during the next interval.
 
 ![Risk of drifting out of spec](figs/Figure_6_11.png){#fig:driftrisk}
@@ -925,7 +997,7 @@ This risk may be high enough to warrant an adjustment or repair to the gauge to 
 
 # Copyright and License
 
-Copyright 2019-2023 National Technology & Engineering Solutions of Sandia, LLC (NTESS).
+Copyright 2019-2025 National Technology & Engineering Solutions of Sandia, LLC (NTESS).
 Under the terms of Contract DE-NA0003525 with NTESS, the U.S. Government retains certain rights in this software.
 
 This program is free software: you can redistribute it and/or modify

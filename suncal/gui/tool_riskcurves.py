@@ -49,7 +49,7 @@ class RiskSweepSetup(QtWidgets.QGroupBox):
         self.plot3d = QtWidgets.QCheckBox('3D Plot')
         self.logy = QtWidgets.QCheckBox('Log Scale')
         self.plottype = QtWidgets.QComboBox()
-        self.plottype.addItems(['PFA', 'PFR', 'Both'])
+        self.plottype.addItems(['PFA', 'CPFA', 'PFR', 'Both'])
         self.btnrefresh = QtWidgets.QPushButton('Replot')
         layout = QtWidgets.QGridLayout()
         layout.addWidget(self.itpvssigma, 0, 0)

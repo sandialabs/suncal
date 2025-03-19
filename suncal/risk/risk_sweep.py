@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from .risk import PFA, PFR, PFR_norm, PFA_norm
+from .risk import PFA, PFR, PFR_norm, PFA_norm, PFA_norm_conditional
 from . import guardband_tur
 
 
@@ -21,14 +21,14 @@ def PFA_sweep_simple(xvar='itp', zvar='TUR', xvals=None, zvals=None,
             sig0 (float): Process standard deviation in terms of #SL, overrides itp
             tbias (float): Default test measurement bias
             pbias (float): Default process distribution bias
-            risk (string): Calculate 'PFA' or 'PFR'
+            risk (string): Calculate 'PFA', 'CPFA', or 'PFR'
 
         Returns:
             risk (array): 2D array (shape len(xvals) x len(zvals)) of risk values
     '''
     assert xvar.lower() in ['itp', 'tur', 'gbf', 'tbias', 'pbias', 'sig0']
     assert zvar.lower() in ['itp', 'tur', 'gbf', 'tbias', 'pbias', 'sig0', 'none']
-    assert risk.lower() in ['pfa', 'pfr']
+    assert risk.lower() in ['pfa', 'cpfa', 'pfr']
 
     if zvar == 'none':
         zvals = [None]
@@ -36,7 +36,10 @@ def PFA_sweep_simple(xvar='itp', zvar='TUR', xvals=None, zvals=None,
         zz = np.array([])
     else:
         xx, zz = np.meshgrid(xvals, zvals)
-    riskfunc = PFR_norm if risk.lower() == 'pfr' else PFA_norm
+
+    riskfunc = {'pfa': PFA_norm,
+                'cpfa': PFA_norm_conditional,
+                'pfr': PFR_norm}.get(risk.lower())
 
     if xvar.lower() == 'itp':
         itp = xx

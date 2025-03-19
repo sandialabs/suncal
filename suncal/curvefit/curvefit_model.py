@@ -1,5 +1,6 @@
 ''' Curve Fit Model '''
-
+from typing import Literal
+from dataclasses import dataclass
 from collections import namedtuple
 import warnings
 import inspect
@@ -9,13 +10,27 @@ import sympy
 from . import uncertarray
 from .curvefit import fit, linefit
 from .fitparse import fit_callable
-from .results.curvefit import CurveFitResults, CurveFitResultsCombined
+from .results.curvefit import CurveFitResults, CurveFitResultsCombined, WaveformFeatureResult, WaveformFeatures
+from . import waveform
+
 
 
 FitResids = namedtuple('FitResiduals', ['residuals', 'Syx', 'r', 'F', 'SSres', 'SSreg'])
 FitResults = namedtuple('FitResults', ['coeff', 'uncert', 'covariance',
                                        'degf', 'residuals', 'samples', 'acceptance'], defaults=(None,)*7)
 FitSetup = namedtuple('FitSetup', ['points', 'expression', 'function', 'modelname', 'coeffnames', 'xname', 'yname'])
+
+
+WaveCalcs = Literal['max', 'min', 'pkpk', 'rise', 'fall', 'fwhm', 'thresh']
+
+
+@dataclass
+class WaveCalc:
+    ''' Define one waveform feature calculation '''
+    calc: WaveCalcs
+    clip: tuple[float, float] = None
+    thresh: float = None
+    tolerance: 'Limit' = None
 
 
 class CurveFit:
@@ -46,12 +61,15 @@ class CurveFit:
             if the array has uncertainty in x (or if odr parameter is True). p0 is required if ODR is used.
     '''
     def __init__(self, arr, func='line', polyorder=None, p0=None,
-                 bounds=None, odr=None, absolute_sigma=True):
+                 bounds=None, odr=None, absolute_sigma=True, predictor_var='x'):
         self.arr = arr
         self.xname = 'x'
         self.yname = 'y'
         self.absolute_sigma = absolute_sigma
-        self.set_fitfunc(func, polyorder=polyorder, p0=p0, bounds=bounds, odr=odr)
+        self.tolerances = {}
+        self.predictions: dict[str, tuple[float, 'Limit']] = {}
+        self.wavecalcs: dict[str, WaveCalc] = {}
+        self.set_fitfunc(func, polyorder=polyorder, p0=p0, bounds=bounds, odr=odr, predictor_var=predictor_var)
 
     def fitsetup(self):
         ''' Get setup parameters. See class for arguments '''
@@ -82,12 +100,13 @@ class CurveFit:
             p0 = np.ones(self.numparams)
         return p0
 
-    def set_fitfunc(self, func, polyorder=2, bounds=None, odr=None, p0=None):
+    def set_fitfunc(self, func, polyorder=2, bounds=None, odr=None, p0=None, predictor_var='x'):
         ''' Set up fit function '''
         self.modelname = func
         self.polyorder = polyorder
         self.odr = odr
         self.bounds = bounds
+        self.predictor_var = predictor_var
 
         if callable(func):
             self.modelname = 'callable'
@@ -95,7 +114,7 @@ class CurveFit:
             self.pnames = list(inspect.signature(self.func).parameters.keys())[1:]
             self.expr = sympy.sympify('f(x, ' + ', '.join(self.pnames) + ')')
         else:
-            self.func, self.expr = fit_callable(self.modelname, self.polyorder)
+            self.func, self.expr = fit_callable(self.modelname, self.polyorder, self.predictor_var)
 
             if self.modelname == 'poly' and self.polyorder > 3:
                 # poly def above doesn't have named arguments, so the inspect won't find them. Name them here.
@@ -146,13 +165,13 @@ class CurveFit:
         uy = np.zeros(len(self.arr.x)) if not self.arr.has_uy() else self.arr.uy
         coeff, cov = self.fitcalc(self.arr.x, self.arr.y, self.arr.ux, uy)
 
-        resids = (self.arr.y - self.func(self.arr.x, *coeff))  # All residuals (NOT squared)
+        resids = self.arr.y - self.func(self.arr.x, *coeff)  # All residuals (NOT squared)
         sigmas = np.sqrt(np.diag(cov))
         degf = len(self.arr.x) - len(coeff)
         if self.absolute_sigma or not self.arr.has_uy():
             w = np.full(len(self.arr.x), 1)  # Unweighted residuals in Syx
         else:
-            w = (1/uy**2)  # Determine weighted Syx
+            w = 1/uy**2  # Determine weighted Syx
             w = w/sum(w) * len(self.arr.y)      # Normalize weights so sum(wi) = N
         SSres = sum(w*resids**2)   # Sum-of-squares of residuals
         Syx = np.sqrt(SSres/degf)  # Standard error of the estimate (based on residuals)
@@ -160,7 +179,7 @@ class CurveFit:
         r = np.sqrt(1-SSres/(SSres+SSreg))
         resids = FitResids(resids, Syx, r, SSreg*degf/SSres, SSres, SSreg)
         out = FitResults(coeff, sigmas, cov, degf, resids)
-        return CurveFitResults(out, self.fitsetup())
+        return CurveFitResults(out, self.fitsetup(), self.tolerances, self.predictions)
 
     def sample(self, samples=1000):
         ''' Generate Monte Carlo samples '''
@@ -199,12 +218,12 @@ class CurveFit:
         coeff = self.samplecoeffs.mean(axis=0)
         sigma = self.samplecoeffs.std(axis=0, ddof=1)
 
-        resids = (self.arr.y - self.func(self.arr.x, *coeff))
+        resids = self.arr.y - self.func(self.arr.x, *coeff)
         degf = len(self.arr.x) - len(coeff)
         if self.absolute_sigma or not self.arr.has_uy():
             w = np.full(len(self.arr.x), 1)  # Unweighted residuals in Syx
         else:
-            w = (1/uy**2)  # Determine weighted Syx
+            w = 1/uy**2  # Determine weighted Syx
             w = w/sum(w) * len(self.arr.y)   # Normalize weights so sum(wi) = N
         cov = np.cov(self.samplecoeffs.T)
         SSres = sum(w*resids**2)   # Sum-of-squares of residuals
@@ -214,7 +233,7 @@ class CurveFit:
 
         resids = FitResids(resids, Syx, r, SSreg*degf/SSres, SSres, SSreg)
         out = FitResults(coeff, sigma, cov, degf, resids, self.samplecoeffs)
-        return CurveFitResults(out, self.fitsetup())
+        return CurveFitResults(out, self.fitsetup(), self.tolerances, self.predictions)
 
     def markov_chain_monte_carlo(self, samples=10000, burnin=0.2):
         ''' Calculate Markov-Chain Monte Carlo (Metropolis-in-Gibbs algorithm)
@@ -246,7 +265,7 @@ class CurveFit:
 
         if all(uy == 0):
             # Sigma2 is unknown. Estimate from residuals and vary through trace.
-            resids = (self.arr.y - self.func(self.arr.x, *p))
+            resids = self.arr.y - self.func(self.arr.x, *p)
             sig2 = resids.var(ddof=1)
             sresid = np.std(np.array([self.arr.y, self.func(self.arr.x, *p)]), axis=0)
             sig2sig = 2*np.sqrt(sig2)
@@ -290,7 +309,7 @@ class CurveFit:
 
             if varysigma:
                 sig2new = sig2 + np.random.normal(scale=sig2sig)
-                if (sig2lim[1] > sig2new > sig2lim[0]):
+                if sig2lim[1] > sig2new > sig2lim[0]:
                     Y = self.func(self.arr.x, *p)
                     ss2 = sum((self.arr.y - Y)**2)
                     problog = -1/(2*sig2) * ss2
@@ -311,7 +330,7 @@ class CurveFit:
         if self.absolute_sigma or not self.arr.has_uy():
             w = np.full(len(self.arr.x), 1)  # Unweighted residuals in Syx
         else:
-            w = (1/uy**2)  # Determine weighted Syx
+            w = 1/uy**2  # Determine weighted Syx
             w = w/sum(w) * len(self.arr.y)   # Normalize weights so sum(wi) = N
         cov = np.cov(self.mcmccoeffs.T)
         SSres = sum(w*resids**2)   # Sum-of-squares of residuals
@@ -320,7 +339,7 @@ class CurveFit:
         r = np.sqrt(1-SSres/(SSres+SSreg))
         resids = FitResids(resids, Syx, r, SSreg*degf/SSres, SSres, SSreg)
         out = FitResults(coeff, sigma, cov, degf, resids, self.mcmccoeffs, accepts/samples)
-        return CurveFitResults(out, self.fitsetup())
+        return CurveFitResults(out, self.fitsetup(), self.tolerances, self.predictions)
 
     def set_mcmc_priors(self, priors):
         ''' Set prior distribution functions for each input to be used in
@@ -349,12 +368,12 @@ class CurveFit:
         coeff, cov, _ = uncertarray._GUM(lambda x, y: self.fitcalc(x, y, ux=None, uy=None)[0],
                                          self.arr.x, self.arr.y, self.arr.ux, uy)
         sigmas = np.sqrt(np.diag(cov))
-        resids = (self.arr.y - self.func(self.arr.x, *coeff))
+        resids = self.arr.y - self.func(self.arr.x, *coeff)
         degf = len(self.arr.x) - len(coeff)
         if self.absolute_sigma or not self.arr.has_uy():
             w = 1  # Unweighted residuals in Syx
         else:
-            w = (1/uy**2)  # Determine weighted Syx
+            w = 1/uy**2  # Determine weighted Syx
             w = w/sum(w) * len(self.arr.y)   # Normalize weights so sum(wi) = N
         SSres = sum(w*resids**2)
         Syx = np.sqrt(SSres/degf)  # Standard error of the estimate (based on residuals)
@@ -363,7 +382,7 @@ class CurveFit:
 
         resids = FitResids(resids, Syx, r, SSreg*degf/SSres, SSres, SSreg)
         out = FitResults(coeff, sigmas, cov, degf, resids)
-        return CurveFitResults(out, self.fitsetup())
+        return CurveFitResults(out, self.fitsetup(), self.tolerances, self.predictions)
 
     def calculate(self):
         ''' Calculate Fit using Least Squares method. Same as calculate_lsq(). '''
@@ -380,4 +399,43 @@ class CurveFit:
             outmc = self.monte_carlo()
         if markov:
             outmcmc = self.markov_chain_monte_carlo()
-        return CurveFitResultsCombined(outlsq, outgum, outmc, outmcmc)
+        outwave = self.calculate_wave()
+        return CurveFitResultsCombined(outlsq, outgum, outmc, outmcmc, outwave)
+
+    def calculate_wave(self) -> WaveformFeatures:
+        ''' Calculate waveform features '''
+        results = {}
+        for name, wcalc in self.wavecalcs.items():
+            wave = self.arr
+            if wcalc.clip:
+                wave = wave.slice(*wcalc.clip)
+
+            func = {
+                'max': lambda w: waveform.extrema.maximum(w),
+                'min': lambda w: waveform.extrema.minimum(w),
+                'rise': waveform.pulse.u_rise_time,
+                'fall': waveform.pulse.u_fall_time,
+                'thresh_rise': lambda w, thresh=wcalc.thresh: waveform.threshold.threshold_crossing_uncertainty(
+                                            w, thresh, direction='rising'),
+                'thresh_fall': lambda w, thresh=wcalc.thresh: waveform.threshold.threshold_crossing_uncertainty(
+                                            w, thresh, direction='falling'),
+                'pkpk': waveform.extrema.peak_peak,
+                'fwhm': waveform.pulse.u_pulse_width,
+             }.get(wcalc.calc)
+
+            assert func is not None
+
+            result = func(wave)
+            poc = None
+            if wcalc.tolerance:
+                poc = wcalc.tolerance.probability_conformance_95(result.low, result.high)
+            results[name] = WaveformFeatureResult(
+                wcalc.calc,
+                result,
+                wcalc.clip,
+                wcalc.tolerance,
+                wcalc.thresh,
+                poc
+            )
+
+        return WaveformFeatures(results, self.arr)

@@ -9,7 +9,7 @@ import sympy
 from ..common import uparser
 
 
-def parse_fit_expr(expr):
+def parse_fit_expr(expr, predictorvar: str = 'x'):
     ''' Check expr string for a valid curvefit function including an x variable
         and at least one fit parameter.
 
@@ -21,18 +21,18 @@ def parse_fit_expr(expr):
     uparser.parse_math(expr)  # Will raise if not valid expression
     symexpr = sympy.sympify(expr)
     argnames = sorted(str(s) for s in symexpr.free_symbols)
-    if 'x' not in argnames:
-        raise ValueError('Expression must contain "x" variable.')
-    argnames.remove('x')
+    if predictorvar not in argnames:
+        raise ValueError(f'Expression must contain "{predictorvar}" variable.')
+    argnames.remove(predictorvar)
     if len(argnames) == 0:
         raise ValueError('Expression must contain one or more parameters to fit.')
     # Make sure to specify 'numpy' so nans are returned instead of complex numbers
-    func = sympy.lambdify(['x'] + argnames, symexpr, 'numpy')
+    func = sympy.lambdify([predictorvar] + argnames, symexpr, 'numpy')
     ParsedMath = namedtuple('ParsedMath', ['function', 'sympyexpr', 'argnames'])
     return ParsedMath(func, symexpr, argnames)
 
 
-def fit_callable(model: str, polyorder: int = 2):
+def fit_callable(model: str, polyorder: int = 2, predictor_var='x'):
     ''' Get fit callable and sympy expression for the function '''
     if model == 'line':
         expr = sympy.sympify('a + b*x')
@@ -94,5 +94,5 @@ def fit_callable(model: str, polyorder: int = 2):
 
     else:
         # actual expression as string
-        func, expr, _ = parse_fit_expr(model)
+        func, expr, _ = parse_fit_expr(model, predictor_var)
     return func, expr

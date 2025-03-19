@@ -1,0 +1,252 @@
+- desc: ''
+  equipment: []
+  gbrules:
+  - idn: d1e80e34fc604fe5b64076c213949a8c
+    method: rds
+    name: 4:1 RDS
+    threshold: 4.0
+  - idn: 28265f23cfd1483ea9fd6f80d97840de
+    method: pfa
+    name: 2% PFA
+    threshold: 2
+  mode: mqa
+  name: mqa
+  quantities:
+  - costs:
+      annual:
+        adjust: 0.0
+        cal: 25.0
+        downtime:
+          adj: 0.0
+          cal: 0.5
+          rep: 7.0
+        nuut: 400
+        pe: 0.02
+        repair: 300.0
+        spare_startup: 0.0
+        suut: 1.0
+        uut: 3500.0
+      item:
+        cfa: 32000000.0
+        cfr: 0
+    enditem: true
+    guardband:
+      accept_limit:
+        high: '1'
+        low: '-1'
+        nominal: '0'
+        units: ''
+      method: none
+      rule: d1e80e34fc604fe5b64076c213949a8c
+    measurand:
+      degrade:
+        high: '29.295'
+        low: '29.205'
+        nominal: '29.25'
+        units: ''
+      description: ''
+      eopr_pct: 0.95
+      eopr_pdf: null
+      eopr_true: false
+      fail:
+        high: '29.305'
+        low: '29.195'
+        nominal: '29.25'
+        units: ''
+      name: F-18 Altimeter
+      psr: 0.9998999999999999
+      testpoint: 29.25
+      tolerance:
+        high: '29.30'
+        low: '29.20'
+        nominal: '29.25'
+        units: ''
+      units: inch_Hg
+    measurement:
+      calibration:
+        mte_adjust: null
+        mte_repair: null
+        p_discard: 0.0
+        policy: asneeded
+        repair_limit: null
+        stress_post: null
+        stress_pre: null
+      equation: ''
+      indirect: {}
+      interval:
+        reliability: randomwalk
+        years: 0.25
+      mte:
+        accuracy_eopr: 0.95
+        accuracy_plusminus: 0.25
+        equipment: null
+        name: ''
+        quantity:
+          costs:
+            annual:
+              adjust: 0.0
+              cal: 25.0
+              downtime:
+                adj: 0.0
+                cal: 0.2
+                rep: 14.0
+              nuut: 75
+              pe: 1.0
+              repair: 800.0
+              spare_startup: 0.0
+              suut: 0.2
+              uut: 75000.0
+            item:
+              cfa: 0.0
+              cfr: 0
+          enditem: false
+          guardband:
+            accept_limit:
+              high: '1'
+              low: '-1'
+              nominal: '0'
+              units: ''
+            method: none
+            rule: d1e80e34fc604fe5b64076c213949a8c
+          measurand:
+            degrade: null
+            description: ''
+            eopr_pct: 0.9775
+            eopr_pdf: null
+            eopr_true: false
+            fail: null
+            name: TTU 205D T/S
+            psr: 1.0
+            testpoint: 29.25
+            tolerance:
+              high: '29.26'
+              low: '29.24'
+              nominal: '29.25'
+              units: ''
+            units: inch_Hg
+          measurement:
+            calibration:
+              mte_adjust: null
+              mte_repair: null
+              p_discard: 0.0
+              policy: asneeded
+              repair_limit: null
+              stress_post: null
+              stress_pre: null
+            equation: ''
+            indirect: {}
+            interval:
+              reliability: randomwalk
+              years: 0.833333
+            mte:
+              accuracy_eopr: 0.95
+              accuracy_plusminus: 0.25
+              equipment: null
+              name: Calibration system for F-18 Altimeter
+              quantity:
+                costs:
+                  annual:
+                    adjust: 0.0
+                    cal: 250.0
+                    downtime:
+                      adj: 0.0
+                      cal: 30.0
+                      rep: 30.0
+                    nuut: 75
+                    pe: 1.0
+                    repair: 1000.0
+                    spare_startup: 0.0
+                    suut: 0.1
+                    uut: 175000.0
+                  item:
+                    cfa: 0.0
+                    cfr: 0
+                enditem: false
+                guardband:
+                  accept_limit:
+                    high: '1'
+                    low: '-1'
+                    nominal: '0'
+                    units: ''
+                  method: none
+                  rule: d1e80e34fc604fe5b64076c213949a8c
+                measurand:
+                  degrade: null
+                  description: ''
+                  eopr_pct: 0.9364
+                  eopr_pdf: null
+                  eopr_true: false
+                  fail: null
+                  name: ADT 321
+                  psr: 1
+                  testpoint: 29.25
+                  tolerance:
+                    high: '29.252'
+                    low: '29.248'
+                    nominal: '29.25'
+                    units: ''
+                  units: inch_Hg
+                measurement:
+                  calibration:
+                    mte_adjust: null
+                    mte_repair: null
+                    p_discard: 0.0
+                    policy: asneeded
+                    repair_limit: null
+                    stress_post: null
+                    stress_pre: null
+                  equation: ''
+                  indirect: {}
+                  interval:
+                    reliability: randomwalk
+                    years: 0.25
+                  mte:
+                    accuracy_eopr: 0.9990000000000001
+                    accuracy_plusminus: 0.002
+                    equipment: null
+                    name: NIST
+                    quantity: null
+                    range: null
+                  testpoints: {}
+                  typea: null
+                  typeb:
+                  - a: 0.002
+                    degf: .inf
+                    desc: ''
+                    dist: resolution
+                    name: Resolution
+                    units: null
+              range: null
+            testpoints: {}
+            typea: null
+            typeb:
+            - a: 0.0053
+              degf: .inf
+              desc: ''
+              dist: resolution
+              name: Resolution
+              units: null
+            - degf: .inf
+              desc: ''
+              dist: normal
+              k: 2.0
+              name: Test Technician Error
+              unc: 0.0017
+              units: null
+        range: null
+      testpoints: {}
+      typea: null
+      typeb:
+      - a: 0.0265
+        degf: .inf
+        desc: ''
+        dist: resolution
+        name: Resolution
+        units: null
+      - degf: .inf
+        desc: ''
+        dist: normal
+        k: 2.0
+        name: Test Process Error
+        unc: 0.0046
+        units: null

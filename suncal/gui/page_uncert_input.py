@@ -10,10 +10,13 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from pint import PintError
 
 from ..common import report, uparser, ttable, unitmgr
+from ..common.limit import Limit
 from ..uncertainty.variables import Typeb, RandomVariable
 from ..uncertainty import Model
 from .gui_settings import gui_settings
 from .gui_common import BlockedSignals
+from .delegates import LatexDelegate
+from .widgets.mqa import ToleranceDelegate
 from . import widgets
 from . import gui_styles
 from . import page_typea
@@ -34,8 +37,9 @@ class FunctionTableWidget(QtWidgets.QTableWidget):
     COL_NAME = 0
     COL_EXPR = 1
     COL_UNIT = 2
-    COL_DESC = 3
-    COL_CNT = 4
+    COL_TOLERANCE = 3
+    COL_DESC = 4
+    COL_CNT = 5
 
     ROLE_ENTERED = QtCore.Qt.ItemDataRole.UserRole + 1    # Original, user-entered data
 
@@ -52,9 +56,11 @@ class FunctionTableWidget(QtWidgets.QTableWidget):
         self.setDropIndicatorShown(True)
         self.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
         self.setDragDropMode(QtWidgets.QAbstractItemView.DragDropMode.InternalMove)
-        self._delegate = widgets.LatexDelegate()  # Assign to self - don't let the garbage collector eat it
+        self._delegate = LatexDelegate()  # Assign to self - don't let the garbage collector eat it
+        self._toldelegate = ToleranceDelegate()
         self.setItemDelegateForColumn(self.COL_NAME, self._delegate)
         self.setItemDelegateForColumn(self.COL_EXPR, self._delegate)
+        self.setItemDelegateForColumn(self.COL_TOLERANCE, self._toldelegate)
         self.setSizePolicy(QtWidgets.QSizePolicy.Policy.Minimum, QtWidgets.QSizePolicy.Policy.Minimum)
         self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
@@ -76,13 +82,14 @@ class FunctionTableWidget(QtWidgets.QTableWidget):
     def clear(self):
         ''' Clear everything in the table. Overrides TableWidget clear. '''
         self.setRowCount(0)
-        self.setHorizontalHeaderLabels(['Name', 'Expression',  'Units', 'Description'])
+        self.setHorizontalHeaderLabels(['Name', 'Expression',  'Units', 'Tolerance', 'Description'])
         self.resizeColumnsToContents()
         # NOTE: with window width 1200, sum of columnwidths 1110 fills the tree
         self.setColumnWidth(self.COL_NAME, 100)
-        self.setColumnWidth(self.COL_EXPR, 440)
+        self.setColumnWidth(self.COL_EXPR, 380)
         self.setColumnWidth(self.COL_UNIT, 120)
-        self.setColumnWidth(self.COL_DESC, 460)
+        self.setColumnWidth(self.COL_DESC, 320)
+        self.setColumnWidth(self.COL_TOLERANCE, 140)
         self.fixSize()
 
     def get_config(self):
@@ -91,10 +98,13 @@ class FunctionTableWidget(QtWidgets.QTableWidget):
         if self.is_valid():
             for row in range(self.rowCount()):
                 units = self.item(row, self.COL_UNIT).text()
+                tolerance = self.item(row, self.COL_TOLERANCE).data(ToleranceDelegate.ROLE_TOLERANCE)
+
                 functions.append({
                     'name': self.item(row, self.COL_NAME).data(self.ROLE_ENTERED),
                     'expr': self.item(row, self.COL_EXPR).data(self.ROLE_ENTERED),
                     'units': units if units else None,
+                    'tolerance': tolerance.config() if tolerance else None,
                     'desc': self.item(row, self.COL_DESC).text()})
             functions = [f for f in functions if f['expr'] and f['name']]
         return functions
@@ -110,6 +120,11 @@ class FunctionTableWidget(QtWidgets.QTableWidget):
                 self.setItem(row, self.COL_EXPR, widgets.TableItemTex(function['expr']))
                 self.setItem(row, self.COL_UNIT, widgets.EditableTableItem(function.get('units', '')))
                 self.setItem(row, self.COL_DESC, widgets.EditableTableItem(function.get('desc', '')))
+                self.setItem(row, self.COL_TOLERANCE, widgets.EditableTableItem())
+                tolcfg = function.get('tolerance', None)
+                if tolcfg:
+                    self.item(row, self.COL_TOLERANCE).setData(ToleranceDelegate.ROLE_TOLERANCE, Limit.from_config(tolcfg))
+
         self.funcchanged.emit(self.get_config())
         self.fixSize()
 
@@ -122,6 +137,7 @@ class FunctionTableWidget(QtWidgets.QTableWidget):
             self.setItem(rows, self.COL_EXPR, widgets.TableItemTex())
             self.setItem(rows, self.COL_UNIT, widgets.EditableTableItem())
             self.setItem(rows, self.COL_DESC, widgets.EditableTableItem())
+            self.setItem(rows, self.COL_TOLERANCE, widgets.ReadOnlyTableItem())
         self.fixSize()
 
     def remRow(self):
@@ -173,7 +189,7 @@ class FunctionTableWidget(QtWidgets.QTableWidget):
                     self.clearSelection()
 
             if col == self.COL_NAME and self.item(row, self.COL_NAME) is not None:
-                if isinstance(sname, sympy.Basic):
+                if isinstance(sname, sympy.Symbol):
                     self.item(row, self.COL_NAME).setBackground(gui_styles.color.transparent)
                 else:
                     self.item(row, self.COL_NAME).setBackground(gui_styles.color.invalid)
@@ -293,15 +309,15 @@ class FunctionTableWidget(QtWidgets.QTableWidget):
 
     def moveCursor(self, cursorAction, modifiers):
         ''' Override cursor so tab works as expected '''
-        assert self.COL_CNT == 4   # If column defs change, need to update this tab-key behavior
-        assert self.COL_DESC == 3
+        assert self.COL_CNT == 5   # If column defs change, need to update this tab-key behavior
+        assert self.COL_DESC == 4
         if cursorAction == QtWidgets.QAbstractItemView.CursorAction.MoveNext:
             index = self.currentIndex()
             if index.isValid():
                 if (index.column() in [self.COL_DESC] and
                    index.row()+1 < self.model().rowCount(index.parent())):
                     return index.sibling(index.row()+1, 1)
-                elif index.column() in [self.COL_NAME, self.COL_EXPR, self.COL_UNIT]:
+                elif index.column() in [self.COL_NAME, self.COL_EXPR, self.COL_UNIT, self.COL_TOLERANCE]:
                     return index.sibling(index.row(), index.column()+1)
                 else:
                     return QtCore.QModelIndex()
@@ -406,7 +422,7 @@ class MeasTableWidget(QtWidgets.QTableWidget):
         self.setFont(font)
         self.component = component
         self.clear()
-        self._delegate = widgets.LatexDelegate()
+        self._delegate = LatexDelegate()
         self.setItemDelegateForColumn(self.COL_VARNAME, self._delegate)
         self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
@@ -797,6 +813,7 @@ class MeasTableWidget(QtWidgets.QTableWidget):
         # 1) convert degC of celsius into delta_degC; degF or fah. into delta_degF
         # 2) uparser.parse_unit
         # 3) check dimensionality with nominal
+        valid = True
         if unitstr in ['degC', 'celsius']:
             unitstr = 'delta_degC'
         elif unitstr in ['degF', 'fahrenheit']:
@@ -1335,7 +1352,7 @@ class PageInput(QtWidgets.QWidget):
         if name == 'Symbolic GUM Solution Only':
             self.symbolicmode = value
             self.meastable.setVisible(not value)
-            self.panel.hide('Measured Values and Uncertainties', value)
+            self.panel.hide_widget('Measured Values and Uncertainties', value)
 
     def get_config(self):
         ''' Convert input parameters into a Model config dictionary '''

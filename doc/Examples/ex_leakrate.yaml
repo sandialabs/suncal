@@ -1,0 +1,108 @@
+- functions:
+  - desc: ''
+    expr: Q_std*(1+alpha*(T-Tc))*(H_uut-H_bkg)/(H_std-H_bkg)
+    name: Q_uut
+    units: "cm\xB3/s"
+  inputs:
+  - autocorrelate: true
+    desc: ''
+    mean: -0.02
+    name: H_bkg
+    numnewmeas: null
+    uncerts:
+    - degf: .inf
+      desc: null
+      dist: normal
+      k: 2
+      name: u(H_bkg)
+      unc: .001% + .01%range(10)
+      units: volt
+    units: volt
+  - autocorrelate: true
+    desc: ''
+    mean: 3.0
+    name: H_std
+    numnewmeas: null
+    uncerts:
+    - degf: .inf
+      desc: null
+      dist: normal
+      k: 2
+      name: u(H_std)
+      unc: .001% + .01%range(10)
+      units: volt
+    units: volt
+  - autocorrelate: true
+    desc: ''
+    mean: 2.0
+    name: H_uut
+    numnewmeas: null
+    uncerts:
+    - degf: .inf
+      desc: null
+      dist: normal
+      k: 2
+      name: u(H_uut)
+      unc: .001% + .01%range(10)
+      units: volt
+    units: volt
+  - autocorrelate: true
+    desc: ''
+    mean: 1.539e-06
+    name: Q_std
+    numnewmeas: null
+    uncerts:
+    - degf: .inf
+      desc: null
+      dist: normal
+      k: 2
+      name: u(Q_std)
+      unc: 2%
+      units: centimeter ** 3 / second
+    units: centimeter ** 3 / second
+  - autocorrelate: true
+    desc: ''
+    mean: 23.8
+    name: T
+    numnewmeas: null
+    uncerts:
+    - degf: .inf
+      desc: null
+      dist: normal
+      k: 2
+      name: u(T)
+      unc: '.1'
+      units: delta_degree_Celsius
+    units: degree_Celsius
+  - autocorrelate: true
+    desc: ''
+    mean: 26.67
+    name: Tc
+    numnewmeas: null
+    uncerts:
+    - degf: .inf
+      desc: null
+      dist: normal
+      k: 2
+      name: u(Tc)
+      unc: '.1'
+      units: delta_degree_Celsius
+    units: degree_Celsius
+  - autocorrelate: true
+    desc: ''
+    mean: 0.03
+    name: alpha
+    numnewmeas: null
+    uncerts:
+    - degf: .inf
+      desc: null
+      dist: normal
+      k: 2
+      name: u(alpha)
+      unc: '.0005'
+      units: 1 / delta_degree_Celsius
+    units: 1 / delta_degree_Celsius
+  mode: uncertainty
+  name: uncertainty
+  samples: 1000000
+  unitdefs: stadia = 185*meter

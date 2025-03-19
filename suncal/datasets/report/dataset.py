@@ -33,6 +33,9 @@ class ReportDataSet:
 
         rpt = report.Report(**kwargs)
         rpt.table(rows, hdr=['Group', 'Mean', 'Variance', 'Std. Dev.', 'Std. Error', 'Deg. Freedom'])
+
+        if self.result.tolerance is not None:
+            rpt.append(self.conformance(**kwargs))
         return rpt
 
     def all(self, **kwargs):
@@ -95,6 +98,28 @@ class ReportDataSet:
                   hdr=['Test', 'Statistically equivalent (95%)?'])
         return rpt
 
+    def conformance(self, **kwargs):
+        ''' Probability of conformance '''
+        rpt = report.Report(**kwargs)
+        if self.result.uncertainty.poc is not None:
+
+            rpt.hdr('Probability of Conformance', level=2)
+            rpt.add('Tolerance: ', str(self.result.tolerance), end='\n\n')
+            rpt.add(
+                'Total Probability of Conformance: ', report.Number(self.result.uncertainty.poc*100, fmin=1, postfix=' %')
+            )
+            rpt.newline()
+
+            rows = []
+            for i, poc in enumerate(self.result.groups.pocs):
+                rows.append([str(self.result.colnames[i]),
+                             report.Number(poc*100, fmin=1, postfix=' %')])
+            rpt.table(rows, ['Group', 'Probability of Conformance'])
+
+        else:
+            rpt.txt('No tolerance defined\n\n')
+        return rpt
+
     def correlation(self, **kwargs):
         ''' Correlation between columns '''
         rpt = report.Report(**kwargs)
@@ -144,11 +169,18 @@ class DataSetPlot:
         y = gstats.means
         if len(x) != len(y):
             return  # Nothing to plot
-        uy = gstats.std_devs
+        ks = np.array([ttable.k_factor(0.95, df) for df in gstats.degfs])
+        uy = gstats.std_devs * ks
 
         ax.errorbar(x, y, yerr=uy, marker='o', ls='', capsize=4)
         ax.set_xlabel('Group')
         ax.set_ylabel('Value')
+
+        if self.result.tolerance is not None:
+            if np.isfinite(self.result.tolerance.flow):
+                ax.axhline(self.result.tolerance.flow, ls='--', color='C3')
+            if np.isfinite(self.result.tolerance.fhigh):
+                ax.axhline(self.result.tolerance.fhigh, ls='--', color='C3')
 
     def histogram(self, colname=None, fig=None, fit=None, qqplot=False, bins='sqrt', points=None, interval=None):
         ''' Plot a histogram, with optional distribution fit and qq-plot, of one column
@@ -167,7 +199,8 @@ class DataSetPlot:
         if colname is None and len(self.result.colnames) > 0:
             colname = self.result.colnames[0]
         plotting.fitdist(data, fit, fig=fig, qqplot=qqplot, bins=bins,
-                         points=points, coverage=interval, xlabel=colname)
+                         points=points, coverage=interval, xlabel=colname,
+                         tolerance=self.result.tolerance)
 
     def autocorrelation(self, colname=None, fig=None, nmax=None, conf=.95):
         ''' Plot autocorrelation vs lag for one column

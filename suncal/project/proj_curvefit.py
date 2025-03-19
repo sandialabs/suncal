@@ -4,8 +4,8 @@ from dataclasses import dataclass
 import numpy as np
 
 from .component import ProjectComponent
-
-from ..curvefit import CurveFit, Array
+from ..common.limit import Limit
+from ..curvefit import CurveFit, Array, WaveCalc
 from ..curvefit.results.curvefit import CurveFitResultsCombined
 
 
@@ -62,7 +62,10 @@ class ProjectCurveFit(ProjectComponent):
             markovresult = self.model.markov_chain_monte_carlo(self.nsamples)
         if gum:
             gumresult = self.model.calculate_gum()
-        self._result = CurveFitResultsCombined(lsq=lsqresult, montecarlo=monteresult, markov=markovresult, gum=gumresult)
+        outwave = self.model.calculate_wave()
+        self._result = CurveFitResultsCombined(
+            lsq=lsqresult, montecarlo=monteresult, markov=markovresult,
+            gum=gumresult, waveform=outwave)
         return self._result
 
     def get_dists(self):
@@ -81,17 +84,22 @@ class ProjectCurveFit(ProjectComponent):
                                      'std': result.uncerts[pidx],
                                      'df': result.degf}
 
-            dists['Confidence Band'] = {
-                'xdates': self.model.arr.xdate,
-                'function': lambda x, result=result: {'median': result.y(x),
-                                                      'std': result.confidence_band(x),
-                                                      'df': result.degf}}
+            for name, (x, _) in result.predictions.items():
+                y = result.y(x)
+                uy = result.prediction_band(x, k=1)
+                dists[name] = {
+                    'median': y,
+                    'std': uy,
+                    'df': result.degf
+                }
 
-            dists['Prediction Band'] = {
-                'xdates': self.model.arr.xdate,
-                'function': lambda x, result=result: {'median': result.y(x),
-                                                      'std': result.prediction_band(x),
-                                                      'df': result.degf}}
+        for wname, wave in self.result.waveform.features.items():
+            dists[wname] = {
+                'median': wave.uncert.nominal,
+                'std': wave.uncert.uncert,
+                'df': result.degf
+            }
+
         return dists
 
     def get_config(self):
@@ -106,6 +114,11 @@ class ProjectCurveFit(ProjectComponent):
         d['yname'] = setup.yname
         d['xdates'] = setup.points.xdate
         d['abssigma'] = self.model.absolute_sigma
+        d['tolerances'] = {name: tol.config() for name, tol in self.model.tolerances.items()}
+        d['predictions'] = {name: {'value': val, 'tolerance': tol.config() if tol else None} for name, (val, tol) in self.model.predictions.items()}
+        d['waveform'] = {name: {'calc': w.calc, 'clip': list(w.clip) if w.clip else None, 'thresh': w.thresh,
+                                'tolerance': w.tolerance.config() if w.tolerance else None} for name, w in self.model.wavecalcs.items()}
+
         if setup.modelname == 'poly':
             d['order'] = self.fitoptions.polyorder
         if self.fitoptions.p0 is not None:
@@ -142,3 +155,17 @@ class ProjectCurveFit(ProjectComponent):
         self.model.xname = config.get('xname', 'x')
         self.model.yname = config.get('yname', 'y')
         self.model.absolute_sigma = config.get('abssigma', True)
+        self.model.tolerances = {
+            name: Limit.from_config(cfg)
+            for name, cfg in config.get('tolerances', {}).items()
+        }
+
+        self.model.predictions = {
+            name: (c.get('value'), Limit.from_config(c.get('tolerance')) if c.get('tolerance') else None)
+            for name, c in config.get('predictions', {}).items()
+        }
+
+        self.model.wavecalcs = {
+            name: WaveCalc(calc=c.get('calc'), clip=c.get('clip'), thresh=c.get('thresh'), tolerance=Limit.from_config(c.get('tolerance') if c.get('tolerance') else None))
+            for name, c in config.get('waveform', {}).items()
+        }

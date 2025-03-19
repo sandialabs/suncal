@@ -2,7 +2,7 @@
 from dataclasses import dataclass
 import numpy as np
 from scipy import stats
-from dateutil.parser import parse
+from dateutil.parser import parse, ParserError
 
 from .report.attributes import ReportIntervalA3
 from ..common import reporter
@@ -15,7 +15,13 @@ def datearray(dates):
     elif hasattr(dates[0], 'toordinal'):
         dates = [d.toordinal() for d in dates]
     elif isinstance(dates[0], str):
-        dates = [parse(d).toordinal() for d in dates]
+        #dates = [parse(d).toordinal() for d in dates]
+        parsed = []
+        for d in dates:
+            try:
+                parsed.append(parse(d).toordinal())
+            except (ParserError, AttributeError):
+                parsed.append(0)
     return np.asarray(dates)
 
 

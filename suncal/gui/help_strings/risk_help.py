@@ -130,10 +130,6 @@ class RiskHelp:
         return rpt
 
     @staticmethod
-    def full_mc():
-        return RiskHelp.simple_mc()
-
-    @staticmethod
     def gb_sweep():
         rpt = report.Report()
         rpt.hdr('Guardband Sweep', level=2)

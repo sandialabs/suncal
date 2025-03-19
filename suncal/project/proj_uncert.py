@@ -1,9 +1,11 @@
 ''' Uncertainty propagation project component '''
 from enum import IntEnum, auto
+from decimal import Decimal
 import numpy as np
 
 from .component import ProjectComponent
 from ..common import unitmgr, report
+from ..common.limit import Limit
 
 from ..uncertainty.model import Model
 from ..uncertainty.report.units import units_report
@@ -153,7 +155,7 @@ class ProjectUncert(ProjectComponent):
         if inputs:
             varnames = self.result.montecarlo.variablenames
             vsamples = self.result.montecarlo.varsamples
-            units = [report.Unit(unitmgr.split_units(vsamples[name])[1]).prettytext(bracket=True)
+            units = [report.Unit(unitmgr.get_units(vsamples[name])).prettytext(bracket=True)
                      for name in varnames]
             hdr = [f'{name}{unit}' for name, unit in zip(varnames, units)]
             csv = np.stack([unitmgr.strip_units(vsamples[vname]) for vname in varnames], axis=1)
@@ -190,12 +192,13 @@ class ProjectUncert(ProjectComponent):
                     'name': funcname,
                     'expr': str(self.model.exprs[i]),
                     'desc': self.model.descriptions.get(funcname, ''),
+                    'tolerance': self.model.tolerances.get(funcname).config() if self.model.tolerances.get(funcname) else None,
                     'units': str(self.outunits.get(funcname)) if self.outunits.get(funcname) else None}
                 d['functions'].append(funcsetup)
 
         for varname in self.model.varnames:
             variable = self.model.var(varname)
-            _, units = unitmgr.split_units(variable.expected)
+            units = unitmgr.get_units(variable.expected)
             typea = variable.typea
             vardict = {
                 'name': varname,
@@ -256,6 +259,9 @@ class ProjectUncert(ProjectComponent):
         self.name = config.get('name', 'uncertainty')
         self.outunits = {func['name']: func.get('units') for func in config.get('functions')}
         self.model.descriptions = {func['name']: func.get('desc') for func in config.get('functions')}
+        for func in config.get('functions'):
+            if (limcfg := func.get('tolerance')):
+                self.model.tolerances[func['name']] = Limit.from_config(limcfg)
         self.nsamples = config.get('samples', 1000000)
         self.description = config.get('description', config.get('desc'))
         self.seed = config.get('seed')

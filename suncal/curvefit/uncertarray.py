@@ -1,7 +1,18 @@
 ''' 2D Arrays with uncertainty in dependent and/or independent variables '''
+from dataclasses import dataclass, field
 
 import numpy as np
 import scipy.stats as stat
+
+
+@dataclass
+class EventUncert:
+    ''' Uncertainty Result of one waveform event (min, max, etc.) '''
+    nominal: float
+    uncert: float  # k=1
+    low: float     # 95%
+    high: float    # 95%
+    components: dict[str, 'EventUncert'] = field(default_factory=dict)  # Contributors for plotting
 
 
 class Array:
@@ -41,6 +52,16 @@ class Array:
     def has_uy(self):
         ''' Does the array have y-uncertainties? '''
         return not all(self.uy == 0)
+
+    def slice(self, x1: float, x2: float) -> 'Array':
+        ''' Return a slice (copy) of the array between x values '''
+        idx = np.where((self.x >= x1) & (self.x <= x2))[0]
+        return Array(
+            x=self.x[idx],
+            y=self.y[idx],
+            ux=self.ux[idx],
+            uy=self.uy[idx]
+        )
 
     def sample(self, samples=1000):
         ''' Generate random samples of the array '''

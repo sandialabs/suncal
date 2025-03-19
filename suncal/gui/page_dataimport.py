@@ -117,25 +117,6 @@ class ProjectTreeArrays(QtWidgets.QTreeWidget):
             self.loaddata.emit(arr)
 
 
-class CurveFitOptions(QtWidgets.QWidget):
-    ''' Options for importing from a curve fit calculation '''
-    def __init__(self):
-        super().__init__()
-        self.xval = QtWidgets.QDoubleSpinBox()
-        self.xval.setValue(0)
-        self.xval.setDecimals(4)
-        self.xval.setRange(-1E99, 1E99)
-        self.xdate = QtWidgets.QDateEdit(QtCore.QDate.currentDate())
-        self.xdate.setDisplayFormat('yyyy-MM-dd')
-        self.xdate.setVisible(False)
-        layout = QtWidgets.QHBoxLayout()
-        layout.addWidget(QtWidgets.QLabel('Predict X value at'))
-        layout.addWidget(self.xval)
-        layout.addWidget(self.xdate)
-        layout.addStretch()
-        self.setLayout(layout)
-
-
 class SampledDataOptions(QtWidgets.QWidget):
     ''' Options for importing from a sampled (Monte Carlo) result '''
     def __init__(self):
@@ -177,7 +158,6 @@ class DistributionSelectWidget(QtWidgets.QDialog):
         self.xval_isdate = False
 
         self.tree = ProjectTreeDists(project)
-        self.curvefit = CurveFitOptions()
         self.sampled = SampledDataOptions()
         self.fig = Figure()
         self.canvas = FigureCanvas(self.fig)
@@ -191,7 +171,6 @@ class DistributionSelectWidget(QtWidgets.QDialog):
         llayout.addWidget(self.tree)
 
         rlayout = QtWidgets.QVBoxLayout()
-        rlayout.addWidget(self.curvefit)
         rlayout.addWidget(self.sampled)
         rlayout.addWidget(self.canvas)
         rlayout.addWidget(self.stats)
@@ -204,12 +183,9 @@ class DistributionSelectWidget(QtWidgets.QDialog):
         self.setLayout(tlayout)
 
         self.sampled.setVisible(False)
-        self.curvefit.setVisible(False)
         self.tree.loaddata.connect(self.set_distsource)
         self.sampled.cmbDistType.currentIndexChanged.connect(self.replot)
         self.sampled.chkprobplot.stateChanged.connect(self.replot)
-        self.curvefit.xval.valueChanged.connect(self.replot)
-        self.curvefit.xdate.dateChanged.connect(self.replot)
         self.buttons.accepted.connect(self.accept)
         self.buttons.rejected.connect(self.reject)
         self.buttons.button(QtWidgets.QDialogButtonBox.StandardButton.Ok).setEnabled(False)
@@ -219,23 +195,14 @@ class DistributionSelectWidget(QtWidgets.QDialog):
         self.mode, self.distdata = source  # Component type, distribution dictionary
         if self.mode == 'data' and 'samples' in self.distdata:
             # Column of data from a dataset
-            self.curvefit.setVisible(False)
             self.sampled.setVisible(True)
             self.sampled.show_norm_options(True)
         elif 'samples' in self.distdata:
             # Monte Carlo uncertainty
-            self.curvefit.setVisible(False)
             self.sampled.setVisible(True)
             self.sampled.show_norm_options(False)
-        elif 'function' in self.distdata:
-            self.curvefit.setVisible(True)
-            self.sampled.setVisible(False)
-            self.xval_isdate = self.distdata.get('xdates', False)
-            self.curvefit.xdate.setVisible(self.xval_isdate)
-            self.curvefit.xval.setVisible(not self.xval_isdate)
         else:
-            # GUM, curvefit param, or full dataset
-            self.curvefit.setVisible(False)
+            # GUM or full dataset
             self.sampled.setVisible(False)
         self.buttons.button(QtWidgets.QDialogButtonBox.StandardButton.Ok).setEnabled(True)
         self.replot()
@@ -251,20 +218,8 @@ class DistributionSelectWidget(QtWidgets.QDialog):
             self.plot_pdf(self.distdata)
         self.update_report()
 
-    def function_dist(self, data):
-        ''' Evaluate curvefit function '''
-        if self.xval_isdate:
-            x = self.curvefit.xdate.date().toPyDate().toordinal()
-        else:
-            x = self.curvefit.xval.value()
-        data = data['function'](x)
-        return data
-
     def plot_pdf(self, data):
         ''' Plot PDF of the distribution '''
-        if 'function' in data:
-            data = self.function_dist(data)
-
         median = data.get('median', data.get('mean', 0))
         std = data.get('std', 1)
         df = min(data.get('df', 100), 1E4)  # Inf degf doesn't work
@@ -353,10 +308,6 @@ class DistributionSelectWidget(QtWidgets.QDialog):
                 distname = 'normal'
             else:
                 _, params = self.fitdist(samples)
-
-        elif 'function' in self.distdata:
-            params = self.function_dist(self.distdata)
-
         else:
             params = self.distdata
 

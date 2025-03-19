@@ -70,7 +70,7 @@ class UncertWizard(QtWidgets.QWidget):
         self.stack = widgets.SlidingStackedWidget()
 
         self.menu = QtWidgets.QMenu('&Uncertainty')
-        self.actSaveReport = QtGui.QAction('Save Report...', self)
+        self.actSaveReport = QtGui.QAction('&Save Report...', self)
         self.menu.addAction(self.actSaveReport)
         self.actSaveReport.setEnabled(False)
         self.actSaveReport.triggered.connect(self.save_report)
@@ -786,7 +786,7 @@ class PageTypeB(Page):
         varname = self.wizard.currentvar
         randvar = self.wizard.current_randvar()
         self.title.setvarname(varname, str(randvar.expected))
-        parentunits = unitmgr.split_units(randvar.expected)[1]
+        parentunits = unitmgr.get_units(randvar.expected)
         self.dist.set_parent_units(parentunits)
         if self.wizard.currentunc is None or self.wizard.currentunc not in randvar.typeb_names:
             # New component
@@ -929,7 +929,7 @@ class PageRepeat(Page):
         self.title.setvarname(varname)
         self.data = self.wizard.component.model.var(varname).value
         self.Nnewmeas.setValue(1)
-        units = unitmgr.split_units(self.data)[1]
+        units = unitmgr.get_units(self.data)
         if units is not None and not unitmgr.is_dimensionless(units):
             self.units.setText(str(units))
         else:
@@ -1080,7 +1080,7 @@ class PageReprod(Page):
         self.title.setvarname(varname)
         self.data = self.wizard.component.model.var(varname).value
         self.Nnewmeas.setValue(1)
-        units = unitmgr.split_units(self.data)[1]
+        units = unitmgr.get_units(self.data)
         if units is not None and not unitmgr.is_dimensionless(units):
             self.units.setText(str(units))
         else:
@@ -1193,7 +1193,7 @@ class PageUnits(Page):
             self.outunits.setVisible(False)
             self.lblconvert.setVisible(False)
         else:
-            self.naturalunits = unitmgr.split_units(value)[1]
+            self.naturalunits = unitmgr.get_units(value)
             unitstr = format(self.naturalunits, 'D')
             self.lblnatural.setText(f'Natural units of measurement model are {unitstr}')
             self.outunits.setText(unitstr)

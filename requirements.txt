@@ -1,5 +1,5 @@
 # Requirements for EXE build
-# python==3.12.1
+# python==3.12.9
 sympy==1.12
 numpy==1.26.1
 matplotlib==3.8
@@ -7,7 +7,8 @@ pyyaml==6.0.1
 markdown==3.5
 pint==0.22
 pyqt6==6.6.1
-scipy==1.11.3
-PyInstaller==6.3.0  # For building exe
+pyqt6-qt6==6.6.1
+scipy==1.15.0
+PyInstaller==5.13.2  # For building exe
 pip-licenses        # Needed to generate license info for exe about page
 pytest              # To run test cases

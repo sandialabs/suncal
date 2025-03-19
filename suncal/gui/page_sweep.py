@@ -426,7 +426,7 @@ class UncertSweepWidget(page_uncert.UncertPropWidget):
         super().__init__(component, parent)
 
         self.menu.removeAction(self.mnuSaveSamples.menuAction())
-        self.actNewUnc = QtGui.QAction('New single calculation from sweep', self)
+        self.actNewUnc = QtGui.QAction('New &single calculation from sweep', self)
         self.actNewUnc.triggered.connect(lambda event, x=component: self.newtype.emit(x.get_config(), 'uncertainty'))
         self.actReverse.disconnect()
         self.actReverse.triggered.connect(lambda event, x=component: self.newtype.emit(x.get_config(), 'reversesweep'))
@@ -556,9 +556,9 @@ class UncertReverseSweepWidget(page_uncert.UncertPropWidget):
         super().__init__(self.component, parent=parent)
 
         self.menu.removeAction(self.mnuSaveSamples.menuAction())
-        self.actNewRev = QtGui.QAction('New single reverse from sweep', self)
+        self.actNewRev = QtGui.QAction('New single re&verse from sweep', self)
         self.actNewRev.triggered.connect(lambda event, x=component: self.newtype.emit(x.get_config(), 'reverse'))
-        self.actNewSwp = QtGui.QAction('New forward sweep from model', self)
+        self.actNewSwp = QtGui.QAction('New &forward sweep from model', self)
         self.actNewSwp.triggered.connect(lambda event, x=component: self.newtype.emit(x.get_config(), 'sweep'))
         self.menu.insertAction(self.actSweep, self.actNewRev)
         self.menu.insertAction(self.actSweep, self.actNewSwp)

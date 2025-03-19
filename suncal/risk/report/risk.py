@@ -27,7 +27,9 @@ class RiskReport:
                          ('Upper limit risk: ', report.Number(self.result.process_upper*100, fmt='auto'), '%'),
                          ('Lower limit risk: ', report.Number(self.result.process_lower*100, fmt='auto'), '%'),
                          ('Process capability index (Cpk): ', report.Number(self.result.cpk)),
-                        ])
+                         ('Process Yield: ', report.Number((1-self.result.process_risk)*100, fmt='auto'), '%'),
+                         ('Sigma Level: ', report.Number(self.result.cpk*3, fmt='auto')),
+                         ('DPMO: ', report.Number(self.result.process_risk*1000000, fmin=0))])
             if self.result.cost_fa is not None:
                 cost = self.result.cost_fa * self.result.process_risk  # Everything accepted - no false rejects
 
@@ -42,13 +44,15 @@ class RiskReport:
                      report.Number(self.result.specific*100, fmt='auto'), '%'),
                     ('Worst-Case Specific Risk: ',
                      report.Number(self.result.specific_worst*100, fmt='auto'), '%'),
+                    '&nbsp;', '&nbsp;', '&nbsp;'
                     ])
             else:
                 cols.append([
                     ('TUR: ', report.Number(self.result.tur, fmt='auto')),
                     ('Worst-Case Specific Risk: ',
                      report.Number(self.result.specific_worst*100, fmt='auto'), '%'),
-                    '&nbsp;'
+                    '&nbsp;', '&nbsp;', '&nbsp;', '&nbsp;', '&nbsp;'
+
                     ])
 
         if self.result.measure_dist is not None and self.result.process_dist is not None:
@@ -57,7 +61,9 @@ class RiskReport:
             pfr = self.result.pfr
             cols.append([
                 (f'Total PFA{" (conditional)" if conditional else ""}: ', report.Number(pfa*100, fmt='auto'), '%'),
-                ('Total PFR: ', report.Number(pfr*100, fmt='auto'), '%'), '&nbsp;', '&nbsp;'])
+                ('Total PFR: ', report.Number(pfr*100, fmt='auto'), '%'),
+                '&nbsp;', '&nbsp;', '&nbsp;', '&nbsp;', '&nbsp;'
+                ])
             if self.result.cost_fa is not None and self.result.cost_fr is not None:
                 cost = self.result.cost_fa * pfa + self.result.cost_fr * pfr
 

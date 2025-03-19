@@ -22,7 +22,7 @@ def parse_dates(values):
     for val in values:
         try:
             val = datearray([val])[0]
-            datestr = mdates.num2date(val).strftime('%d-%b-%Y')   # float ordinal
+            datestr = mdates.num2date(val).strftime('%Y-%m-%d')   # float ordinal
             parsed.append(datestr)
         except ValueError:
             parsed.append(str(val))
@@ -166,7 +166,7 @@ class A3ParamsWidget(QtWidgets.QGroupBox):
 
     def fill(self, params):
         ''' Fill widgets with param values '''
-        self.I0.setValue(params.get('I0', 180))
+        self.I0.setValue(params.get('I0', 365))
         self.Rt.setValue(params.get('target', .95) * 100)
         self.maxchange.setValue(params.get('maxchange', 2))
         self.conf.setValue(params.get('conf', .50)*100)
@@ -338,14 +338,13 @@ class IntervalWidget(QtWidgets.QWidget):
         self.notes = QtWidgets.QPlainTextEdit()
         self.output_report = widgets.MarkdownTextEdit()
 
-        self.actLoadData = QtGui.QAction('Load Data From CSV...', self)
-        self.actSaveReport = QtGui.QAction('Save Report...', self)
-        self.actClear = QtGui.QAction('Clear Table', self)
+        self.actLoadData = QtGui.QAction('&Load Data From CSV...', self)
+        self.actSaveReport = QtGui.QAction('&Save Report...', self)
+        self.actClear = QtGui.QAction('&Clear Table', self)
         self.actSaveReport.setEnabled(False)
-        self.menu = QtWidgets.QMenu('Intervals')
+        self.menu = QtWidgets.QMenu('&Intervals')
         self.menu.addSeparator()
         self.menu.addAction(self.actLoadData)
-        self.menu.addAction(self.actSaveReport)
         self.menu.addAction(self.actClear)
         self.menu.addSeparator()
         self.menu.addAction(self.actSaveReport)
@@ -388,6 +387,7 @@ class IntervalWidget(QtWidgets.QWidget):
         self.calc_button.clicked.connect(self.calculate)
         self.actClear.triggered.connect(self.table.clear)
         self.actLoadData.triggered.connect(self.load_data)
+        self.actSaveReport.triggered.connect(self.save_report)
 
     def _setup_history_table(self):
         ''' Make table with appropriate data '''

@@ -3,6 +3,8 @@
 from contextlib import suppress
 
 import numpy as np
+from scipy import linalg
+from matplotlib.patches import Ellipse, Rectangle
 
 from ...common import unitmgr, report, plotting
 
@@ -29,6 +31,20 @@ class ReportMonteCarlo:
             rows.append((report.Math(name),
                          report.Number(self._results.expected[name], matchto=self._results.uncertainty[name]),
                          report.Number(self._results.uncertainty[name])))
+        rpt = report.Report(**kwargs)
+        rpt.table(rows, hdr=hdr)
+        return rpt
+
+    def tolerances(self, **kwargs):
+        ''' Generate report of tolerance and probability of conformance for each function '''
+        hdr = ['Function', 'Tolerance', 'Probability of Conformance']
+        rows = []
+        for fname, poc in self._results.prob_conform().items():
+            rows.append((
+                report.Math(fname),
+                str(self._results.tolerances.get(fname, 'NA')),
+                report.Number(poc*100, fmin=1, suffix=' %')
+            ))
         rpt = report.Report(**kwargs)
         rpt.table(rows, hdr=hdr)
         return rpt
@@ -156,7 +172,7 @@ class McPlot:
         if len(axs) > 1:
             fig.tight_layout()
 
-    def scatter(self, functions=None, fig=None, points=10000, labeldesc=False, **kwargs):
+    def scatter(self, functions=None, fig=None, points=10000, labeldesc=False, conf=None, **kwargs):
         ''' Plot correlations
 
             Args:
@@ -164,6 +180,7 @@ class McPlot:
                 functions (list of str): Function names to include
                 points (int): Number of scatter points to plot
                 labeldesc (bool): Use "description" as axis label instead of variable name
+                conf (float): Level of confidence for displaying confidence region
         '''
         fig, _ = plotting.initplot(fig)
         fig.clf()
@@ -179,9 +196,10 @@ class McPlot:
                 if col <= row:
                     continue
                 ax = fig.add_subplot(noutputs-1, noutputs-1, row*(noutputs-1)+col)
-                self.axis.scatter(func1, func2, ax=ax, points=points, labeldesc=labeldesc, **kwargs)
+                self.axis.scatter(func1, func2, ax=ax, points=points,
+                                  labeldesc=labeldesc, conf=conf, **kwargs)
 
-    def joint_pdf(self, functions=None, fig=None, bins=40, cmap='viridis', labeldesc=False, **kwargs):
+    def joint_pdf(self, functions=None, fig=None, bins=40, cmap='viridis', labeldesc=False, conf=None, **kwargs):
         ''' Plot correlations
 
             Args:
@@ -190,6 +208,7 @@ class McPlot:
                 bins (int): Number of histogram bins
                 cmap (str): Matplotlib colormap name
                 labeldesc (bool): Use "description" as axis label instead of variable name
+                conf (float): Level of confidence for displaying confidence region
         '''
         fig, _ = plotting.initplot(fig)
         fig.clf()
@@ -205,7 +224,8 @@ class McPlot:
                 if col <= row:
                     continue
                 ax = fig.add_subplot(noutputs-1, noutputs-1, row*(noutputs-1)+col)
-                self.axis.joint_pdf(func1, func2, ax=ax, bins=bins, cmap=cmap, labeldesc=labeldesc, **kwargs)
+                self.axis.joint_pdf(func1, func2, ax=ax, bins=bins, cmap=cmap,
+                                    labeldesc=labeldesc, conf=conf, **kwargs)
 
     def probplot(self, function, distname, fig=None, bins=100, points=200):
         ''' Plot Probability (Q-Q) Plot fitting distname to samples
@@ -515,7 +535,7 @@ class McAxisPlot:
         plotting.probplot(samples[::thin], ax=ax)
 
     def joint_pdf(self, funcname1, funcname2, ax=None, bins=40, fill=False, levels=None,
-                  cmap='viridis', labeldesc=False, **kwargs):
+                  cmap='viridis', labeldesc=False, conf=None, shortest=False, **kwargs):
         ''' Joint probability density between two model functions
 
             Args:
@@ -527,6 +547,8 @@ class McAxisPlot:
                 levels (list): Levels of contour lines
                 cmap (str): Matplotlib colormap name
                 labeldesc (bool): Use "description" as axis label instead of variable name
+                conf (float): Level of confidence for displaying coverage region
+                shortest (bool): Use shortest coverage region
         '''
         _, ax = plotting.initplot(ax)
 
@@ -550,6 +572,11 @@ class McAxisPlot:
                        cmap=cmap,
                        **kwargs)
 
+        if conf and not shortest:
+            coverage_ellipse(ax, funcname1, funcname2, self._results, conf=conf)
+        elif conf and shortest:
+            coverage_blocks(ax, funcname1, funcname2, self._results, conf=conf, bins=kwargs.get('bins', 100))
+
         if labeldesc:
             xlabel = self._results.descriptions.get(funcname1, '')
             ylabel = self._results.descriptions.get(funcname2, '')
@@ -562,7 +589,8 @@ class McAxisPlot:
         ax.ticklabel_format(style='sci', axis='x', scilimits=(-4, 4), useOffset=False)
         ax.ticklabel_format(style='sci', axis='y', scilimits=(-4, 4), useOffset=False)
 
-    def scatter(self, funcname1, funcname2, ax=None, points=10000, labeldesc=False, **kwargs):
+    def scatter(self, funcname1, funcname2, ax=None, points=10000,
+                labeldesc=False, conf=None, shortest=False, **kwargs):
         ''' Scatter plot of samples from two model functions
 
             Args:
@@ -571,6 +599,7 @@ class McAxisPlot:
                 ax (plt.axes): Matplotlib Axis to plot on
                 points (int): Number of points to plot
                 labeldesc (bool): Use "description" as axis label instead of variable name
+                conf (float): Level of confidence for displaying confidence region
         '''
         _, ax = plotting.initplot(ax)
         xsamples, xunits = unitmgr.split_units(self._results.samples[funcname1])
@@ -583,6 +612,11 @@ class McAxisPlot:
 
         with suppress(ValueError):  # Raises in case where len(x) != len(y) when one output is constant
             ax.plot(xsamples[:points], ysamples[:points], **kwargs)
+
+        if conf and not shortest:
+            coverage_ellipse(ax, funcname1, funcname2, self._results, conf=conf)
+        elif conf and shortest:
+            coverage_blocks(ax, funcname1, funcname2, self._results, conf=conf, bins=kwargs.get('bins', 100))
 
         if labeldesc:
             xlabel = self._results.descriptions.get(funcname1, '')
@@ -651,3 +685,61 @@ class McAxisPlot:
             ax.set_ylabel(f'{report.mathstr_to_latex(f"u({funcname})")} (Relative to final)')
         else:
             ax.set_ylabel(f'{report.mathstr_to_latex(f"u({funcname})")} {report.Unit(units).latex(bracket=True)}')
+
+
+def _get_jointdist(means, covariance, function1, function2):
+    ''' Get joint distribution means and Covariance matrix '''
+    mean0 = unitmgr.strip_units(means[function1])
+    mean1 = unitmgr.strip_units(means[function2])
+    Uy = [[unitmgr.strip_units(covariance[function1][function1]),
+           unitmgr.strip_units(covariance[function1][function2])],
+          [unitmgr.strip_units(covariance[function2][function1]),
+           unitmgr.strip_units(covariance[function2][function2])]]
+    return (mean0, mean1), Uy
+
+
+def coverage_ellipse(ax, fname1, fname2, result, conf=.95, N=1000):
+    ''' Add 95% coverage ellipse to the plot using JCGM102:2011 Section 7.7.2 '''
+    center, Uy = _get_jointdist(result.expected, result.covariance(), fname1, fname2)
+    Uy = np.asarray(Uy)
+    Linv = linalg.inv(linalg.cholesky(Uy, lower=True))
+
+    # Because this is slow, don't use full MC samples
+    yr = np.array(list(result.samples.values())).T[:N]   # Samples
+    y = np.array(list(result.expected.values()))   # Expected
+
+    dr2 = np.zeros(N)
+    for i, yy in enumerate(yr):
+        yr_circle = (Linv @ (yy-y))
+        dr2[i] = yr_circle.T @ yr_circle
+    dr = np.sqrt(dr2)
+
+    kp = np.quantile(dr, conf)  # Coverage factor
+
+    eigval, eigvec = np.linalg.eigh(Uy)
+    width = 2*np.sqrt(eigval[0])*kp
+    height = 2*np.sqrt(eigval[1])*kp
+    angle = np.degrees(np.arctan2(*eigvec[::-1, 0]))
+
+    ax.add_patch(
+        Ellipse(center, width, height, angle=angle,
+                color='C1', fill='none', zorder=5, alpha=.3))
+
+
+def coverage_blocks(ax, fname1, fname2, result, conf=.95, bins=100):
+    ''' Add 95% "smallest" coverage region using JCGM102:2011 Section 7.7.4 '''
+    xsamples = unitmgr.strip_units(result.samples[fname1])
+    ysamples = unitmgr.strip_units(result.samples[fname2])
+    counts, ybins, xbins = np.histogram2d(ysamples, xsamples, bins=bins, density=True)
+    dx = np.diff(xbins)[0]
+    dy = np.diff(ybins)[0]
+    area = dx * dy
+    sort_idx = np.unravel_index(np.argsort(counts, axis=None), counts.shape)
+    iconf = np.where(np.cumsum((counts[sort_idx]*area)[::-1]) > conf)[0][0]
+    yidx = sort_idx[0][::-1][:iconf]
+    xidx = sort_idx[1][::-1][:iconf]
+
+    for xi, yi in zip(xidx, yidx):
+        ax.add_patch(
+            Rectangle((xbins[xi], ybins[yi]), dx, dy,
+                      color='C1', lw=0, alpha=.3, zorder=5))

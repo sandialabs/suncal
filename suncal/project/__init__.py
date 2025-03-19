@@ -11,3 +11,5 @@ from .proj_revsweep import ProjectReverseSweep
 from .proj_curvefit import ProjectCurveFit
 from .proj_interval import ProjectIntervalTest, ProjectIntervalTestAssets, ProjectIntervalBinom, \
                            ProjectIntervalBinomAssets, ProjectIntervalVariables, ProjectIntervalVariablesAssets
+from .proj_meassys import ProjectMeasSys
+from .proj_mqa import ProjectMqa

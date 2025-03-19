@@ -13,6 +13,8 @@ from .proj_reverse import ProjectReverse
 from .proj_sweep import ProjectSweep
 from .proj_revsweep import ProjectReverseSweep
 from .proj_curvefit import ProjectCurveFit
+from .proj_mqa import ProjectMqa
+from .proj_meassys import ProjectMeasSys
 from .proj_interval import (ProjectIntervalTest, ProjectIntervalTestAssets, ProjectIntervalBinom,
                             ProjectIntervalBinomAssets, ProjectIntervalVariables, ProjectIntervalVariablesAssets)
 from ..common import report
@@ -51,6 +53,10 @@ class Project:
             mode = 'data'
         elif isinstance(item, ProjectDistExplore):
             mode = 'distributions'
+        elif isinstance(item, ProjectMqa):
+            mode = 'mqa'
+        elif isinstance(item, ProjectMeasSys):
+            mode = 'system'
         elif isinstance(item, ProjectIntervalBinom):
             mode = 'intervalbinom'
         elif isinstance(item, ProjectIntervalBinomAssets):
@@ -95,6 +101,16 @@ class Project:
     def rename_item(self, index, name):
         ''' Rename an item '''
         self.items[index].name = name
+
+    def duplicate_item(self, index):
+        ''' Duplicate an item '''
+        item = self.items[index]
+        config = item.get_config()
+        new = item.__class__(item.name)
+        new.project = self
+        new.load_config(config)
+        self.items.append(new)
+        return new
 
     def save_config(self, fname):
         ''' Save project config file '''
@@ -164,6 +180,10 @@ class Project:
                 item = ProjectDataSet.from_config(configdict)
             elif mode == 'distributions':
                 item = ProjectDistExplore.from_config(configdict)
+            elif mode == 'mqa':
+                item = ProjectMqa.from_config(configdict)
+            elif mode == 'system':
+                item = ProjectMeasSys.from_config(configdict)
             elif mode == 'intervalbinom':
                 item = ProjectIntervalBinom.from_config(configdict)
             elif mode == 'intervalbinomasset':

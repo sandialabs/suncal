@@ -2,19 +2,6 @@
 from ...common import report
 
 
-def inputs():
-    rpt = report.Report()
-    rpt.hdr('Data Entry', level=3)
-    rpt.txt('Data is grouped by columns. Each column typically represents '
-            'a reproducibility condition, such as all measurements made on a single day, '
-            'or by a single operator. The values in the column represent repeatability '
-            'conditions, such as repeated measurements made on that day or by that operator. '
-            'Use the + and - buttons to add or remove data columns, or load data from a '
-            'file using the menu. Double-click a column header to change its name, '
-            'which could be a date.')
-    return rpt
-
-
 class AnovaHelp:
     @staticmethod
     def nohelp():
@@ -25,7 +12,17 @@ class AnovaHelp:
     @staticmethod
     def summary():
         rpt = report.Report()
-        rpt.hdr('Data Set - Summary')
+        rpt.hdr('Repeatability & Reproducibility Data')
+        rpt.hdr('Data Entry', level=3)
+        rpt.txt('Data is grouped by columns. Each column typically represents '
+                'a reproducibility condition, such as all measurements made on a single day, '
+                'or by a single operator. The values in the column represent repeatability '
+                'conditions, such as repeated measurements made on that day or by that operator. '
+                'Use the + and - buttons to add or remove data columns, or load data from a '
+                'file using the menu. Double-click a column header to change its name, '
+                'which could be a date.')
+
+        rpt.hdr('Statistics', level=3)
         rpt.txt('Summary statistics of the data are shown. The first table lists '
                 'the statistics for each column/group in the table, including: \n\n'
                 '- **Group**: The name of each group, as entered in the table header row\n'

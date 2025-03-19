@@ -227,10 +227,9 @@ def optimize(dproc, dtest, LL, UL, target, allow_negative=False, conditional=Fal
 def mincost(dproc, dmeas, cost_pfa, cost_pfr, LL=-1, UL=1):
     ''' Guardband by minimizing total expected cost, where
 
-        cost = cost_pfa * pfa + cost_pfr * pfr
+            cost = cost_pfa * pfa + cost_pfr * pfr
 
-        solve for symmetric guardband limits that minimize the
-        cost function.
+        solve for guardband limits that minimize the cost function.
 
         Args:
             dproc (stats.rv_frozen or distributions.Distribution):
@@ -250,19 +249,25 @@ def mincost(dproc, dmeas, cost_pfa, cost_pfr, LL=-1, UL=1):
             suncal.risk.guardband_tur.mincost for symmetric/normal systems
             based on TUR and ITP.
     '''
-    def total_cost(GB):
-        # Setting AL=AU.
-        pfa = PFA(dproc, dmeas, LL, UL, GB, GB)
-        pfr = PFR(dproc, dmeas, LL, UL, GB, GB)
+    def total_cost(gblimits):
+        ''' Calculate total cost given guardband offsets gblimits = (gbl, gbu) '''
+        gbl, gbu = gblimits
+        pfa = PFA(dproc, dmeas, LL, UL, gbl, gbu)
+        pfr = PFR(dproc, dmeas, LL, UL, gbl, gbu)
         return cost_pfa * pfa + cost_pfr * pfr
-    result = minimize(total_cost, UL*.1)
+
+    width = (UL-LL)
+    guess = width*.05 if np.isfinite(width) else dproc.std()/2
+
+    result = minimize(total_cost, (guess, guess))
     # result.fun gives expected cost value
     if result.success:
-        gbofst = result.x[0]
-        gbofst = min(gbofst, (UL-LL)/2)
+        gbl, gbu = result.x
+        gbl = min(gbl, width/2) if np.isfinite(LL) else 0
+        gbu = min(gbu, width/2) if np.isfinite(UL) else 0
     else:
-        gbofst = 0
-    return gbofst, gbofst
+        gbl = gbu = 0
+    return gbl, gbu
 
 
 def minimax(dmeas, cost_pfa, cost_pfr_u, cost_pfr_l, LL=-1, UL=1):

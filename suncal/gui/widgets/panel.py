@@ -35,7 +35,7 @@ class WidgetPanel(QtWidgets.QTreeWidget):
                 self.wasexpanded(item)
                 break
 
-    def hide(self, name, hide=True):
+    def hide_widget(self, name, hide=True):
         ''' Show or hide an item '''
         item = self.findItems(name, QtCore.Qt.MatchFlag.MatchExactly, 0)
         with suppress(IndexError):

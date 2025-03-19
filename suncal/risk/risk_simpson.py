@@ -155,8 +155,8 @@ def PFA_conditional(dist_proc, dist_test, LL, UL, GBL=0, GBU=0, testbias=0, N=50
     else:
         intol_procvals = np.linspace(LL, UL, N)
 
-    intol_and_accepted = simpson(integrand(intol_procvals), intol_procvals)
+    intol_and_accepted = simpson(integrand(intol_procvals), x=intol_procvals)
 
     all_procvals = np.linspace(limits.proc.lo, limits.proc.hi, N)
-    accepted = simpson(integrand(all_procvals), all_procvals)
+    accepted = simpson(integrand(all_procvals), x=all_procvals)
     return 1 - intol_and_accepted / accepted

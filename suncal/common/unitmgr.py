@@ -83,8 +83,18 @@ def split_units(u):
     return u, units
 
 
+def get_units(u):
+    ''' Get units of quantity '''
+    if has_units(u):
+        return u.units
+    return None
+
+
 def make_quantity(value, unit):
     ''' Make a Pint Quantity with the value and (possibly None) unit or unit string '''
+    if str(unit).lower() == 'none':
+        return value
+
     if unit is not None and has_units(value):
         return convert(value, unit)
 

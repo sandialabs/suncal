@@ -81,6 +81,14 @@ class ExpandedConfidenceWidget(QtWidgets.QWidget):
             params = {'k': self.kvalue.value()}
         return params
 
+    def get_conf(self):
+        ''' Confidence value, converting from k if necessary '''
+        if self.cmbMode.currentIndex() == 0:  # Confidence
+            conf = self.confvalue.value()/100
+        else:
+            conf = ttable.confidence(self.kvalue.value(), 1E9)
+        return conf
+
     def get_shortest(self):
         return self.cmbShortest.currentText() == 'Shortest'
 
@@ -96,10 +104,11 @@ class DistributionEditTable(QtWidgets.QTableWidget):
 
     ROLE_HISTDATA = QtCore.Qt.ItemDataRole.UserRole + 2    # Original, user-entered data
 
-    def __init__(self, initargs=None, locslider=False):
+    def __init__(self, initargs=None, locslider=False, showmedian=True):
         super().__init__()
         self.showlocslider = locslider
         self.range = (-2.0, 2.0)
+        self.showmedian = showmedian
         self.setMinimumWidth(200)
         self.setMaximumHeight(200)
         self.verticalHeader().setVisible(False)
@@ -142,19 +151,20 @@ class DistributionEditTable(QtWidgets.QTableWidget):
 
         if 'loc' in argnames:
             argnames.remove('loc')
-        if stats_dist.showshift:
-            argnames = ['shift'] + argnames
-            initargs.setdefault('shift', stats_dist.distargs.get('loc', 0))
-        else:
-            argnames = ['median'] + argnames
-
-            try:
-                median = stats_dist.median()
-            except TypeError:
-                median = 0
+        if self.showmedian:
+            if stats_dist.showshift:
+                argnames = ['shift'] + argnames
+                initargs.setdefault('shift', stats_dist.distargs.get('loc', 0))
             else:
-                median = median if np.isfinite(median) else 0
-            initargs['median'] = median
+                argnames = ['median'] + argnames
+
+                try:
+                    median = stats_dist.median()
+                except TypeError:
+                    median = 0
+                else:
+                    median = median if np.isfinite(median) else 0
+                initargs['median'] = median
 
         # Strip any units that may trickle in
         for k, v in initargs.items():

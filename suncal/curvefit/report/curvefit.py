@@ -9,6 +9,7 @@ import matplotlib.dates as mdates
 
 from ...common import report, plotting
 from ...common.ttable import k_factor
+from .wave import ReportWaveform
 
 
 class ReportCurveFit:
@@ -36,6 +37,17 @@ class ReportCurveFit:
         r.table(rows, hdr=hdr)
         return r
 
+    def tolerances(self, **kwargs):
+        ''' Report probability of conformance for fit parameters '''
+        r = report.Report(**kwargs)
+        if self._results.tolerances:
+            rows = [
+                [name, str(tol), report.Number(self._results.poc[name]*100, fmin=1, postfix=' %')]
+                for name, tol in self._results.tolerances.items()
+            ]
+            r.table(rows, hdr=['Coefficient', 'Tolerance', 'Probability of Conformance'])
+        return r
+
     def goodness_fit(self, **kwargs):
         ''' Report goodness-of-fit values r-squared and Syx. Note r is not a good predictor
             of fit for nonlinear models, but we report it anyway.
@@ -45,9 +57,11 @@ class ReportCurveFit:
         rows.append([report.Number(residuals.r, fmt='decimal'),
                      report.Number(residuals.r**2, fmt='decimal'),
                      report.Number(residuals.Syx),
-                     report.Number(residuals.F, fmt='auto')])
+                     report.Number(residuals.F, fmt='auto'),
+                     report.Number(max(abs(residuals.residuals)), fmt='auto')
+                     ])
         r = report.Report(**kwargs)
-        r.table(rows, ['r', 'r-squared', 'Standard Error (Syx)', 'F-value'])
+        r.table(rows, ['r', 'r-squared', 'Standard Error (Syx)', 'F-value', 'Maximum Residual'])
         return r
 
     def correlation(self, **kwargs):
@@ -105,7 +119,7 @@ class ReportCurveFit:
         x, y = self._results.setup.points.x, self._results.setup.points.y
         if self._results.setup.points.xdate:
             xstring = mdates.num2date(x)
-            xstring = [k.strftime('%d-%b-%Y') for k in xstring]
+            xstring = [k.strftime('%Y-%m-%d') for k in xstring]
         else:
             xstring = [str(k) for k in x]
         residuals = self._results.residuals.residuals
@@ -142,8 +156,8 @@ class ReportCurveFit:
             t2 = mdates.date2num(parse(t2))
 
         if self._results.setup.points.xdate:
-            t1str = mdates.num2date(t1).strftime('%d-%b-%Y')
-            t2str = mdates.num2date(t2).strftime('%d-%b-%Y')
+            t1str = mdates.num2date(t1).strftime('%Y-%m-%d')
+            t2str = mdates.num2date(t2).strftime('%Y-%m-%d')
         else:
             t1str, t2str = report.Number.number_array([t1, t2], thresh=8)
 
@@ -199,7 +213,7 @@ class ReportCurveFit:
             rpt.sympy(self._results.prediction_expr(subs=True), end='\n\n')
         return rpt
 
-    def confpred_xval(self, xval, k=2, conf=None, plot=False, mode='Syx', **kwargs):
+    def confpred_xval(self, k=2, conf=None, plot=False, mode='Syx', **kwargs):
         ''' Report confidence and prediction bands with table
             and optional plot showing a specific x value
 
@@ -210,12 +224,18 @@ class ReportCurveFit:
                 plot (bool): Include a plot showing the full curve fit with the predicted value
                 mode (string): Prediction band mode. One of 'Syx', 'sigy', or 'sigylast'.
         '''
-        xval = np.atleast_1d(xval)
+        xnames = list(self._results.predictions.keys())
+        xvalues = [x[0] for x in self._results.predictions.values()]
+        tolerances = [x[1] for x in self._results.predictions.values()]
+
         x = []
-        for val in xval:
+        for val in xvalues:
             if self._results.setup.points.xdate:
-                with suppress(AttributeError, ValueError, OverflowError):
+                try:
                     x.append(mdates.date2num(parse(val)))
+                except (TypeError, AttributeError, ValueError, OverflowError):
+                    # Already a date float
+                    x.append(val)
             else:
                 with suppress(ValueError):
                     x.append(float(val))
@@ -225,15 +245,30 @@ class ReportCurveFit:
         uconf = self._results.confidence_band(x, k=k, conf=conf)
         upred = self._results.prediction_band(x, k=k, conf=conf, mode=mode)
         kstr = f'(k={k})' if conf is None else f'({conf*100:.4g}%)'
-        hdr = ['x', 'y', f'confidence interval {kstr}', f'prediction interval {kstr}']
+        hdr = ['Name', 'x', 'y', f'confidence interval {kstr}', f'prediction interval {kstr}', 'Tolerance', 'Probability of Conformance']
         rows = []
         for i in range(len(x)):
+            if k == 1:
+                upred_std = upred[i]
+            else:
+                upred_std = self._results.prediction_band(x[i], k=1, mode=mode)
+
+            poc = tolerances[i].probability_conformance(y[i], upred_std, self._results.degf) if tolerances[i] else None
             yi, yconfminus, yconfplus, ypredminus, ypredplus = report.Number.number_array(
                 [y[i], y[i]-uconf[i], y[i]+uconf[i], y[i]-upred[i], y[i]+upred[i]], fmin=2, **kwargs)
-            rows.append([str(xval[i]),
+
+            if self._results.setup.points.xdate:
+                xlabel = mdates.num2date(x[i]).strftime('%Y-%m-%d')
+            else:
+                xlabel = str(xvalues[i])
+            rows.append([xnames[i],
+                         xlabel,
                          yi,
                          ('±', report.Number(uconf[i], fmin=2, **kwargs), ' (', yconfminus, ', ', yconfplus, ')'),
-                         ('±', report.Number(upred[i], fmin=2, **kwargs), ' (', ypredminus, ', ', ypredplus, ')')])
+                         ('±', report.Number(upred[i], fmin=2, **kwargs), ' (', ypredminus, ', ', ypredplus, ')'),
+                         '' if tolerances[i] is None else str(tolerances[i]),
+                         report.Number(poc*100, fmin=1, postfix=' %') if poc else ''
+                         ])
 
         r = report.Report(**kwargs)
         if plot:
@@ -405,7 +440,7 @@ class PlotCurveFit:
         _, ax = plotting.initplot(ax)
 
         if self._results.setup.points.xdate and isinstance(xval, str):
-            xfloat = np.array([parse(x).tooridnal() for x in xval])
+            xfloat = np.array([parse(x) for x in xval])
             xplot = mdates.num2date(xfloat)
         else:
             xfloat = xval
@@ -676,6 +711,7 @@ class ReportCurveFitCombined:
         self.gum = ReportCurveFit(self._results.gum) if self._results.gum else None
         self.montecarlo = ReportCurveFit(self._results.montecarlo) if self._results.montecarlo else None
         self.markov = ReportCurveFit(self._results.markov) if self._results.markov else None
+        self.waveform = ReportWaveform(self._results.waveform)
 
     def _repr_markdown_(self):
         return self.summary().get_md()
@@ -736,12 +772,12 @@ class ReportCurveFitCombined:
         rpt = report.Report(**kwargs)
         rpt.hdr('Curve Fit', level=2)
 
-        for method in self._METHODS:
-            methodreport = getattr(self, method)
+        for abbr, method in self._METHODS.items():
+            methodreport = getattr(self, abbr)
             if methodreport is None:
                 continue
 
-            rpt.hdr(f'Method: {self._METHODS[method]}', level=3)
+            rpt.hdr(f'Method: {method}', level=3)
 
             if kwargs.get('summary', True):
                 rpt.append(methodreport.summary(k=k, conf=conf, **kwargs))
@@ -760,7 +796,7 @@ class ReportCurveFitCombined:
 
             if kwargs.get('prediction', False):
                 rpt.append(methodreport.confpred_xval(
-                    kwargs['xvals'], k=k, conf=conf, plot=True, mode=kwargs.get('mode', 'Syx')))
+                    k=k, conf=conf, plot=True, mode=kwargs.get('mode', 'Syx')))
 
             if kwargs.get('interval') is not None:
                 rpt.append(methodreport.interval_uncert(*kwargs.get('interval'), k=k, conf=conf))

@@ -9,6 +9,7 @@ from scipy import interpolate, optimize
 from ...common import reporter
 from ...common.ttable import k_factor
 from ..report.curvefit import ReportCurveFit, ReportCurveFitCombined
+from ..report.wave import ReportWaveform
 
 
 @reporter.reporter(ReportCurveFit)
@@ -19,7 +20,7 @@ class CurveFitResults:
             fitresults: CurveFitResults instance
             fitsetup: tuple data from CurveFit.fitsetup()
     '''
-    def __init__(self, fitresults, fitsetup):
+    def __init__(self, fitresults, fitsetup, tolerances=None, predictions=None):
         self.coeffs = fitresults.coeff
         self.uncerts = fitresults.uncert
         self.covariance = fitresults.covariance
@@ -28,7 +29,13 @@ class CurveFitResults:
         self.samples = fitresults.samples
         self.acceptance = fitresults.acceptance
         self.setup = fitsetup
+        self.tolerances = tolerances if tolerances is not None else {}
+        self.predictions = predictions if predictions is not None else {}
         self.correlation = self.covariance / self.uncerts[:, None] / self.uncerts[None, :]
+        self.poc = {}
+        for name, tol in self.tolerances.items():
+            idx = self.setup.coeffnames.index(name)
+            self.poc[name] = tol.probability_conformance(self.coeffs[idx], self.uncerts[idx], self.degf)
 
     def y(self, x):
         ''' Predict Y value at X '''
@@ -325,6 +332,26 @@ class CurveFitResults:
         return ok
 
 
+
+@dataclass
+class WaveformFeatureResult:
+    ''' Result from one waveform event calculation '''
+    calc: str  # Calculation type
+    uncert: 'EventUncert'
+    clip: tuple[float, float]
+    tolerance: 'Limit'
+    thresh: float
+    poc: float
+
+
+@reporter.reporter(ReportWaveform)
+@dataclass
+class WaveformFeatures:
+    ''' Result from all waveform feature calculations '''
+    features: dict[str, WaveformFeatureResult]
+    waveform: 'Array'
+
+
 @reporter.reporter(ReportCurveFitCombined)
 @dataclass
 class CurveFitResultsCombined:
@@ -340,6 +367,7 @@ class CurveFitResultsCombined:
     gum: CurveFitResults
     montecarlo: CurveFitResults
     markov: CurveFitResults
+    waveform: WaveformFeatures
 
     def method(self, name):
         ''' Get results from one method

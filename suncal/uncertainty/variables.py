@@ -120,7 +120,7 @@ class RandomVariable:
     @property
     def units(self):
         ''' Units of measured value '''
-        return unitmgr.split_units(self.value)[1]
+        return unitmgr.get_units(self.value)
 
     @property
     def expected(self):
@@ -309,6 +309,12 @@ class Typeb:
         kwargs_magnitude = self._parse_kwds(self.kwargs)
         self.distribution = get_distribution(self.distname, **kwargs_magnitude)
 
+    def set_nominal(self, nominal):
+        ''' Change the nominal value '''
+        self.nominal = nominal
+        kwargs_magnitude = self._parse_kwds(self.kwargs)
+        self.distribution = get_distribution(self.distname, **kwargs_magnitude)
+
     def _parse_kwds(self, kwargs):
         ''' Parse the keyword args, converting string uncertainties such as "1%" into values '''
         self.distname = kwargs.get('dist', self.distname)
@@ -406,7 +412,7 @@ class Typeb:
             samples = samples * self.units
         return samples
 
-    def pdf(self, stds=4, num=200):
+    def pdf(self, stds=6, num=200):
         ''' Get X and Y of probability Density Function
 
             Args:
@@ -417,8 +423,9 @@ class Typeb:
             Returns:
                 X and Y arrays for plotting PDF of the uncertainty component
         '''
-        unc = self.distribution.std()
-        x = np.linspace(-unc*stds, unc*stds, num=num)
+        plusminus = self.distribution.std() * stds
+        mid = self.distribution.median()
+        x = np.linspace(mid - plusminus, mid + plusminus, num=num)
         y = self.distribution.pdf(x)
         nom = unitmgr.strip_units(self.nominal)
         return x + nom, y
@@ -459,7 +466,7 @@ class Variables:
     @property
     def units(self):
         ''' Dictionary Pint units of RandomVariables '''
-        return {name: unitmgr.split_units(v.value)[1] for name, v in self.variables.items()}
+        return {name: unitmgr.get_units(v.value) for name, v in self.variables.items()}
 
     @property
     def correlation_coefficients(self):

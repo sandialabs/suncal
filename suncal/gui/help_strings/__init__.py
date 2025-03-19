@@ -6,3 +6,5 @@ from .distexplore_help import DistExploreHelp
 from .curvefit_help import CurveHelp
 from .anova_help import AnovaHelp
 from .main_help import MainHelp
+from .system_help import SystemHelp
+from .mqa_help import MqaHelp

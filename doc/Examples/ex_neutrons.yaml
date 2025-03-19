@@ -1,0 +1,76 @@
+- functions:
+  - desc: ''
+    expr: A*f*F*(S-B)
+    name: eta
+    units: null
+  inputs:
+  - autocorrelate: true
+    desc: ''
+    mean: 1.0
+    name: A
+    numnewmeas: null
+    uncerts:
+    - a: '.035'
+      degf: 12.5
+      desc: null
+      dist: uniform
+      k: 2
+      name: u(A)
+      unc: 1
+      units: dimensionless
+    units: null
+  - autocorrelate: true
+    desc: ''
+    mean: 80.0
+    name: B
+    numnewmeas: null
+    uncerts:
+    - degf: 9.0
+      desc: null
+      dist: normal
+      k: 1.0
+      name: u(B)
+      unc: '2.83'
+      units: dimensionless
+    units: null
+  - autocorrelate: true
+    desc: ''
+    mean: 1.27
+    name: F
+    numnewmeas: null
+    uncerts:
+    - a: '.055'
+      degf: 12.5
+      desc: null
+      dist: uniform
+      k: 2
+      name: u(F)
+      unc: 1
+      units: dimensionless
+    units: null
+  - autocorrelate: true
+    desc: ''
+    mean: 9700.0
+    name: S
+    numnewmeas: null
+    uncerts:
+    - degf: 29.0
+      desc: null
+      dist: poisson
+      k: 2
+      name: u(S)
+      unc: 1
+      units: dimensionless
+      v: '9700'
+    units: null
+  - autocorrelate: true
+    desc: ''
+    mean: 4353.0
+    name: f
+    numnewmeas: null
+    uncerts: []
+    units: null
+  mode: uncertainty
+  name: uncertainty
+  samples: 1000000
+  unitdefs: stadia = 185*meter

@@ -15,6 +15,29 @@ from .help_strings import RiskHelp
 from . import page_dataimport
 
 
+class AdjustWidget(QtWidgets.QDialog):
+    def __init__(self, params):
+        super().__init__()
+        self.setWindowTitle('Adjust Process Distribution')
+        self.fit = QtWidgets.QComboBox()
+        self.fit.addItems(['In-Tolerance Probability', 'Process Capability Index', 'Sigma Level', 'Defects per Million Opportunities'])
+        self.target = widgets.FloatLineEdit('95')
+        self.bychange = QtWidgets.QComboBox()
+        self.bychange.addItems(params)
+        self.buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.StandardButton.Ok |
+                                                  QtWidgets.QDialogButtonBox.StandardButton.Cancel)
+        flayout = QtWidgets.QFormLayout()
+        flayout.addRow('Set', self.fit)
+        flayout.addRow('to', self.target)
+        flayout.addRow('by adjusting', self.bychange)
+        layout = QtWidgets.QVBoxLayout()
+        layout.addLayout(flayout)
+        layout.addWidget(self.buttons)
+        self.setLayout(layout)
+        self.buttons.accepted.connect(self.accept)
+        self.buttons.rejected.connect(self.reject)
+
+
 class RiskWidget(QtWidgets.QWidget):
     ''' Widget for risk calculations '''
 
@@ -26,11 +49,12 @@ class RiskWidget(QtWidgets.QWidget):
         self.component = component
         self.outputpage = QtWidgets.QComboBox()
         self.outputpage.addItems(['Risk',
+                                  'Monte Carlo Risk',
                                   'Guardband sweep',
                                   'Probability of Conformance'])
 
         self.limits = widgets.DoubleLineEdit(-2, 2, 'Lower Specification Limit:', 'Upper Specification Limit:')
-        self.btnSetItp = QtWidgets.QPushButton('Adjust ITP')
+        self.btnSetItp = QtWidgets.QPushButton('Adjust Distribution...')
         self.guardband = widgets.DoubleLineEdit(0, 0, 'Lower Guardband (relative):', 'Upper Guardband (relative):')
         self.chkGB = QtWidgets.QCheckBox('Guardband')
 
@@ -106,15 +130,15 @@ class RiskWidget(QtWidgets.QWidget):
         self.outputpage.currentIndexChanged.connect(self.replot)
 
         self.menu = QtWidgets.QMenu('&Risk')
-        self.actConditionalPFA = QtGui.QAction('Conditional PFA', self)
+        self.actConditionalPFA = QtGui.QAction('&Conditional PFA', self)
         self.actConditionalPFA.setCheckable(True)
-        self.actShowJointPDF = QtGui.QAction('Plot Joint PDFs', self)
+        self.actShowJointPDF = QtGui.QAction('Plot &Joint PDFs', self)
         self.actShowJointPDF.setCheckable(True)
         self.actShowJointPDF.setChecked(True)
-        self.actImportDistProc = QtGui.QAction('Import process distribution...', self)
-        self.actImportDistMeas = QtGui.QAction('Import measurement distribution...', self)
-        self.actCalcGB = QtGui.QAction('Calculate guardband...', self)
-        self.actSaveReport = QtGui.QAction('Save Report...', self)
+        self.actImportDistProc = QtGui.QAction('Import &process distribution...', self)
+        self.actImportDistMeas = QtGui.QAction('Import &measurement distribution...', self)
+        self.actCalcGB = QtGui.QAction('Calculate &guardband...', self)
+        self.actSaveReport = QtGui.QAction('&Save Report...', self)
         self.menu.addAction(self.actConditionalPFA)
         self.menu.addAction(self.actShowJointPDF)
         self.menu.addSeparator()
@@ -162,6 +186,8 @@ class RiskWidget(QtWidgets.QWidget):
 
         if self.outputpage.currentText() == 'Guardband sweep':
             self.replot_gbsweep()
+        elif self.outputpage.currentText() == 'Monte Carlo Risk':
+            self.replot_mcrisk()
         elif self.outputpage.currentText() == 'Probability of Conformance':
             self.replot_probconform()
         else:
@@ -180,6 +206,13 @@ class RiskWidget(QtWidgets.QWidget):
         ''' Update label fields, recalculating risk values '''
         conditional = self.actConditionalPFA.isChecked()
         self.txtOutput.setReport(self.component.result.report.summary(conditional=conditional))
+
+    def replot_mcrisk(self):
+        ''' Plot Monte Carlo risk integration '''
+        result = self.component.model.calculate_montecarlo()
+        self.txtOutput.setReport(result.report.summary())
+        result.report.plot(fig=self.fig)
+        self.canvas.draw_idle()
 
     def replot_gbsweep(self):
         ''' Plot guardband sweep '''
@@ -285,28 +318,43 @@ class RiskWidget(QtWidgets.QWidget):
         ''' Set the process distribution standard deviation to reach the
             input ITP value
         '''
-        itp, ok = QtWidgets.QInputDialog.getDouble(
-            self, 'Enter ITP', 'Adjust process distribution to result in this ITP value (as a percent from 1-99)',
-            95, .1, 99.999999, 3)
+        dlg = AdjustWidget(self.component.model.process_dist.argnames)
+        ok = dlg.exec()
 
-        params = self.component.model.process_dist.argnames
-        param, ok2 = QtWidgets.QInputDialog.getItem(
-            self, 'Distribution Parameter', 'Select parameter to adjust',
-            params, editable=False)
+        if ok:
+            param = dlg.bychange.currentText()
+            if dlg.fit.currentIndex() in [0, 3]:  # Set ITP/DPMO
+                if dlg.fit.currentIndex() == 0:
+                    itp = dlg.target.value() / 100
+                else:
+                    itp = 1 - dlg.target.value() / 1000000
+                pvalue = risk.get_sigmaproc_from_itp_arb(
+                    self.component.model.process_dist,
+                    param,
+                    itp,
+                    *self.component.model.speclimits)
 
-        if ok and ok2:
-            itp /= 100
-            pvalue = risk.get_sigmaproc_from_itp_arb(
-                self.component.model.process_dist,
-                param,
-                itp,
-                *self.component.model.speclimits)
+                if pvalue is None:
+                    QtWidgets.QMessageBox.warning(self, 'ITP', f'No solution found.'
+                                                            f'Try again after adjusting {param} manually to get closer to the '
+                                                            'target ITP value.')
+                    return
 
-            if pvalue is None:
-                QtWidgets.QMessageBox.warning(self, 'ITP', f'No solution found for itp={itp*100:.2f}%. '
-                                                           f'Try again after adjusting {param} manually to get closer to the '
-                                                           'target ITP value.')
-                return
+            else:
+                # Set CPK or sigma
+                cpk = dlg.target.value()
+                if dlg.fit.currentIndex() == 2:  # sigma level = 3*cpk
+                    cpk /= 3
+                pvalue = risk.get_sigmaproc_from_cpk(
+                    self.component.model.process_dist,
+                    param,
+                    cpk,
+                    *self.component.model.speclimits)
+                if pvalue is None:
+                    QtWidgets.QMessageBox.warning(self, 'Cpk', f'No solution found for. '
+                                                            f'Try again after adjusting {param} manually to get closer to the '
+                                                            'target Cpk value.')
+                    return
 
             args = self.component.model.process_dist.kwds
             args[param] = pvalue

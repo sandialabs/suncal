@@ -150,7 +150,7 @@ class UncertReverseWidget(page_uncert.UncertPropWidget):
         super().__init__(component, parent)
 
         self.menu.removeAction(self.mnuSaveSamples.menuAction())
-        self.actNewUnc = QtGui.QAction('New forward calculation from model', self)
+        self.actNewUnc = QtGui.QAction('New &forward calculation from model', self)
         self.actNewUnc.triggered.connect(lambda event, x=component: self.newtype.emit(x.get_config(), 'uncertainty'))
         self.actSweep.disconnect()
         self.actSweep.triggered.connect(lambda event, x=component: self.newtype.emit(x.get_config(), 'reversesweep'))

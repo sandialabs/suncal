@@ -11,6 +11,7 @@ from .version import __version__, __date__
 
 from .common import ttable, unitmgr
 from .common.unitmgr import ureg
+from .common.limit import Limit
 from .uncertainty import Model, ModelCallable, ModelComplex
 from . import reverse
 from . import risk

@@ -2,6 +2,7 @@
 
 import numpy as np
 
+from ..common.limit import Limit
 from .component import ProjectComponent
 from ..datasets.dataset_model import DataSet, DataSetSummary
 
@@ -77,6 +78,7 @@ class ProjectDataSet(ProjectComponent):
         d['colnames'] = self.model.colnames
         d['data'] = self.model.data.astype('float').tolist()
         d['desc'] = self.description
+        d['tolerance'] = self.model.tolerance.config() if self.model.tolerance else None
 
         if isinstance(self.model, DataSetSummary):
             d['nmeas'] = self.model.nmeas.astype('float').tolist()
@@ -97,4 +99,7 @@ class ProjectDataSet(ProjectComponent):
             self.model = DataSetSummary(means, stds, nmeas, column_names=colnames)
         else:
             self.model = DataSet(np.array(config['data']), column_names=colnames)
+        tolcfg = config.get('tolerance')
+        if tolcfg:
+            self.model.tolerance = Limit.from_config(tolcfg)
         self.calculate()

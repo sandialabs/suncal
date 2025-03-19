@@ -5,6 +5,7 @@ from scipy import stats
 from dateutil.parser import parse
 
 from ..common import reporter
+from ..common.limit import Limit
 from .report.dataset import ReportDataSet
 from . import dataset
 
@@ -34,6 +35,7 @@ class DataSetResult:
     anova: dataset.AnovaResult
     autocorrelation: list[dataset.AutoCorrelationResult]  # For each column
     correlation: list[list[float]]  # Correlation between columns
+    tolerance: Limit
 
     def array(self):
         ''' Convert 2D to array of mean/unc '''
@@ -67,7 +69,10 @@ class DataSetResult:
         try:
             idx = self.colnames.index(name)
         except ValueError:
-            idx = self.colvals.index(name)
+            try:
+                idx = self.colvals.index(name)
+            except ValueError:
+                idx = 0
         return idx
 
     def group_acorr(self, name) -> dataset.AutoCorrelationResult:
@@ -103,6 +108,7 @@ class DataSet:
             self.colnames = list(range(1, max(1, len(self.data)+1)))
         else:
             self.colnames = column_names
+        self.tolerance = None
         self._result = None
 
     @property
@@ -156,9 +162,9 @@ class DataSet:
     def calculate(self):
         ''' Calculate all the statistics '''
         pooled = dataset.pooled_stats(self.data)
-        groups = dataset.group_stats(self.data)
+        groups = dataset.group_stats(self.data, tolerance=self.tolerance)
         anova = dataset.anova(self.data)
-        stderr = dataset.standarderror(self.data)
+        stderr = dataset.standarderror(self.data, tolerance=self.tolerance)
         autocorr = [dataset.uncert_autocorrelated(column) for column in self.data]
         self._result = DataSetResult(
             self.data,
@@ -169,7 +175,8 @@ class DataSet:
             uncertainty=stderr,
             anova=anova,
             autocorrelation=autocorr,
-            correlation=np.corrcoef(self.data))
+            correlation=np.corrcoef(self.data),
+            tolerance=self.tolerance)
         return self._result
 
     def summarize(self) -> 'DataSetSummary':
@@ -209,6 +216,7 @@ class DataSetSummary:
             self.colnames = list(range(len(self.means)))
         else:
             self.colnames = column_names
+        self.tolerance = None
         self._result = None
 
     @property
@@ -261,7 +269,8 @@ class DataSetSummary:
             uncertainty=stderr,
             anova=anova,
             autocorrelation=None,
-            correlation=None)
+            correlation=None,
+            tolerance=self.tolerance)
         return self._result
 
     def _group_stats(self) -> dataset.GroupSummary:
@@ -269,13 +278,18 @@ class DataSetSummary:
         variance = self.stdevs**2
         sems = self.stdevs/np.sqrt(self.nmeas)
         degf = self.nmeas - 1
+        pocs = None
+        if self.tolerance is not None:
+            pocs = [self.tolerance.probability_conformance(mean, std, degf) for mean, std, degf in zip(self.means, self.stdevs, degf)]
+
         return dataset.GroupSummary(
             means=self.means,
             counts=self.nmeas,
             variances=variance,
             std_devs=self.stdevs,
             std_errs=sems,
-            degfs=degf)
+            degfs=degf,
+            pocs=pocs)
 
     def _pooled_stats(self) -> dataset.PooledResult:
         ''' Pooled standard deviation '''
@@ -317,11 +331,17 @@ class DataSetSummary:
                        anova_result.degf_mswit*anova_result.mean_sumsq_within)/sem_degf
             sem = np.sqrt(sem_std/ntotal)
             reprod_significant = False
+
+        poc = None
+        if self.tolerance:
+            poc = self.tolerance.probability_conformance(pstats.mean, sem_std, sem_degf)
+
         return dataset.StandardErrorResult(
             sem,
             sem_std,
             sem_degf,
-            reprod_significant)
+            reprod_significant,
+            poc=poc)
 
     def _anova(self, conf=.95) -> dataset.AnovaResult:
         ''' Analysis of Variance (one-way) for summarized statistics '''

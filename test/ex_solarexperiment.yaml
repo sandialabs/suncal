@@ -1,0 +1,221 @@
+- desc: ''
+  equipment: []
+  gbrules:
+  - idn: 1cc9879d21224fdca5bfcdf740a19e4a
+    method: rds
+    name: 4:1 RDS
+    threshold: 4.0
+  - idn: 564fec9f97684f65ab651492ec02f664
+    method: pfa
+    name: 2% PFA
+    threshold: 2
+  mode: mqa
+  name: mqa
+  quantities:
+  - costs:
+      annual:
+        adjust: 156800.0
+        cal: 156800.0
+        downtime:
+          adj: 3.0
+          cal: 30.0
+          rep: 30.0
+        nuut: 1
+        pe: 1.0
+        repair: 50000.0
+        spare_startup: 0.0
+        suut: 1.0
+        uut: 250000.0
+      item:
+        cfa: 35000000.0
+        cfr: 0
+    enditem: true
+    guardband:
+      accept_limit:
+        high: '1'
+        low: '-1'
+        nominal: '0'
+        units: ''
+      method: none
+      rule: 1cc9879d21224fdca5bfcdf740a19e4a
+    measurand:
+      degrade:
+        high: '110'
+        low: '90'
+        nominal: '100'
+        units: ''
+      description: ''
+      eopr_pct: 0.99993
+      eopr_pdf: null
+      fail:
+        high: '130'
+        low: '70'
+        nominal: '100'
+        units: ''
+      name: Solar Experiment
+      psr: 1.0
+      testpoint: 100.0
+      tolerance:
+        high: '110'
+        low: '90'
+        nominal: '100'
+        units: ''
+      units: milliwatt
+    measurement:
+      calibration:
+        mte_adjust: null
+        mte_repair: null
+        p_discard: 0.0
+        policy: asneeded
+        repair_limit:
+          high: '130'
+          low: '70'
+          nominal: '100'
+          units: ''
+        stress_post: null
+        stress_pre: null
+      equation: ''
+      indirect: {}
+      interval:
+        reliability: exponential
+        years: 1.0
+      mte:
+        accuracy_eopr: 0.95
+        accuracy_plusminus: 0.25
+        equipment: null
+        name: ''
+        quantity:
+          costs:
+            annual:
+              adjust: 0.0
+              cal: 400.0
+              downtime:
+                adj: 0.0
+                cal: 2.0
+                rep: 30.0
+              nuut: 3
+              pe: 1.0
+              repair: 7500.0
+              spare_startup: 0.0
+              suut: 1.0
+              uut: 75000.0
+            item:
+              cfa: 0.0
+              cfr: 0
+          enditem: false
+          guardband:
+            accept_limit:
+              high: '1'
+              low: '-1'
+              nominal: '0'
+              units: ''
+            method: none
+            rule: 1cc9879d21224fdca5bfcdf740a19e4a
+          measurand:
+            degrade: null
+            description: ''
+            eopr_pct: 0.9973000000000001
+            eopr_pdf: null
+            fail: null
+            name: Deuterium Lamp
+            psr: 1.0
+            testpoint: 100.0
+            tolerance:
+              high: '101'
+              low: '99'
+              nominal: '100'
+              units: ''
+            units: milliwatt
+          measurement:
+            calibration:
+              mte_adjust: null
+              mte_repair: null
+              p_discard: 0.0
+              policy: asneeded
+              repair_limit: null
+              stress_post: null
+              stress_pre: null
+            equation: ''
+            indirect: {}
+            interval:
+              reliability: exponential
+              years: 0.3333333
+            mte:
+              accuracy_eopr: 0.95
+              accuracy_plusminus: 0.25
+              equipment: null
+              name: Calibration system for Solar Experiment
+              quantity:
+                costs:
+                  annual:
+                    adjust: 0.0
+                    cal: 800.0
+                    downtime:
+                      adj: 0.0
+                      cal: 4.0
+                      rep: 30.0
+                    nuut: 2
+                    pe: 1.0
+                    repair: 9000.0
+                    spare_startup: 0.0
+                    suut: 1.0
+                    uut: 90000.0
+                  item:
+                    cfa: 0.0
+                    cfr: 0
+                enditem: false
+                guardband:
+                  accept_limit:
+                    high: '1'
+                    low: '-1'
+                    nominal: '0'
+                    units: ''
+                  method: none
+                  rule: 1cc9879d21224fdca5bfcdf740a19e4a
+                measurand:
+                  degrade: null
+                  description: ''
+                  eopr_pct: 0.95
+                  eopr_pdf: null
+                  fail: null
+                  name: Deuterium Lamp/Comparator
+                  psr: 1
+                  testpoint: 100.0
+                  tolerance:
+                    high: '100.25'
+                    low: '99.75'
+                    nominal: '100'
+                    units: ''
+                  units: milliwatt
+                measurement:
+                  calibration:
+                    mte_adjust: null
+                    mte_repair: null
+                    p_discard: 0.0
+                    policy: asneeded
+                    repair_limit: null
+                    stress_post: null
+                    stress_pre: null
+                  equation: ''
+                  indirect: {}
+                  interval:
+                    reliability: exponential
+                    years: 0.5
+                  mte:
+                    accuracy_eopr: 0.9986
+                    accuracy_plusminus: 0.0625
+                    equipment: null
+                    name: NIST
+                    quantity: null
+                    range: null
+                  testpoints: {}
+                  typea: null
+                  typeb: []
+              range: null
+            testpoints: {}
+            typea: null
+            typeb: []
+        range: null
+      testpoints: {}
+      typea: null
+      typeb: []

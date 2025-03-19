@@ -89,9 +89,6 @@ class OutputPlotWidget(QtWidgets.QWidget):
         self.bins.setVisible(not self.points.isVisible())
         self.overlay.setVisible(joint)
         self.cmbscat.setVisible(joint)
-        if joint and self.intervals.isChecked():
-            self.intervals.setChecked(False)
-        self.intervals.setVisible(not joint)
         self.flist.setVisible((not joint and len(self.flist) > 1) or (joint and len(self.flist) > 2))
         self.changed.emit()
 
@@ -552,16 +549,23 @@ class PageOutput(QtWidgets.QWidget):
 
         if self.outputPlot.joint():
             if self.outputPlot.showgum.isChecked() and self.outputPlot.showmc.isChecked():
+                confidence_region = None
+                if self.outputPlot.intervals.isChecked():
+                    confidence_region = self.outputPlot.expandedconf.get_conf()
                 if self.outputPlot.contour():
                     self.result.report.plot.joint_pdf(
                         fig=self.fig, functions=functions, overlay=self.outputPlot.overlay.isChecked(),
                         cmap=gui_settings.colormap_contour,
                         cmapmc=gui_settings.colormap_scatter,
+                        conf=confidence_region,
+                        shortest=shortest,
                         labeldesc=labeldesc)
                 else:
                     self.result.report.plot.joint_scatter(
                         fig=self.fig, functions=functions, overlay=self.outputPlot.overlay.isChecked(),
                         points=self.outputPlot.points.value(),
+                        conf=confidence_region,
+                        shortest=shortest,
                         labeldesc=labeldesc)
 
             elif self.outputPlot.showgum.isChecked():
@@ -675,7 +679,6 @@ class PageOutput(QtWidgets.QWidget):
                 self.outputSelect.removeItem(idx)
             if self.outputSelect.currentText() == 'Full Report':
                 self.refresh_fullreport()
-                self.outputupdate()
         else:
             self.outputSelect.blockSignals(True)
             self.outputSelect.clear()
@@ -683,7 +686,7 @@ class PageOutput(QtWidgets.QWidget):
             self.outputSelect.blockSignals(False)
             self.ctrlStack.setCurrentIndex(0)
             self.outputUnits.setVisible(False)
-            self.outputupdate()
+        self.outputupdate()
 
     def goback(self):
         self.back.emit()

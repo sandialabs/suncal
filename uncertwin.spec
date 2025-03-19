@@ -9,7 +9,7 @@ a = Analysis(['suncal\\gui\\__main__.py'],
              datas=[('suncal/gui/SUNCALmanual.pdf', '.'),
                     ('suncal/common/style/suncal_light.mplstyle', '.'),
                     ('suncal/common/style/suncal_dark.mplstyle', '.')],
-             hiddenimports=[],
+             hiddenimports=['scipy._lib.array_api_compat.numpy.fft'],
              hookspath=[],
              hooksconfig={
                 'matplotlib': {'backends': ['Qt5Agg', 'SVG', 'AGG', 'PDF']},

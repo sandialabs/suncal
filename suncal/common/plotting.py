@@ -137,7 +137,7 @@ def probplot(y, ax, sparams=None, dist='norm', conf=.95):
     ax.set_ylabel('Ordered Sample Values')
 
 
-def fitdist(y, distname='norm', fig=None, qqplot=False, bins='sqrt', points=None, coverage=None, xlabel='Parameter'):
+def fitdist(y, distname='norm', fig=None, qqplot=False, bins='sqrt', points=None, coverage=None, xlabel='Parameter', tolerance=None):
     ''' Fit a distribution to the data and plot comparison.
 
         Args:
@@ -150,6 +150,7 @@ def fitdist(y, distname='norm', fig=None, qqplot=False, bins='sqrt', points=None
             points (int): Number of points to show in Q-Q plot
             coverage (array): List of coverage probabilities to plot as vertical lines
             xlabel (string): Label for x-axis
+            tolerance: (Limit): tolerance to plot as dashed lines
     '''
     fig, _ = initplot(fig)
     fig.clf()
@@ -166,6 +167,12 @@ def fitdist(y, distname='norm', fig=None, qqplot=False, bins='sqrt', points=None
     y = y[np.isfinite(y)]
 
     ax.hist(y, density=True, bins=bins)
+
+    if tolerance:
+        if np.isfinite(tolerance.flow):
+            ax.axvline(tolerance.flow, ls='--', color='C3')
+        if np.isfinite(tolerance.fhigh):
+            ax.axvline(tolerance.fhigh, ls='--', color='C3')
 
     if distname:
         xx = np.linspace(y.min(), y.max(), num=100)

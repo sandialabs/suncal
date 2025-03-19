@@ -117,6 +117,27 @@ def get_sigmaproc_from_itp_arb(dist, param, itp, LL, UL):
     return None
 
 
+def get_sigmaproc_from_cpk(dist, param, cpk, LL, UL):
+    ''' Get process standard deviation from Process Capability Index '''
+    fixedargs = dist.kwds
+    currentval = fixedargs.pop(param, 1)
+    def new_cpk(**kwargs):
+        ''' Cpk for the test distribution '''
+        d = distributions.get_distribution(dist.name, **kwargs)
+        return specific_risk(d, LL, UL).cpk
+
+    try:
+        out = root_scalar(lambda x: new_cpk(**{param: x}, **fixedargs)-cpk,
+                          bracket=(0, currentval*100),
+                          x0=currentval)
+    except ValueError:  # Not bracketed
+        return None
+
+    if out.converged:
+        return out.root
+    return None
+
+
 def PFA(dist_proc, dist_test, LL, UL, GBL=0, GBU=0, testbias=0):
     ''' Calculate unconditional global Probability of False Accept for arbitrary
         process and test distributions.

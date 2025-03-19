@@ -132,6 +132,7 @@ class DataSetWidget(QtWidgets.QWidget):
         self.table.setColumnCount(1)
         self.table.setRowCount(1)
         self.table.setHorizontalHeaderLabels(['1'])
+        self.tolerance = widgets.ToleranceCheck()
 
         self.btnAddRemCol = widgets.PlusMinusButton(stretch=False)
         self.btnAddRemCol.btnplus.setToolTip('Add Column')
@@ -150,12 +151,12 @@ class DataSetWidget(QtWidgets.QWidget):
         self.toolbar = NavigationToolbar(self.canvas, self, coordinates=True)
         self.txtOutput = widgets.MarkdownTextEdit()
 
-        self.menu = QtWidgets.QMenu('Data Set')
-        self.actImportCol = QtGui.QAction('New column from CSV...', self)
-        self.actImport = QtGui.QAction('Load data from CSV...', self)
-        self.actClear = QtGui.QAction('Clear data', self)
-        self.actSaveReport = QtGui.QAction('Save Report...', self)
-        self.actSummary = QtGui.QAction('Enter Summarized Values', self)
+        self.menu = QtWidgets.QMenu('&Data Set')
+        self.actImportCol = QtGui.QAction('&New column from CSV...', self)
+        self.actImport = QtGui.QAction('&Load data from CSV...', self)
+        self.actClear = QtGui.QAction('&Clear data', self)
+        self.actSaveReport = QtGui.QAction('&Save Report...', self)
+        self.actSummary = QtGui.QAction('Enter Summarized &Values', self)
         self.actSummary.setCheckable(True)
         self.menu.addAction(self.actImport)
         self.menu.addAction(self.actImportCol)
@@ -178,13 +179,19 @@ class DataSetWidget(QtWidgets.QWidget):
         self.histctrls.changed.connect(self.refresh_output)
         self.corrctrls.changed.connect(self.refresh_output)
         self.acorctrls.changed.connect(self.refresh_output)
+        self.tolerance.changed.connect(self.tolchanged)
 
         hlayout = QtWidgets.QHBoxLayout()
+        hlayout.addWidget(QtWidgets.QLabel('Repeatability & Reproducibility Measurements:'))
         hlayout.addStretch()
         hlayout.addWidget(self.btnAddRemCol)
         topleft = QtWidgets.QVBoxLayout()
         topleft.addLayout(hlayout)
         topleft.addWidget(self.table)
+        h2layout = QtWidgets.QHBoxLayout()
+        h2layout.addWidget(QtWidgets.QLabel('Tolerance:'))
+        h2layout.addWidget(self.tolerance)
+        topleft.addLayout(h2layout)
         botleft = QtWidgets.QVBoxLayout()
         botleft.addWidget(QtWidgets.QLabel('Notes:'))
         botleft.addWidget(self.txtDescription)
@@ -238,6 +245,10 @@ class DataSetWidget(QtWidgets.QWidget):
             self.txtDescription.setPlainText(self.component.description)
             ncols = self.component.result.ncolumns
             nrows = self.component.result.maxrows
+            if self.component.model.tolerance:
+                with BlockedSignals(self.tolerance):
+                    self.tolerance.chkbox.setChecked(True)
+                    self.tolerance.tolerance.set_limit(self.component.result.tolerance)
             if self.component.issummary():
                 self.actSummary.setChecked(True)
                 means = self.component.result.groups.means
@@ -323,6 +334,12 @@ class DataSetWidget(QtWidgets.QWidget):
 
         self.component.setcolnames(colnames)
         self.updatecolnames()
+        self.refresh_output()
+
+    def tolchanged(self):
+        ''' Tolerance widget changed '''
+        self.component.model.tolerance = self.tolerance.tolerance.limit() if self.tolerance.chkbox.isChecked() else None
+        self.component.calculate()
         self.refresh_output()
 
     def updatecolnames(self):

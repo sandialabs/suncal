@@ -9,6 +9,7 @@ import numpy as np
 from scipy import stats
 
 from ..common import ttable
+from ..common.limit import Limit
 
 
 @dataclass
@@ -73,6 +74,7 @@ class GroupSummary:
             std_devs: Standard deviation of each group
             std_errs: Standard error of the mean of each group
             degfs: Degrees of freedom of each group
+            pocs: Probability of conformance of each group
     '''
     means: Sequence[float]
     counts: Sequence[float]
@@ -80,6 +82,7 @@ class GroupSummary:
     std_devs: Sequence[float]
     std_errs: Sequence[float]
     degfs: Sequence[float]
+    pocs: Sequence[float]
 
 
 @dataclass
@@ -138,11 +141,13 @@ class StandardErrorResult:
             reprod_significant: If reproducibility between groups is
                 statistically significant (F > Fcritical) and was
                 used to determine standard error.
+            poc: Probability of conformance
     '''
     stderr: float
     stdev: float
     stderr_degf: float
     reprod_significant: bool
+    poc: float
 
 
 def autocorrelation(x: Sequence[float]) -> list[float]:
@@ -195,7 +200,7 @@ def uncert_autocorrelated(x: Sequence[float], conf: float = .95) -> AutoCorrelat
         r = 1 + 2/n*sum((n-i) * rho[1:nc+1])  # Skip the rho[0] == 1 point.
         unc = np.sqrt(np.var(x, ddof=1) / n * r)
     else:
-        rho = np.nan
+        rho = np.array([np.nan])
         unc = np.nan
         r = np.nan
         nc = np.nan
@@ -249,20 +254,29 @@ def anova(data: Sequence[Sequence[float]],
         degf_mswit=degf_b)
 
 
-def group_stats(data: Sequence[Sequence[float]]) -> GroupSummary:
+def group_stats(data: Sequence[Sequence[float]], tolerance: Limit = None) -> GroupSummary:
     ''' Caluclate statistics for each group (column) in the 2D data
 
         Args:
             data (array): 2D data to compute stats. May contain NaNs if groups
               have different sizes.
     '''
+    means = np.nanmean(data, axis=1)
+    variances = np.nanvar(data, axis=1, ddof=1)
+    std_devs = np.sqrt(variances)
+    counts = np.count_nonzero(np.isfinite(data), axis=1)
+    pocs = None
+    if tolerance:
+        pocs = [tolerance.probability_conformance(means[i], std_devs[i], counts[i]-1) for i in range(len(means))]
+
     return GroupSummary(
-        means=np.nanmean(data, axis=1),
-        counts=(count := np.count_nonzero(np.isfinite(data), axis=1)),
-        variances=(var := np.nanvar(data, axis=1, ddof=1)),
-        std_devs=(std := np.sqrt(var)),
-        std_errs=std / np.sqrt(count),
-        degfs=count-1)
+        means=means,
+        counts=counts,
+        variances=variances,
+        std_devs=std_devs,
+        std_errs=std_devs / np.sqrt(counts),
+        degfs=counts-1,
+        pocs=pocs)
 
 
 def pooled_stats(data: Sequence[Sequence[float]]) -> PooledResult:
@@ -288,6 +302,7 @@ def pooled_stats(data: Sequence[Sequence[float]]) -> PooledResult:
         reprod_df = 0
         repeat_std = np.nan
         repeat_df = 0
+
     return PooledResult(
         np.nanmean(groupmeans),
         reprod_std,
@@ -296,7 +311,7 @@ def pooled_stats(data: Sequence[Sequence[float]]) -> PooledResult:
         repeat_df)
 
 
-def standarderror(data: Sequence[Sequence[float]], conf: float = 0.95) -> StandardErrorResult:
+def standarderror(data: Sequence[Sequence[float]], conf: float = 0.95, tolerance: Limit = None) -> StandardErrorResult:
     ''' Compute standard error of the mean of 2D data. Checks whether reproducibility is
         significant using ANOVA F-test.
 
@@ -307,10 +322,10 @@ def standarderror(data: Sequence[Sequence[float]], conf: float = 0.95) -> Standa
     '''
     anova_result = anova(data, conf=conf)
     ngroups = data.shape[0]
+    pstats = pooled_stats(data)
 
     if anova_result.f > anova_result.fcrit:
         # Reproducibility is significant
-        pstats = pooled_stats(data)
         sem = pstats.reproducibility / np.sqrt(ngroups)
         sem_degf = ngroups - 1
         reprod_significant = True
@@ -325,8 +340,13 @@ def standarderror(data: Sequence[Sequence[float]], conf: float = 0.95) -> Standa
         sem_std = np.sqrt(sem_var)
         reprod_significant = False
 
+    poc = None
+    if tolerance:
+        poc = tolerance.probability_conformance(pstats.mean, sem_std, sem_degf)
+
     return StandardErrorResult(
         sem,
         sem_std,
         sem_degf,
-        reprod_significant)
+        reprod_significant,
+        poc=poc)

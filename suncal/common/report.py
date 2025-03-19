@@ -127,6 +127,7 @@ class Number:
             abbr (bool): Abbreviate the unit
             dimensionless (string): Value to print when unit is dimensionless
             unitpad (string): String to print between value and unit
+            postfix (string): Postfix string to append (such as ' %')
     '''
     numfmts = ['auto', 'decimal', 'scientific', 'sci', 'engineering', 'eng', 'si']
 
@@ -157,6 +158,7 @@ class Number:
         elower = kargs.get('elower', default_E)
         matchtolim = kargs.get('matchtolim', 10)
         echr = 'e' if elower else 'E'
+        postfix = kargs.get('postfix', '')
 
         if fmt not in self.numfmts:
             raise ValueError(f'Number Format must be one of {", ".join(self.numfmts)}')
@@ -232,6 +234,8 @@ class Number:
             unitpad = kargs.get('unitpad', ' ')
             numstr += unitpad
             numstr += Unit(unit).string(unitfmt=unitfmt, abbr=abbr, dimensionless=dimensionless, escape=False)
+
+        numstr += postfix
         return numstr
 
     @classmethod
@@ -768,6 +772,7 @@ class Report:
             inline (bool): Render Mardkown images inline (True) or as references in footer
             unicode (bool): Allow unicode characters (True) or only ascii (False)
     '''
+    apply_css = True
     def __init__(self, **kwargs):
         self._s = ''
         self._plots = []
@@ -782,6 +787,10 @@ class Report:
     def _repr_markdown_(self):
         ''' Markdown representation for Jupyter '''
         return self.get_md()
+
+    def _repr_html_(self):
+        ''' HTML representation for Jupyter and Pyscript '''
+        return self.get_html(apply_css=self.apply_css)
 
     def hdr(self, text, level=1):
         ''' Add a header to the report

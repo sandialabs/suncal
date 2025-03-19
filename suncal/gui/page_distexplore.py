@@ -194,7 +194,6 @@ class DistributionListWidget(QtWidgets.QWidget):
             if item:
                 self.pagelayout.removeWidget(item)
                 item.setParent(None)
-#        self.pagelayout.addStretch()
         self.addItem()
 
     def get_dists(self):
@@ -285,9 +284,9 @@ class DistExploreWidget(QtWidgets.QWidget):
             for expr, dist in self.component.model.dists.items():
                 self.distlist.addItem(str(expr), dist)
 
-        self.menu = QtWidgets.QMenu('Distributions')
-        self.actSave = QtGui.QAction('Save report...', self)
-        self.actClear = QtGui.QAction('Clear', self)
+        self.menu = QtWidgets.QMenu('&Distributions')
+        self.actSave = QtGui.QAction('&Save report...', self)
+        self.actClear = QtGui.QAction('&Clear', self)
         self.menu.addAction(self.actClear)
         self.menu.addAction(self.actSave)
         self.actClear.triggered.connect(self.clear)

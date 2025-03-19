@@ -48,7 +48,7 @@ def parse_unit(unitstr):
     else:
         try:
             u = unitmgr.parse_units(unitstr)
-        except (PintError, ValueError, AttributeError, TypeError, KeyError) as exc:
+        except (PintError, ValueError, AttributeError, TypeError, KeyError, TokenError) as exc:
             raise ValueError(f'Cannot parse unit {unitstr}') from exc
     return u
 
@@ -83,7 +83,7 @@ def parse_math(expr, name=None, allowcomplex=False, raiseonerr=True):
 
     try:
         expr = _parse_math(expr, name=name, allowcomplex=allowcomplex)
-    except (ValueError, AttributeError, TypeError):
+    except (ValueError, AttributeError, TypeError, TokenError):
         expr = None
     return expr
 

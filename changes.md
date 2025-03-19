@@ -1,5 +1,26 @@
 # Change History
 
+## Version 1.7
+
+UI Changes:
+- Rearranged start page to distinguish uncertainty calculations from other statistical calculations. Other tools may be accessed from the Project-Insert menu.
+- "Data Sets" has been renamed "R & R" repeatability & reproducibility.
+
+
+Enhancements:
+
+- Added end-to-end measurement quality assurance calculation type based on draft NCSLI RP-19
+- Added optional tolerance entry to Uncertainty, R&R, and Curve Fit for caclulating probability of conformance
+- Added waveform feature calculations to curve fit module for min, max, peak-peak, threshold crossing, and pulse width determination with uncertainties
+- Moved curve fit prediction entry to the input page, to be saved with the config file
+- Ability to duplicate a project component from the project tree
+- Draw coverage regions on multivariate uncertainty output plots
+- Restore Monte Carlo to risk visualization
+- Added conditional PFA to risk curves tool
+- Allow asymmetric mincost guardbanding
+- Add Cpk, DPMO, and Sigma adjustment and output options to the Global Risk calculator
+
+
 ## Version 1.6.5
 
 Enhancements:

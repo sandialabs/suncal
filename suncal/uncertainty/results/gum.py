@@ -31,6 +31,8 @@ class GumResults:
             constants (dict): Constant quantity names and values, from brackets in model expression
             warns (list): Any warnings generated during the calculation
             descriptions (dict): Descriptions of model functions
+            tolerances (dict): Tolerances for each function
+            p_conform (dict): Probability of conformance with tolerance
             report (Report): Generate formatted reports of the results
 
         Methods:
@@ -44,7 +46,7 @@ class GumResults:
             correlation: Calculation correlation between model functions
     '''
     def __init__(self, numeric: GumOutputData, symbolic: GumOutputData, variables,
-                 constants, descriptions=None, warns=None):
+                 constants, descriptions=None, warns=None, tolerances=None, poc=None):
         self.uncertainty = numeric.uncertainty
         self.expected = numeric.expected
         self.Uy = numeric.Uy
@@ -59,6 +61,7 @@ class GumResults:
         self.constants = constants
         self.warns = warns
         self.descriptions = {} if descriptions is None else descriptions
+        self.tolerances = {} if tolerances is None else tolerances
         self._units = {}  # user-defined units
 
     def units(self, **units):
@@ -75,7 +78,17 @@ class GumResults:
 
     def getunits(self):
         ''' Get the Pint units as currently configured '''
-        return {fname: unitmgr.split_units(exp)[1] for fname, exp in self.expected.items()}
+        return {fname: unitmgr.get_units(exp) for fname, exp in self.expected.items()}
+
+    def prob_conform(self):
+        ''' Get probability of conformance '''
+        poc = {}
+        for fname, tol in self.tolerances.items():
+            poc[fname] = tol.probability_conformance(
+                self.expected.get(fname),
+                self.uncertainty.get(fname),
+                self.degf.get(fname))
+        return poc
 
     @property
     def functionnames(self):
@@ -141,8 +154,6 @@ class GumResults:
 
             Args:
                 name: Name of the function
-                k: Coverage factor (overrides confidence arg)
-                conf: Level of confidence to expand to
 
             Returns:
                 Expanded uncertainty

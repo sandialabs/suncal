@@ -1,4 +1,5 @@
-- arrx:
+- abssigma: true
+  arrx:
   - 0.25
   - 0.5
   - 1.0
@@ -21,6 +22,12 @@
   mode: curvefit
   name: curvefit
   odr: false
+  predictions:
+    2Rc:
+      tolerance: null
+      value: 0.0
+  tolerances: {}
+  waveform: {}
   xdates: false
   xname: Length
   yname: Resistance

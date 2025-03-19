@@ -44,7 +44,7 @@ def plotsweep(fig, rpt, xindex=0, label=None):
     xvals, xunits = unitmgr.split_units(rpt._sweepvals[xindex])
     yvals = [unitmgr.strip_units(f.u_solvefor_value) for f in rpt._results.resultlist]
     ax.plot(xvals, yvals, marker='o', label=label)
-    _, yunits = unitmgr.split_units(rpt._results.resultlist[0].u_solvefor_value)
+    yunits = unitmgr.get_units(rpt._results.resultlist[0].u_solvefor_value)
 
     xunitstr = report.Unit(xunits).latex(bracket=True)
     yunitstr = report.Unit(yunits).latex(bracket=True)

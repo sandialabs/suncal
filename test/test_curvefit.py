@@ -116,6 +116,7 @@ def test_linefitgum():
     T0 = 20
     arr = Array(T-T0, C, ux=0, uy=0)
     fit = CurveFit(arr)
+    fit.predictions = {'predicted': (10, None)}
     out = fit.calculate_lsq()
     # Results in H.3.3 - within reported digits
     assert np.isclose(out.coeffs[0], .00218, atol=.00001)
@@ -130,7 +131,7 @@ def test_linefitgum():
     assert np.isclose(out.confidence_band(30-T0), .0041, atol=.0001)
 
     # Check report for correctly formatted values
-    rpt = out.report.confpred_xval(10, k=1).get_md()
+    rpt = out.report.confpred_xval(k=1).get_md()
     assert '-0.149' in rpt
     assert '0.0041' in rpt
 
@@ -212,9 +213,10 @@ def test_curvefitdate():
     xdate = np.array([parse(f).toordinal() for f in x])  # Convert to ordinal
     arr = Array(xdate, y, xdate=True)
     fit = CurveFit(arr)
+    fit.predictions = {'predicted': ('4-Oct-2018', None)}
     report = fit.calculate_lsq().report
-    r = report.confpred_xval('4-Oct-2018').get_md()
-    assert '4-Oct-2018' in r
+    r = report.confpred_xval().get_md()
+    assert '2018-10-04' in r
     assert '736917' not in r  # This is 4-Oct-2018 in ordinal date format as used internally.
 
 

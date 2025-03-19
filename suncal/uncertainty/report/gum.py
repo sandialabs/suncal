@@ -6,6 +6,7 @@ import numpy as np
 import sympy
 from scipy import stats
 import matplotlib.pyplot as plt
+from matplotlib.patches import Ellipse
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 from ...common import unitmgr, report, plotting
@@ -36,6 +37,7 @@ class ReportGum:
                          report.Number(self._results.uncertainty[name])))
         rpt = report.Report(**kwargs)
         rpt.table(rows, hdr=hdr)
+        rpt.append(self.tolerances(**kwargs))
         return rpt
 
     def expanded(self, conf=0.95, k=None, **kwargs):
@@ -60,6 +62,20 @@ class ReportGum:
                    f'{self._results.degf[funcname]:.2f}',
                    report.Number(uncert, **kwargs)]
             rows.append(row)
+        rpt = report.Report(**kwargs)
+        rpt.table(rows, hdr=hdr)
+        return rpt
+
+    def tolerances(self, **kwargs):
+        ''' Generate report of tolerance and probability of conformance for each function '''
+        hdr = ['Function', 'Tolerance', 'Probability of Conformance']
+        rows = []
+        for fname, poc in self._results.prob_conform().items():
+            rows.append((
+                report.Math(fname),
+                str(self._results.tolerances.get(fname, 'NA')),
+                report.Number(poc*100, fmin=1, suffix=' %')
+            ))
         rpt = report.Report(**kwargs)
         rpt.table(rows, hdr=hdr)
         return rpt
@@ -323,7 +339,8 @@ class GumPlot:
             self.axis.pdf(funcname=fname, ax=ax, interval=interval, k=k, labeldesc=labeldesc, **kwargs)
         fig.tight_layout()
 
-    def joint_pdf(self, functions=None, fig=None, cmap='viridis', legend=True, labeldesc=False, **kwargs):
+    def joint_pdf(self, functions=None, fig=None, cmap='viridis', legend=True,
+                  labeldesc=False, conf=None, **kwargs):
         ''' Plot joint PDF between functions
 
             Args:
@@ -332,6 +349,7 @@ class GumPlot:
                 cmap (str): Matplotlib colormap name
                 legend (bool): Show legend
                 labeldesc (bool): Use "description" as axis label instead of variable name
+                conf (float): Level of confidence for displaying confidence region
         '''
         fig, _ = plotting.initplot(fig)
         fig.clf()
@@ -347,7 +365,8 @@ class GumPlot:
                 if col <= row:
                     continue
                 ax = fig.add_subplot(noutputs-1, noutputs-1, row*(noutputs-1)+col)
-                self.axis.joint_pdf(func1, func2, ax=ax, cmap=cmap, legend=legend, labeldesc=labeldesc)
+                self.axis.joint_pdf(func1, func2, ax=ax, cmap=cmap, legend=legend,
+                                    labeldesc=labeldesc, conf=conf)
 
 
 class GumAxisPlot:
@@ -397,7 +416,8 @@ class GumAxisPlot:
         ax.set_xlabel(label)
         return line
 
-    def joint_pdf(self, function1, function2, ax=None, cmap='viridis', legend=True, labeldesc=False, **kwargs):
+    def joint_pdf(self, function1, function2, ax=None, cmap='viridis',
+                  legend=True, labeldesc=False, conf=None, **kwargs):
         ''' Plot joint PDF (uncertainty region) between two model functions
 
             Args:
@@ -407,6 +427,7 @@ class GumAxisPlot:
                 cmap (str): Matplotlib colormap name
                 legend (bool): Show legend
                 labeldesc (bool): Use "description" as axis label instead of variable name
+                conf (float): Level of confidence for displaying confidence region
         '''
         _, ax = plotting.initplot(ax)
 
@@ -436,26 +457,54 @@ class GumAxisPlot:
                     plt.cm.ScalarMappable(
                         cmap=plt.get_cmap(cmap), norm=plt.Normalize(vmin=contours.min(), vmax=contours.max())),
                     cax=cax, orientation='vertical')
+
+        if conf:
+            # Draw confidence ellipse per JCGM102:2011 Section 6.5
+            center, width, height, angle = _coverage_ellipse(
+                self._results.expected, self._results.covariance(), function1, function2, conf=conf)
+            ax.add_patch(Ellipse(center, width, height, angle=angle,
+                                 color='C1', fill='none', zorder=5, alpha=.3))
+
         return contours
+
+
+def _get_jointdist(means, covariance, function1, function2):
+    ''' Get joint distribution means and Covariance matrix '''
+    mean0 = unitmgr.strip_units(means[function1])
+    mean1 = unitmgr.strip_units(means[function2])
+    Uy = [[unitmgr.strip_units(covariance[function1][function1]),
+           unitmgr.strip_units(covariance[function1][function2])],
+          [unitmgr.strip_units(covariance[function2][function1]),
+           unitmgr.strip_units(covariance[function2][function2])]]
+    return (mean0, mean1), Uy
+
+
+def _coverage_ellipse(means, covariance, function1, function2, conf=.95):
+    ''' Calculate ellipse containing 95% coverage probability '''
+    # See JCGM102:2011 Section 6.5
+    CoverageEllipse = namedtuple('CoverageEllipse', 'center width height angle')
+    means, Uy = _get_jointdist(means, covariance, function1, function2)
+
+    eigval, eigvec = np.linalg.eigh(Uy)
+    chi2 = stats.chi2(df=2).isf(1-conf)
+    width = 2*np.sqrt(chi2*eigval[0])
+    height = 2*np.sqrt(chi2*eigval[1])
+    angle = np.degrees(np.arctan2(*eigvec[::-1, 0]))
+    return CoverageEllipse(means, width, height, angle)
 
 
 def _contour(means, covariance, function1, function2):
     ''' Generate x, y, z contours for plotting correlation region. '''
     Contour = namedtuple('Contour', ['x', 'y', 'pdf'])
-
-    mean0 = unitmgr.strip_units(means[function1])
-    mean1 = unitmgr.strip_units(means[function2])
-    unc0 = unitmgr.strip_units(np.sqrt(covariance[function1][function1]))
-    unc1 = unitmgr.strip_units(np.sqrt(covariance[function2][function2]))
-    Uy = [[unitmgr.strip_units(covariance[function1][function1]),
-           unitmgr.strip_units(covariance[function1][function2])],
-          [unitmgr.strip_units(covariance[function2][function1]),
-           unitmgr.strip_units(covariance[function2][function2])]]
+    means, Uy = _get_jointdist(means, covariance, function1, function2)
+    unc0 = np.sqrt(Uy[0][0])
+    unc1 = np.sqrt(Uy[1][1])
     try:
-        randvar = stats.multivariate_normal(np.array([mean0, mean1]), cov=Uy)
+        randvar = stats.multivariate_normal(means, cov=Uy)
     except (ValueError, np.linalg.LinAlgError):
         return Contour(None, None, None)
 
-    x, y = np.meshgrid(np.linspace(mean0-3*unc0, mean0+3*unc0), np.linspace(mean1-3*unc1, mean1+3*unc1))
+    x, y = np.meshgrid(np.linspace(means[0]-3*unc0, means[0]+3*unc0), np.linspace(means[1]-3*unc1, means[1]+3*unc1))
     pos = np.dstack((x, y))
+
     return Contour(x, y, randvar.pdf(pos))

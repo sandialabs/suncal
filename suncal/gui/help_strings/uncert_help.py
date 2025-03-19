@@ -88,7 +88,22 @@ class UncertHelp:
         rpt.hdr('Uncertainty Propagation')
         rpt.hdr('GUM and Monte Carlo Comparison Plot', level=2)
         rpt.txt('This page shows an interactive plot comparing the GUM '
-                'and Monte Carlo results.')
+                'and Monte Carlo results.\n\n')
+        rpt.hdr('Coverage Intervals', level=3)
+        rpt.txt('Coverage intervals may be plotted at a specific level of confidence '
+                'where the Student-T distribution is used to expand the standard '
+                'uncertainty to the desired coverage probability, or at a specific '
+                'coverage factor disregarding degrees of freedom. The Monte Carlo '
+                'coverage interval may be a symmetric interval where the upper and '
+                'lower bounds of the coverage region are symmetric about the mean, '
+                'or the interval covering the desired level of confidence that results '
+                'in the shortest total range.\n\n'
+                'Coverage intervals for multivariate uncertainty calculations use '
+                'methods described in JCGM 102:2011. For the GUM method, a hyper-ellipsoidal '
+                'region is calculated per section 6.5.3. The Monte Carlo method uses '
+                'a hyper-ellipsoidal region per 7.7.2 for symmetric regions, and 7.7.4 for '
+                'the shortest coverage region, approximated using a rectangular grid.'
+                )
         return rpt
 
     @staticmethod

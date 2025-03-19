@@ -55,7 +55,7 @@ def _variable_rows(model):
     rows = []
     for varname in model.varnames:
         variable = model.var(varname)
-        _, units = unitmgr.split_units(variable.expected)
+        units = unitmgr.get_units(variable.expected)
         units = unitmgr.ureg.dimensionless if units is None else units
         rows.append([
             report.Math(varname),
@@ -94,10 +94,12 @@ def units_report(model, outunits, **kwargs):
         Returns:
             suncal.common.report.Report instance
     '''
-    hdr = ['Parameter', 'Units', 'Abbreviation', 'Dimensionality']
-
-    rows = _function_rows(model, outunits)
-    rows.extend(_variable_rows(model))
     rpt = report.Report(**kwargs)
-    rpt.table(rows, hdr)
+    if model is None:
+        rpt.txt('No functions defined.')
+    else:
+        hdr = ['Parameter', 'Units', 'Abbreviation', 'Dimensionality']
+        rows = _function_rows(model, outunits)
+        rows.extend(_variable_rows(model))
+        rpt.table(rows, hdr)
     return rpt

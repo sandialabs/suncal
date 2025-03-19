@@ -1,77 +1,77 @@
-- correlations:
-  - cor: '-0.3553'
-    var1: J
-    var2: V
-  - cor: '-0.6451'
-    var1: J
-    var2: theta
-  - cor: '0.8576'
-    var1: V
-    var2: theta
-  description: 'Simultaneous resistance and reactance measurement
-
-    Example from GUM appendix H.2
-
-
-    This example demonstrates calculation multiple measurement functions. The uncertainty
-    components and correlations were loaded using the data importer tool from the
-    file IVdata.csv.'
-  functions:
-  - desc: Resistance
-    expr: V*cos(theta)/J
-    name: R
+- confidence: 0.95
+  correlate: true
+  desc: ''
+  mode: system
+  name: system
+  quantities:
+  - desc: ''
+    description: ''
+    equation: V*cos(theta)/I
+    name: ''
+    symbol: R
+    tolerance: null
+    type: indirect
     units: ohm
-  - desc: Reactance
-    expr: V*sin(theta)/J
-    name: X
-    units: ohm
-  - desc: Impedance
-    expr: V/J
-    name: Z
-    units: ohm
-  inputs:
-  - autocorrelate: false
-    desc: Current
-    mean: 19.660999999999998
-    name: J
-    numnewmeas: 5
+  - desc: ''
+    description: ''
+    name: ''
+    symbol: I
+    testpoint: 19.660999999999998
+    tolerance: null
+    type: direct
     typea:
     - 19.663
     - 19.639
     - 19.64
     - 19.685
     - 19.678
-    typea_uncert: !quantity '0.009471008394041188 milliampere'
-    uncerts: []
+    typeb: []
     units: milliampere
-  - autocorrelate: false
-    desc: Voltage
-    mean: 4.9990000000000006
-    name: V
-    numnewmeas: 5
+  - desc: ''
+    description: ''
+    name: ''
+    symbol: V
+    testpoint: 4.9990000000000006
+    tolerance: null
+    type: direct
     typea:
     - 5.007
     - 4.994
     - 5.005
     - 4.99
     - 4.999
-    typea_uncert: !quantity '0.0032093613071761794 volt'
-    uncerts: []
+    typeb: []
     units: volt
-  - autocorrelate: false
-    desc: Phase
-    mean: 1.0444600000000002
-    name: theta
-    numnewmeas: 5
+  - desc: ''
+    description: ''
+    name: ''
+    symbol: theta
+    testpoint: 1.0444600000000002
+    tolerance: null
+    type: direct
     typea:
     - 1.0456
     - 1.0438
     - 1.0468
     - 1.0428
     - 1.0433
-    typea_uncert: !quantity '0.0007520638270785368 radian'
-    uncerts: []
+    typeb: []
     units: radian
-  mode: uncertainty
-  name: uncertainty
+  - desc: ''
+    description: ''
+    equation: V*sin(theta)/I
+    name: ''
+    symbol: X
+    tolerance: null
+    type: indirect
+    units: ohm
+  - desc: ''
+    description: ''
+    equation: V/I
+    name: ''
+    symbol: Z
+    tolerance: null
+    type: indirect
+    units: ohm
   samples: 1000000
+  seed: null

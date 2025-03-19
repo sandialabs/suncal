@@ -21,36 +21,14 @@ class EditableTableItem(QtWidgets.QTableWidgetItem):
     # Editable is already the default
 
 
-class LatexDelegate(QtWidgets.QStyledItemDelegate):
-    ''' Delegate class assigned to editable table/tree items for displaying
-        expressions rendered as math. This overrides the editor so that the original
-        user-entered (not calculated) expression is displayed for editing.
-        Math expressions are rendered as graphics instead of text when not in edit mode.
-    '''
-    ROLE_ENTERED = QtCore.Qt.ItemDataRole.UserRole + 1    # Original, user-entered data
-
-    def setEditorData(self, editor, index):
-        ''' Restore user-entered text when editing starts '''
-        text = index.model().data(index, self.ROLE_ENTERED)
-        if text is None:
-            text = index.model().data(index, QtCore.Qt.ItemDataRole.DisplayRole)
-        editor.setText(text)
-
-    def updateEditorGeometry(self, editor, option, index):
-        ''' Put the editor widget in the original location, (instead of
-            default behavior of shifting to compensate for pixmap). '''
-        editor.setGeometry(option.rect)
-
-    def setModelData(self, editor, model, index):
-        ''' Save user-entered text to restore in edit mode later '''
-        model.blockSignals(True)  # Only signal on one setData
-        olddata = index.model().data(index, self.ROLE_ENTERED)
-        if editor.text() != olddata:  # Don't refresh unless necessary
-            model.setData(index, editor.text(), self.ROLE_ENTERED)    # Save for later
-            px = gui_math.pixmap_from_latex(editor.text())
-            model.blockSignals(False)
-            model.setData(index, px, QtCore.Qt.ItemDataRole.DecorationRole)
-        model.blockSignals(False)
+class FloatTableItem(QtWidgets.QTableWidgetItem):
+    ''' Table Widget Item that only accepts floats '''
+    def setData(self, role, value):
+        try:
+            float(value)
+        except (ValueError, TypeError):
+            value = '0.0'
+        super().setData(role, value)
 
 
 class TableItemTex(QtWidgets.QTableWidgetItem):
@@ -134,6 +112,7 @@ class FloatTableWidget(QtWidgets.QTableWidget):
             paste_multicol (bool): Allow pasting multiple columns (and inserting columns as necessary)
     '''
     valueChanged = QtCore.pyqtSignal()
+    headerChanged = QtCore.pyqtSignal()
 
     def __init__(self, movebyrows=False, headeredit=None, paste_multicol=True, parent=None):
         super().__init__(parent=parent)
@@ -151,6 +130,7 @@ class FloatTableWidget(QtWidgets.QTableWidget):
             self.setHorizontalHeader(EditableHeaderView(
                 orientation=QtCore.Qt.Orientation.Horizontal, floatonly=(headeredit == 'float')))
             self.horizontalHeader().headeredited.connect(self.valueChanged)
+            self.horizontalHeader().headeredited.connect(self.headerChanged)
         QtGui.QShortcut(QtGui.QKeySequence('Ctrl+v'), self).activated.connect(self._paste)
         QtGui.QShortcut(QtGui.QKeySequence('Ctrl+c'), self).activated.connect(self._copy)
         self.cellChanged.connect(self._itemchanged)
@@ -375,3 +355,15 @@ class FloatTableWidget(QtWidgets.QTableWidget):
             tbl = np.array([[]])
 
         return tbl
+
+    def insert_data(self, data, col: int = 0, row: int = 0):
+        data = np.atleast_2d(data)
+        ncols, nrows = data.shape
+        if self.rowCount() < row + nrows:
+            self.setRowCount(row+nrows)
+        if self.columnCount() < col + ncols:
+            self.setColumnCount(col+ncols)
+
+        for irow in range(nrows):
+            for icol in range(ncols):
+                self.setItem(irow+row, icol+col, QtWidgets.QTableWidgetItem(str(data[icol, irow])))

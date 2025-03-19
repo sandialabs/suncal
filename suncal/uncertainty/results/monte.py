@@ -22,6 +22,8 @@ class McResults:
             variables (tuple): Information about the input variables and uncertainties
             warns (list): Any warnings generated during the calculation
             descriptions (dict): Descriptions of model functions
+            tolerances (dict): Tolerances for each function
+            p_conform (dict): Probability of conformance with tolerance
             report (Report): Generate formatted reports of the results
 
         Methods:
@@ -32,7 +34,8 @@ class McResults:
             sensitivity: Calculate sensitivity coefficients and proportions
             correlation: Calculation correlation between model functions
     '''
-    def __init__(self, functionsamples, variables, variablesamples, model, descriptions=None, warns=None):
+    def __init__(self, functionsamples, variables, variablesamples, model, descriptions=None, warns=None,
+                 tolerances=None, poc=None):
         self.samples = functionsamples
         self.varsamples = variablesamples
         self.variables = variables
@@ -49,6 +52,8 @@ class McResults:
                             for name, s in self.samples.items()}
 
         self.descriptions = {} if descriptions is None else descriptions
+        self.tolerances = {} if tolerances is None else tolerances
+        self.poc = {} if poc is None else poc
         self._units = {}
 
     def units(self, **units):
@@ -67,9 +72,17 @@ class McResults:
                             for name, s in self.samples.items()}
         return self
 
+    def prob_conform(self):
+        ''' Get probability of conformance '''
+        poc = {}
+        for fname, tol in self.tolerances.items():
+            samples = unitmgr.strip_units(self.samples.get(fname))
+            poc[fname] = np.count_nonzero((samples >= tol.flow) & (samples <= tol.fhigh)) / len(samples)
+        return poc
+
     def getunits(self):
         ''' Get the Pint units as currently configured '''
-        return {fname: unitmgr.split_units(exp)[1] for fname, exp in self.expected.items()}
+        return {fname: unitmgr.get_units(exp) for fname, exp in self.expected.items()}
 
     @property
     def functionnames(self):
@@ -222,6 +235,18 @@ class McResults:
                                               unitmgr.strip_units(self.samples[func2]))[0, 1]
             corrs[func1] = cor1
         return corrs
+
+    def covariance(self):
+        ''' Calculate covariance between outputs
+
+            Returns:
+                Dictionary of {functionname: {functionname: correlation}}
+        '''
+        corr = self.correlation()
+        for func1 in self.functionnames:
+            for func2 in self.functionnames:
+                corr[func1][func2] = corr[func1][func2] * self.uncertainty[func1] * self.uncertainty[func2]
+        return corr
 
 
 @reporter.reporter(ReportComplexMc)

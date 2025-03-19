@@ -1,12 +1,9 @@
-- desc: Five calibrations, each consisting of five measurements, were taken between
-    2011 and 2018. This calculation reduces the sets of five measurements into a mean
-    and standard deviation for each year's calibration.
-  colnames:
-  - 2011-11-06 00:00:00
-  - 2013-10-07 00:00:00
-  - 2015-08-01 00:00:00
-  - 2016-07-23 00:00:00
-  - 2018-05-11 00:00:00
+- colnames:
+  - '2011-11-06'
+  - '2013-10-07'
+  - '2015-08-01'
+  - '2016-07-23'
+  - '2018-05-11'
   data:
   - - 180.02945641
     - 180.26180522
@@ -33,10 +30,14 @@
     - 184.28613981
     - 184.0489668
     - 184.09539855
-  mode: data 
+  desc: Five calibrations, each consisting of five measurements, were taken between
+    2011 and 2018. This calculation reduces the sets of five measurements into a mean
+    and standard deviation for each year's calibration.
+  mode: data
   name: data
-  xdate: true
-- arruy:
+  tolerance: null
+- abssigma: true
+  arruy:
   - 0.23570842309815002
   - 0.23375163476623237
   - 0.13486440626205345
@@ -59,20 +60,17 @@
     the value at the 2019 calibration due date.
   mode: curvefit
   name: drift fit
-  odr: null
+  odr: false
+  predictions:
+    Next Cal:
+      tolerance:
+        high: '185'
+        low: '175'
+        nominal: '180'
+        units: ''
+      value: 737241.0
+  tolerances: {}
+  waveform: {}
   xdates: true
   xname: x
   yname: y
-- GBL: 0
-  GBU: 0
-  LL: 175.0
-  UL: 185.0
-  desc: Finally, the predicted value and uncertainty at the 2019 due date are used
-    to determine the risk of drifting above the 185 psi tolerance.
-  distproc:
-    df: 3.0
-    dist: t
-    median: 184.82853966833636
-    std: 0.25851939483480924
-  mode: risk
-  name: risk
