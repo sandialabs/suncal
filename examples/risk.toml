@@ -1,0 +1,14 @@
+[process.Normal]
+mu = 0.0
+sigma = 0.51
+
+[test.Normal]
+stddev = 0.125
+
+[tolerance]
+low = -1.0
+high = 1.0
+
+[guardband]
+tolerance = {low=-1.0, high=1.0}
+method = "None"

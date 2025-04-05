@@ -1,0 +1,118 @@
+
+
+#=================================
+# CAL SYSTEM: Deuterium Lamp/Comparator
+[[quantity]]
+symbol = "a"
+measured = 100.0
+units = "mW"
+typeb = [
+    {Tolerance = {name = "NIST", tolerance=0.0625, confidence=0.9986}},
+]
+
+[quantity.utility]
+tolerance = {low = 99.75, high = 100.25}
+
+[quantity.interval]
+eopr.Observed = 0.95
+years = 0.5
+
+[quantity.calibration]
+policy = "Asneeded"
+reliability_model = "Exponential"
+
+[quantity.cost]
+cal = 800
+adjust = 0
+repair = 9000
+new_uut = 90000
+num_uuts = 2
+spare_factor = 1
+spare_startup = 0
+down_cal = 4
+down_adj = 0
+down_rep = 30
+p_use = 1
+
+
+# =============================
+# TEST SYSTEM: Deuterium Lamp
+[[quantity]]
+symbol = "b"
+
+measured = 100.0
+units = "mW"
+typeb = [
+    {Symbol = "a"},
+]
+
+[quantity.utility]
+tolerance = {low = 99.0, high = 101.0}
+
+[quantity.interval]
+eopr.Observed = 0.9973
+years = 0.333333
+
+[quantity.calibration]
+policy = "Asneeded"
+reliability_model = "Exponential"
+
+[quantity.cost]
+cal = 400
+adjust = 0
+repair = 7500
+new_uut = 75000
+num_uuts = 3
+spare_factor = 1
+spare_startup = 0
+down_cal = 2
+down_adj = 0
+down_rep = 30
+p_use = 1
+
+
+# =============================
+# END ITEM: Solar Experiment
+[[quantity]]
+symbol = "c"
+
+measured = 100.0
+units = "mW"
+typeb = [
+    {Symbol = "b"},
+]
+
+[quantity.utility]
+tolerance = {low = 90.0, high = 110.0}
+degrade = {low = 90.0, high = 110.0}
+failure = {low = 70.0, high = 130.0}
+
+[quantity.interval]
+eopr.Observed = 0.99993
+years = 1.0
+target = {Eopr=0.9973}
+
+[quantity.calibration]
+policy = "Asneeded"
+reliability_model = "Exponential"
+repair = {low = 70.0, high = 130.0}
+
+[quantity.cost]
+cal = 156800
+adjust = 156800
+repair = 50000
+new_uut = 250000
+num_uuts = 1
+spare_factor = 1
+spare_startup = 0
+down_cal = 30
+down_adj = 3
+down_rep = 30
+p_use = 1
+cost_fa = 35000000
+cost_fr = 0
+
+
+#===============================
+[settings]
+montecarlo = 0

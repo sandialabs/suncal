@@ -1,0 +1,9 @@
+[workspace]
+resolver = "2"
+
+members = [
+    "src/sunlib",
+    "src/suncal2",
+    "src/riskcli",
+    "src/risk_eframe",
+]

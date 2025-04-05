@@ -1,0 +1,44 @@
+[package]
+name = "suncal2_riskapp"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.81"
+
+[package.metadata.docs.rs]
+all-features = true
+targets = ["x86_64-unknown-linux-gnu", "wasm32-unknown-unknown"]
+
+[dependencies]
+sunlib = { path = "../sunlib" }
+contour = "0.13.1"
+egui = "0.31"
+ecolor = "0.31.0"
+egui_plot = "0.31.0"
+eframe = { version = "0.31", default-features = false, features = [
+#    "accesskit",     # Make egui compatible with screen readers. NOTE: adds a lot of dependencies.
+#    "default_fonts", # Embed the default egui fonts.
+    "glow",          # Use the glow rendering backend. Alternative: "wgpu".
+    "persistence",   # Enable restoring app state when restarting the app.
+    "wayland",       # To support Linux (and CI)
+    "x11",
+] }
+log = "0.4"
+#serde = { version = "1", features = ["derive"] }
+
+# native:
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+env_logger = "0.11"
+
+# web:
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen-futures = "0.4"
+web-sys = "0.3.70"           # to access the DOM (to hide the loading text)
+getrandom = { version = "0.2.15", features = ["js"] }
+
+[profile.release]
+opt-level = 2 # fast and small wasm
+
+# Optimize all dependencies even in debug builds:
+[profile.dev.package."*"]
+opt-level = 2
+

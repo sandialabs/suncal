@@ -1,0 +1,23 @@
+[[quantity]]
+symbol = "a"
+measured = 10.0
+units = "cm"
+typeb = [
+#    {tolerance = {name="Equipment", tolerance=0.25, reliability=0.95}},  # Or specify tolerance here
+    {Normal = {name = "ABC", stddev = 2}},
+    {Uniform = {name = "DEF", a = 2.5}},
+]
+typea = [1,2,3,2,1,4,2,3,2,1,2,3,1]
+
+[[quantity]]
+symbol = "b"
+measured = 20.0
+units = "cm"
+typeb = [
+    {Normal = {name = "TypeB", stddev = 1.5}}
+]
+
+[[function]]
+symbol = "f"
+expr = "a + b"
+units = "cm^2"

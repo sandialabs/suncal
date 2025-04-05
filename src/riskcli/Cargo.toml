@@ -1,0 +1,9 @@
+[package]
+name = "suncal2_risk"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+toml = "0.8.20"
+serde = { version = "1.0.217", features = ["derive"] }
+sunlib = { path = "../sunlib" }

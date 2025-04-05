@@ -1,0 +1,15 @@
+[[quantity]]
+symbol = "a"
+measured = 10.0
+units = "cm"
+typeb = [
+    {Normal = {name = "ABC", stddev = 0.051}},
+#    {Uniform = {name = "DEF", a = 0.01}},
+]
+
+[quantity.utility]
+tolerance = {low = 9.9, high = 10.1}
+
+
+[settings]
+montecarlo = 0

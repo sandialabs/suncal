@@ -1,0 +1,12 @@
+[package]
+name = "sunlib"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+exmex = {version="0.20.3", features = ["partial"]}
+toml = "0.8.20"
+serde = {version="1.0.217", features=["derive"]}
+rand = "0.8.0"
+special = "0.11.3"
+roots = "0.0.8"

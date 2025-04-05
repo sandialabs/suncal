@@ -1,0 +1,41 @@
+
+[[quantity]]
+symbol = "x"
+measured = 0.01
+typeb = [
+    {Normal = {stddev=0.01, degf=10}}
+]
+
+
+
+[[quantity]]
+symbol = "y"
+measured = 0.0
+typeb = [
+    {Normal = {stddev=0.01, degf=15}}
+]
+repeatability = [-0.00248043, -0.00266119,  0.0049616 , -0.00711481, -0.0103655 ,
+                 -0.01170689,  0.00907529,  0.00184082,  0.0262474 ,  0.00712437]
+
+
+[[function]]
+symbol = "f"
+expr = "sqrt(x^2 + y^2)"
+
+[[function]]
+symbol = "g"
+expr = "atan(y/x)"
+
+
+[[correlation]]
+v1 = "x"
+v2 = "y"
+coeff = 0.9
+
+
+[settings]
+confidence = 0.95
+montecarlo = 10000   # Set to 0 to not run
+# seed = 
+# correlate_typea = true/false
+# mc_confidence = 'shortest'

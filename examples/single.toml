@@ -1,0 +1,19 @@
+[[quantity]]
+symbol = "a"
+measured = 10.0
+units = "cm"
+typeb = [
+    {Normal = {stddev = 0.05}},
+#    {Uniform = {a = 2.5}},
+]
+#typea = [1,2,3,2,1,4,2,3,2,1,2,3,1]
+
+[quantity.utility]
+tolerance.low = 9.9
+tolerance.high = 10.1
+
+[quantity.interval]
+years = 1.0
+eopr.True = 0.95   # or eopr.Observed
+target.Eopr = 0.8  # or target.Interval
+

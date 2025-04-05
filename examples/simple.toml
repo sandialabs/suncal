@@ -1,0 +1,14 @@
+[[quantity]]
+symbol = "a"
+measured = 10.0
+
+[[quantity]]
+symbol = "b"
+measured = 10.0
+
+[[function]]
+symbol = "f"
+expr = "a + b"
+
+[settings]
+montecarlo = 1000
