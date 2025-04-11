@@ -143,7 +143,10 @@ def config_measurement(measure: MqaMeasurement) -> dict:
             'p_discard': measure.calibration.p_discard},
         'interval': {
             'years': measure.interval.years,
-            'reliability': measure.interval.reliability_model},
+            'reliability': measure.interval.reliability_model,
+            'test_interval': measure.interval.test_years,
+            'test_eopr': measure.interval.test_eopr,
+            },
     }
 
 
@@ -281,6 +284,8 @@ def meas_fromconfig(config: dict, equipment: EquipmentList, gbrules: MqaGuardban
 
     intv = config.get('interval', {})
     new.interval.years = intv.get('years', 1)
+    new.interval.test_years = intv.get('test_years', None)
+    new.interval.test_eopr = intv.get('test_eopr', None)
     new.interval.reliability_model = intv.get('reliability', 'none')
     return new
 

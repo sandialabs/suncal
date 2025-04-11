@@ -69,9 +69,22 @@ class MqaQuantityReport:
                 ['Beginning of Period Reliability', Number(self.result.reliability.bop.pct*100, fmin=2, postfix=' %')],
                 ['Average over Period Reliability', Number(self.result.reliability.aop.pct*100, fmin=2, postfix=' %')],
             ])
+        if self.result.item.measurement.interval.test_years:
+            rows.extend([
+                ['Test Interval (years):', Number(self.result.reliability.interval, fmin=2)],
+                ['End-of-period Reliability (True)', Number(self.result.reliability.eopr*100, fmin=2, postfix=' %')],
+            ])
+        elif self.result.item.measurement.interval.test_eopr:
+            rows.extend([
+                ['Target End-of-period Reliability:', Number(self.result.reliability.eopr*100, fmin=2, postfix=' %')],
+                ['Interval for this EOPR (years)', Number(self.result.reliability.interval, fmin=2)],
+            ])
+        else:
+            rows.extend([
+                ['End-of-period Reliability (Observed)', Number(self.result.eopr.observed.pct*100, fmin=2, postfix=' %')],
+                ['End-of-period Reliability (True)', Number(self.result.eopr.true.pct*100, fmin=2, postfix=' %')],
+            ])
         rows.extend([
-            ['End-of-period Reliability (Observed)', Number(self.result.eopr.observed.pct*100, fmin=2, postfix=' %')],
-            ['End-of-period Reliability (True)', Number(self.result.eopr.true.pct*100, fmin=2, postfix=' %')],
             ['Conditional Probability of False Accept', Number(self.result.risk.cpfa_true*100, fmin=2, postfix=' %')],
             ['Probability of False Accept', Number(self.result.risk.pfa_true*100, fmin=2, postfix=' %')],
             ['Probability of False Reject', Number(self.result.risk.pfr_true*100, fmin=2, postfix=' %')],
@@ -199,7 +212,7 @@ class MqaQuantityReport:
     def report_decay(self, **kwargs) -> Report:
         ''' Plot reliability decay over the interval '''
         rpt = Report(**kwargs)
-        years = self.result.item.measurement.interval.years
+        years = self.result.item.measurement.interval.test_interval
         tt = np.linspace(0, years*2, num=100)
 
         reliability = [self.result.item.reliability_t(t) for t in tt]

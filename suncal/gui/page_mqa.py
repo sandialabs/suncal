@@ -273,11 +273,8 @@ class GuardbandDelegate(DropdownDelegate):
         self.emit_change(index)
 
 
-class CalibrationDelegate(DropdownDelegate, PopupDelegate):
+class CalibrationDelegate(PopupDelegate):
     ''' Delegate for calibration tree column '''
-    calc_interval = QtCore.pyqtSignal(object, object)  # qty, index
-    calc_eopr = QtCore.pyqtSignal(object, object)   # qty, index
-
     def createEditor(self, parent, option, index):
         ''' Create the calibration editor widget '''
         editor = TabCalibration(parent)
@@ -288,21 +285,6 @@ class CalibrationDelegate(DropdownDelegate, PopupDelegate):
         ''' Fill editor with data from quantity '''
         qty: MqaQuantity = index.model().data(index, SuncalDelegate.ROLE_QUANTITY)
         editor.set_quantity(qty)
-
-    def dropdown_menu(self, event, mode, option, index):
-        ''' Show interval commands in dropdown menu '''
-        qty: MqaQuantity = index.model().data(index, SuncalDelegate.ROLE_QUANTITY)
-
-        menu = QtWidgets.QMenu()
-        newinterval = menu.addAction('Set new interval...')
-        neweopr = menu.addAction('Set interval for new EOPR...')
-        if qty.measurement.interval.reliability_model == 'none':
-            newinterval.setEnabled(False)
-            neweopr.setEnabled(False)
-
-        neweopr.triggered.connect(lambda x, index=index, qty=qty: self.calc_interval.emit(qty, index))
-        newinterval.triggered.connect(lambda x, index=index, qty=qty: self.calc_eopr.emit(qty, index))
-        menu.exec(event.globalPosition().toPoint())
 
     def setModelData(self, editor, model, index):
         ''' Store data back to quantity '''
@@ -317,9 +299,20 @@ class CalibrationDelegate(DropdownDelegate, PopupDelegate):
         qty.measurement.calibration.policy = editor.renewal.currentText().lower().replace('-', '')
         display = ''
         if qty.measurement.interval.reliability_model != 'none':
-            display = f'{qty.measurement.interval.years:.1f} yr'
+            display = f'{qty.measurement.interval.test_interval:.1f} yr'
         elif qty.measurement.calibration.policy != 'never':
             display = qty.measurement.calibration.policy.title()
+
+        if editor.cmbtest.currentIndex() == 0:
+            qty.measurement.interval.test_eopr = None
+            qty.measurement.interval.test_years = None
+        elif editor.cmbtest.currentIndex() == 1:
+            qty.measurement.interval.test_eopr = None
+            qty.measurement.interval.test_years = editor.test_interval.value()
+        elif editor.cmbtest.currentIndex() == 2:
+            qty.measurement.interval.test_eopr = editor.test_eopr.value()
+            qty.measurement.interval.test_years = None
+
         self.set_displayrole(index, display)
         self.emit_change(index)
 
@@ -482,14 +475,22 @@ class TabCalibration(QtWidgets.QDialog):
         self.reliability.addItems(['None', 'Random Walk', 'Exponential'])
         self.interval = widgets.FloatLineEdit('1', low=0)
         self.interval.setEnabled(False)
+        self.cmbtest = QtWidgets.QComboBox()
+        self.cmbtest.addItems(['Original Interval', 'New Interval', 'New EOPR'])
+        self.test_interval = widgets.FloatLineEdit('1', low=0)
+        self.test_eopr = widgets.PercentLineEdit('95')
+        self.test_interval.setVisible(False)
+        self.test_eopr.setVisible(False)
         self.prestress.setToolTip('PDF of stresses occuring after item taken out of service but before calibration.')
         self.poststress.setToolTip('PDF of stresses occuring after calibration but before item is returned to service.')
         self.p_discard.setToolTip('Probability the item will be discarded if its adjustment or repair limit is exceeded.')
         self.repair.setToolTip('Limits at which a repair of the item is performed. Leave blank to repair when the item exceeds its tolerance.')
         self.renewal.setToolTip('Policy for performing adjustments during calibration. As-needed policy will adjust the item when it exceeds its tolerance.')
         self.reliability.setToolTip('Reliability model for evaluating uncertainty growth over the calibration interval.')
-        self.interval.setToolTip('The calibration interval in years.')
+        self.interval.setToolTip('The calibration interval in years that resulted in the entered EOPR.')
         self.typeb.btn_add.setToolTip('Add a Type B uncertainty to the measurement')
+        self.test_interval.setToolTip('New interval to test')
+        self.test_eopr.setToolTip('Calculate and test interval to achieve this EOPR')
 
         layout = QtWidgets.QFormLayout()
         layout.addRow('<br><font size=4><b>Calibration/Test Process</b></font>', QtWidgets.QWidget())
@@ -502,9 +503,17 @@ class TabCalibration(QtWidgets.QDialog):
         layout.addRow('<br><font size=4><b>Observed Interval</b></font>', QtWidgets.QWidget())
         layout.addRow('Reliability Model', self.reliability)
         layout.addRow('Observed Calibration Interval (years)', self.interval)
+        hlayout = QtWidgets.QHBoxLayout()
+        hlayout.addWidget(self.cmbtest)
+        hlayout.addWidget(self.test_interval)
+        hlayout.addWidget(self.test_eopr)
+        intwidget = QtWidgets.QWidget()
+        intwidget.setLayout(hlayout)
+        layout.addRow('Calculate interval', intwidget)
         self.setLayout(layout)
         self.reliability.currentIndexChanged.connect(self.change_model)
         self.renewal.currentIndexChanged.connect(self.change_renewal)
+        self.cmbtest.currentIndexChanged.connect(self.change_interval)
 
     def change_renewal(self):
         ''' Renewal policy changed '''
@@ -514,6 +523,11 @@ class TabCalibration(QtWidgets.QDialog):
         else:
             self.p_discard.setEnabled(True)
             self.repair.setEnabled(True)
+
+    def change_interval(self):
+        ''' Interval target type changed '''
+        self.test_interval.setVisible(self.cmbtest.currentIndex() == 1)
+        self.test_eopr.setVisible(self.cmbtest.currentIndex() == 2)
 
     def change_model(self):
         ''' Reliability model changed '''
@@ -550,6 +564,15 @@ class TabCalibration(QtWidgets.QDialog):
             self.repair.chkbox.setChecked(False)
         self.renewal.setCurrentIndex(
             {'never': 0, 'always': 1, 'asneeded': 2}.get(self.qty.measurement.calibration.policy, 0))
+
+        if self.qty.measurement.interval.test_years:
+            self.cmbtest.setCurrentIndex(1)
+            self.test_interval.setValue(self.qty.measurement.interval.test_years)
+        elif self.qty.measurement.interval.test_eopr:
+            self.cmbtest.setCurrentIndex(2)
+            self.test_eopr.setValue(self.qty.measurement.interval.test_eopr)
+        else:
+            self.cmbtest.setCurrentIndex(0)
 
         self.change_renewal()
         self.change_model()
@@ -681,8 +704,6 @@ class MqaTree(QtWidgets.QTreeWidget):
         self.setItemDelegateForColumn(self.COL_TAR, self._noeditdelegate)
         self.setItemDelegateForColumn(self.COL_TUR, self._noeditdelegate)
         self.setItemDelegateForColumn(self.COL_PFA, self._noeditdelegate)
-        self._caldelegate.calc_eopr.connect(self.calc_eopr)
-        self._caldelegate.calc_interval.connect(self.calc_interval)
         self._equipdelegate.uncert_source_changed.connect(self.parent_source_changed)
 
         self.fill_tree()
@@ -758,7 +779,7 @@ class MqaTree(QtWidgets.QTreeWidget):
             f'{qty.measurand.eopr_pct*100} %',
             f'± {uncert:.2g}',  # Equip
             str(result.guardband),  # GB
-            f'{qty.measurement.interval.years:.1f} yr' if mode > MqaQuantity.Mode.BASIC else 'None',  # Cal
+            f'{qty.measurement.interval.test_interval:.1f} yr' if mode > MqaQuantity.Mode.BASIC else 'None',  # Cal
             f'{result.cost_annual.total:.0f}' if mode == MqaQuantity.Mode.COSTS else '',
             f'{result.capability.tar:.2f}' if tolerance else '',
             f'{result.capability.tur:.2f}' if tolerance else '',
@@ -868,40 +889,6 @@ class MqaTree(QtWidgets.QTreeWidget):
 
         item.setExpanded(True)
         self.loading = False
-
-    def calc_interval(self, qty: MqaQuantity, index):
-        ''' Calculate new interval for the input EOPR '''
-        item = self.itemFromIndex(index)
-
-        current_eopr = qty.measurand.eopr_pct * 100
-        current_interval = qty.measurement.interval.years
-        eopr, ok = QtWidgets.QInputDialog.getDouble(
-            self, 'Desired End-of-period Reliability',
-            f'Current: Interval = {current_interval:.2f} (years) at EOPR = {current_eopr:.4f}%.\n'
-            'Enter desired EOPR% to calculate new interval.',
-            current_eopr, .1, 99.999999, 4)
-
-        if ok:
-            qty.interval_for_eopr(eopr / 100)
-            qty.calculate(refresh=True)
-            item.setText(self.COL_EOPR, f'{eopr:.2f} %')
-
-    def calc_eopr(self, qty: MqaQuantity, index):
-        ''' Set the a new interval, recalculating EOPR '''
-        item = self.itemFromIndex(index)
-        assert qty.result is not None
-        current_eopr = qty.measurand.eopr_pct * 100
-        current_interval = qty.measurement.interval.years
-        interval, ok = QtWidgets.QInputDialog.getDouble(
-            self, 'New Interval',
-            f'Current: Interval = {current_interval:.2f} (years) at EOPR = {current_eopr:.4f}%.\n'
-            'Enter new interval in years.',
-            current_interval, .1, 10000, 3)
-
-        if ok:
-            new_eopr = qty.eopr_for_interval(interval)
-            qty.calculate(refresh=True)
-            item.setText(self.COL_EOPR, f'{new_eopr*100:.2f} %')
 
 
 class MqaInput(QtWidgets.QWidget):

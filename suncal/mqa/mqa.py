@@ -343,12 +343,16 @@ class MqaQuantity:
             self.measurand.tolerance, self.measurand.testpoint)
         aop = self.measurement.interval.aop()
         aop_pct = aop.itp(self.measurand.tolerance)
+        eopr_test = self.measurement.interval.eopr_at_test
+        eopr_test = eopr_test if eopr_test else self.result.eopr.true.pct
         self.result.reliability = MqaPeriodReliabilityResult(
             pdfs,
             probs,
             MqaReliabilityResult(bop, bop_pct),
             MqaReliabilityResult(aop, aop_pct),
-            None  # success (calculated later)
+            None,  # success (calculated later)
+            eopr_test,
+            self.measurement.interval.test_interval,
         )
         return self.result.reliability
 
@@ -362,8 +366,8 @@ class MqaQuantity:
             p_success = min(self.measurand.psr * (self.result.eopr.true.pdf * utility).integrate(), 1.0)
 
         else:
-            interval = self.measurement.interval.years
-            tt = np.linspace(0, interval, 100)
+            interval = self.measurement.interval.test_interval
+            tt = np.linspace(0, interval, 50)
             success_t = self.success_time(tt)
             p_success = simpson(success_t, x=tt) / interval
 
@@ -394,41 +398,6 @@ class MqaQuantity:
         '''
         return self.measurement.interval.pdf_time(t)
 
-    def interval_for_eopr(self, eopr: float, true_eopr: bool = False) -> float:
-        ''' Calculate a new interval to acheive the input EOPR '''
-        if true_eopr:
-            true_eopr = eopr
-            if self.measurand.tolerance.onesided:
-                sigma_true = Pdf.from_itp(self.measurand.testpoint, true_eopr, self.measurand.tolerance).std
-            else:
-                sigma_true = float(self.measurand.tolerance.plusminus) / stats.norm.ppf((1+true_eopr)/2)
-            sigma_obs = np.sqrt(sigma_true**2 - self.result.uncertainty.stdev**2)
-            pdf_obs = Pdf.from_stdev(self.measurand.testpoint, sigma_obs)
-            obs_eopr = pdf_obs.itp(self.measurand.tolerance)
-        else:
-            obs_eopr = eopr
-            if self.measurand.tolerance.onesided:
-                sigma_obs = Pdf.from_itp(self.measurand.testpoint, obs_eopr, self.measurand.tolerance).std
-            else:
-                sigma_obs = float(self.measurand.tolerance.plusminus) / stats.norm.ppf((1+obs_eopr)/2)
-            sigma_true = np.sqrt(sigma_obs**2 - self.result.uncertainty.stdev**2)
-            pdf_true = Pdf.from_stdev(self.measurand.testpoint, sigma_true)
-            true_eopr = pdf_true.itp(self.measurand.tolerance)
-
-        new_interval_yr = self.measurement.interval.model.find_interval(true_eopr)
-        self.measurement.interval.years = new_interval_yr
-        self.measurand.eopr_pct = obs_eopr
-        return new_interval_yr
-
-    def eopr_for_interval(self, interval: float) -> float:
-        ''' Change the interval and predict the new OBSERVED reliability '''
-        sigma_true = self.reliability_t(interval).std
-        obs_pdf = Pdf.from_stdev(self.measurand.testpoint, np.sqrt(sigma_true**2 + self.result.uncertainty.stdev**2))
-        obs_eopr = obs_pdf.itp(self.measurand.tolerance)
-        self.measurand.eopr_pct = obs_eopr
-        self.measurement.interval.years = interval
-        return obs_eopr
-
     def _calc_costs(self):
         ''' Calculate cost model '''
         assert self.result is not None
@@ -452,7 +421,7 @@ class MqaQuantity:
         csyear = self.costs.annual.spare_startup * spare_cost
 
         # Annual costs
-        dut_per_year = (self.costs.annual.nuut + ns) / self.measurement.interval.years
+        dut_per_year = (self.costs.annual.nuut + ns) / self.measurement.interval.test_interval
         ccal = self.costs.annual.cal * dut_per_year
         cadj = self.costs.annual.adjust * dut_per_year * self.result.reliability.probs.adjust
         crep = dut_per_year * self.costs.annual.repair * self.result.reliability.probs.repair

@@ -165,7 +165,7 @@ class PdfPopupButton(QtWidgets.QToolButton):
         self.setPopupMode(QtWidgets.QToolButton.ToolButtonPopupMode.InstantPopup)
         self.addAction(self.popupAction)
         self.table.changed.connect(self.changed)
-        self.set_distribution(distributions.Distribution('norm', std=1))
+        self.set_distribution(distributions.get_distribution('norm', unc=1))
 
     def isvalid(self) -> bool:
         ''' Pdf is valid '''

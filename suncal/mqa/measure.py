@@ -51,6 +51,10 @@ class ReliabilityExponential:
         ''' Find the interval (years) where the reliability falls to the set level '''
         return np.log(reliability / self.rbop) / -self.lamb
 
+    def reliability(self, t) -> float:
+        ''' Get reliability at time t '''
+        return self.rbop * np.exp(-self.lamb * t)
+
 
 class ReliabilityRandomWalk:
     ''' Random Walk reliability model '''
@@ -90,6 +94,10 @@ class ReliabilityRandomWalk:
             sigma_t = Pdf.from_itp(self.testpoint, reliability, self.tolerance).std
         return (sigma_t**2 - self.sigma_bop**2) / self.alpha
 
+    def reliability(self, t) -> float:
+        ''' Get reliability at time t '''
+        return self.pdf(t).itp(self.tolerance)
+
 
 @dataclass
 class MqaCalibration:
@@ -108,14 +116,33 @@ class MqaInterval:
     ''' Info about the interval/reliability model '''
     years: float = 1.0
     reliability_model: ReliabilityModel = 'none'
+    test_years = None
+    test_eopr = None
 
     # Computed by the model
     model: ReliabilityExponential | ReliabilityRandomWalk = None
     bop: Pdf = None
 
     @property
+    def test_interval(self):
+        ''' Interval being tested (not necessarily observed/historical) '''
+        if self.model and self.test_years is not None:
+            return self.test_years
+        if self.model and self.test_eopr is not None:
+            return self.model.find_interval(self.test_eopr)
+        return self.years
+
+    @property
+    def eopr_at_test(self):
+        if self.model and self.test_years is not None:
+            return self.model.reliability(self.test_years)
+        if self.model and self.test_eopr is not None:
+            return self.test_eopr
+        return None
+
+    @property
     def days(self):
-        return self.years * 365.25
+        return self.test_interval * 365.25
 
     def set_model(
             self,
@@ -146,7 +173,7 @@ class MqaInterval:
 
     def aop(self) -> Pdf:
         ''' Get average-over-period reliability projected for this model '''
-        return self.pdf_time(self.years/2)
+        return self.pdf_time(self.test_interval/2)
 
 
 @dataclass

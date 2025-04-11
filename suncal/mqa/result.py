@@ -142,6 +142,8 @@ class MqaPeriodReliabilityResult:
     bop: MqaReliabilityResult  # reliability is bop.pct
     aop: MqaReliabilityResult
     success: float
+    eopr: float
+    interval: float
 
 
 @dataclass
