@@ -5,10 +5,20 @@ use serde::{Serialize, Deserialize};
 fn default_infinity() -> f64 { std::f64::INFINITY }
 fn default_1() -> f64 { 1.0 }
 fn default_0() -> f64 { 0.0 }
-fn default_095() -> f64 { 0.95 }
+fn default_4() -> f64 { 4.0 }
+fn default_095() -> f64 { 0.9545 }
 fn default_02() -> f64 { 0.02 }
 fn default_0size() -> usize { 0 as usize }
-fn default_eopr() -> Eopr {Eopr::True(0.95)}
+fn default_eopr() -> Eopr {Eopr::True(0.9545)}
+fn default_gb() -> Guardband {
+    {Guardband{
+        tolerance: Tolerance::default(),
+        method: GuardbandMethod::None,
+        target: 0.02,
+        tur: 4.0,
+        }
+    }
+}
 
 
 // TypeB Distributions are serializable
@@ -97,7 +107,7 @@ impl Default for Tolerance {
 
 
 // End of period reliability, may be True or Observed
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Debug)]
 pub enum Eopr {
     True(f64),
     Observed(f64),
@@ -122,6 +132,8 @@ pub struct Guardband {
     pub method: GuardbandMethod,
     #[serde(default = "default_02")]
     pub target: f64,  // For Pfa, Cpfa, and Pfr methods
+    #[serde(default = "default_4")]
+    pub tur: f64,  // TUR below which to guardband
 }
 impl Default for Guardband {
     fn default() -> Self {
@@ -129,6 +141,7 @@ impl Default for Guardband {
             tolerance: Tolerance{low:-1.0, high:1.0},
             method: GuardbandMethod::None,
             target: 0.02,
+            tur: 4.0,
         }
     }
 }
@@ -140,14 +153,26 @@ pub struct Utility {
     pub tolerance: Tolerance,
     pub degrade: Option<Tolerance>,
     pub failure: Option<Tolerance>,
-    pub guardband: Option<Guardband>,
+    #[serde(default = "default_gb")]
+    pub guardband: Guardband,
     #[serde(default = "default_1")]
     pub psr: f64,
+}
+impl Default for Utility {
+    fn default() -> Self {
+        Self{
+            tolerance: Tolerance::default(),
+            degrade: None,
+            failure: None,
+            guardband: Guardband::default(),
+            psr: 1.0,
+        }
+    }
 }
 
 
 // Calibration renewal policy
-#[derive(Clone, Serialize, Deserialize, Debug)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
 pub enum RenewalPolicy {
     Never,
     Always,
@@ -155,8 +180,9 @@ pub enum RenewalPolicy {
 }
 
 // Reliability Model - decay over interval
-#[derive(Clone, Serialize, Deserialize, Debug)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
 pub enum ReliabilityModel {
+    None,
     Exponential,
     RandomWalk,
 }
@@ -179,6 +205,15 @@ pub struct Interval {
     pub years: f64,
     pub target: Option<IntervalTarget>,
 }
+impl Default for Interval {
+    fn default() -> Self {
+        Self{
+            eopr: Eopr::Observed(0.9545),
+            years: 1.0,
+            target: None,
+        }
+    }
+}
 
 
 // Calibration/Test information
@@ -192,12 +227,12 @@ pub struct Calibration {
     pub poststress: Option<TypeBDist>,
     pub mte_adjust: Option<TypeBDist>,
     pub mte_repair: Option<TypeBDist>,
-    pub reliability_model: Option<ReliabilityModel>,
+    pub reliability_model: ReliabilityModel,
 }
 
 
 // Cost Model
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Costs {
     #[serde(default = "default_0")]
     pub cal: f64,
@@ -226,6 +261,17 @@ pub struct Costs {
     #[serde(default = "default_0")]
     pub cost_fr: f64
 }
+impl Default for Costs {
+    fn default() -> Self {
+        Self{
+            cal: 0.0, adjust: 0.0, repair: 0.0,
+            new_uut: 0.0, num_uuts: 1.0,
+            spare_factor: 1.0, spare_startup: 0.0,
+            down_cal: 0.0, down_adj: 0.0, down_rep: 0.0,
+            p_use: 1.0, cost_fa: 0.0, cost_fr: 0.0,
+        }
+    }
+}
 
 
 // Correlation between two variables
@@ -250,7 +296,7 @@ pub struct Settings {
 }
 impl Settings {
     fn new() -> Settings {
-        Settings{confidence: 0.95, montecarlo: 0}
+        Settings{confidence: 0.9545, montecarlo: 0}
     }
 }
 
@@ -265,6 +311,16 @@ pub struct MeasureSystem {
     pub correlation: Vec<CorrelationCoeff>,
     #[serde(default = "Settings::new")]
     pub settings: Settings,
+}
+impl Default for MeasureSystem {
+    fn default() -> Self {
+        Self{
+            quantity: vec![],
+            function: vec![],
+            correlation: vec![],
+            settings: Settings::new(),
+        }
+    }
 }
 
 

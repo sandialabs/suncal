@@ -1,5 +1,5 @@
 // Global and Specific Risk Calculation Functions
-use std::collections::HashMap;
+//use std::collections::HashMap;
 use serde::{Serialize, Deserialize};
 use roots::find_root_brent;
 
@@ -57,7 +57,7 @@ impl RiskModel {
     }
     pub fn tur(&self) -> f64 {
         let plusminus = (self.tolerance.high - self.tolerance.low) / 2.0;
-        let std = self.test.std_dev(&HashMap::new());
+        let std = self.test.std_dev(None);
         plusminus / std / 2.0
     }
     pub fn get_guardband(&self) -> Tolerance {
@@ -66,27 +66,39 @@ impl RiskModel {
             GuardbandMethod::Manual => self.guardband.tolerance.clone(),
             GuardbandMethod::Rds => {
                 let tur = self.tur();
-                let gbf = (1.0 - 1.0 / tur.powi(2)).sqrt();
-                let center = (self.tolerance.low + self.tolerance.high) / 2.0;
-                let plusminus = self.tolerance.high - center;
-                let accept_width = plusminus * gbf;
-                Tolerance{low: center-accept_width, high: center+accept_width}
+                if tur < self.guardband.tur {
+                    let gbf = (1.0 - 1.0 / tur.powi(2)).sqrt();
+                    let center = (self.tolerance.low + self.tolerance.high) / 2.0;
+                    let plusminus = self.tolerance.high - center;
+                    let accept_width = plusminus * gbf;
+                    Tolerance{low: center-accept_width, high: center+accept_width}
+                } else {
+                    Tolerance{low: self.tolerance.low, high: self.tolerance.high}
+                }
             },
             GuardbandMethod::Dobbert => {
                 let tur = self.tur();
-                let gbf = 1.0 - (1.04 - (0.38 * tur.ln() - 0.54).exp()) / tur;
-                let center = (self.tolerance.low + self.tolerance.high) / 2.0;
-                let plusminus = self.tolerance.high - center;
-                let accept_width = plusminus * gbf;
-                Tolerance{low: center-accept_width, high: center+accept_width}
+                if tur < self.guardband.tur {
+                    let gbf = 1.0 - (1.04 - (0.38 * tur.ln() - 0.54).exp()) / tur;
+                    let center = (self.tolerance.low + self.tolerance.high) / 2.0;
+                    let plusminus = self.tolerance.high - center;
+                    let accept_width = plusminus * gbf;
+                    Tolerance{low: center-accept_width, high: center+accept_width}
+                } else {
+                    Tolerance{low: self.tolerance.low, high: self.tolerance.high}
+                }
             },
             GuardbandMethod::Rp10 => {
                 let tur = self.tur();
-                let gbf = 1.25 - 1.0 / tur;
-                let center = (self.tolerance.low + self.tolerance.high) / 2.0;
-                let plusminus = self.tolerance.high - center;
-                let accept_width = plusminus * gbf;
-                Tolerance{low: center-accept_width, high: center+accept_width}
+                if tur < self.guardband.tur {
+                    let gbf = 1.25 - 1.0 / tur;
+                    let center = (self.tolerance.low + self.tolerance.high) / 2.0;
+                    let plusminus = self.tolerance.high - center;
+                    let accept_width = plusminus * gbf;
+                    Tolerance{low: center-accept_width, high: center+accept_width}
+                } else {
+                    Tolerance{low: self.tolerance.low, high: self.tolerance.high}
+                }
             },
             GuardbandMethod::Pfa => {
                 let mut width = (self.tolerance.high - self.tolerance.low) / 2.0;
@@ -142,7 +154,7 @@ impl RiskModel {
         }
     }
     pub fn worst_specific(&self, accept: &Tolerance) -> f64 {
-        let tdist = self.test.pdf_given_y(0.0, &HashMap::new());
+        let tdist = self.test.pdf_given_y(0.0, None);
         let risk1: f64 = if self.tolerance.high.is_finite() {
             1.0 - tdist.cdf(self.tolerance.high - accept.high)
         } else { 0.0 };
@@ -152,7 +164,7 @@ impl RiskModel {
         risk1.max(risk2)
     }
     pub fn pr_conform(&self, x: f64) -> f64 {
-        let tdist = self.test.pdf_given_y(0.0, &HashMap::new());
+        let tdist = self.test.pdf_given_y(0.0, None);
         let risk_lower: f64 = if self.tolerance.low.is_finite() {
             tdist.cdf(self.tolerance.low - x)
         } else { 0.0 };
@@ -163,7 +175,7 @@ impl RiskModel {
     }
     pub fn pfa(&self, accept: &Tolerance) -> f64 {
         let n = 5000;
-        let tdist = self.test.pdf_given_y(0.0, &HashMap::new());
+        let tdist = self.test.pdf_given_y(0.0, None);
         let (prange_low, prange_high) = self.process.domain();
         let mut sum_below = 0.0;
         let mut sum_above = 0.0;
@@ -190,7 +202,7 @@ impl RiskModel {
     }
     pub fn pfr(&self, accept: &Tolerance) -> f64 {
         let n = 5000;
-        let tdist = self.test.pdf_given_y(0.0, &HashMap::new());
+        let tdist = self.test.pdf_given_y(0.0, None);
         let (prange_low, prange_high) = self.process.domain();
         let top = if self.tolerance.high.is_finite() { self.tolerance.high } else { prange_high };
         let bot = if self.tolerance.low.is_finite() { self.tolerance.low } else { prange_low };
@@ -205,7 +217,7 @@ impl RiskModel {
     }
     pub fn cpfa(&self, accept: &Tolerance) -> f64 {
         let n = 5000;
-        let tdist = self.test.pdf_given_y(0.0, &HashMap::new());
+        let tdist = self.test.pdf_given_y(0.0, None);
         let (prange_low, prange_high) = self.process.domain();
         let top = if self.tolerance.high.is_finite() { self.tolerance.high } else { prange_high };
         let bot = if self.tolerance.low.is_finite() { self.tolerance.low } else { prange_low };

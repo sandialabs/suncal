@@ -1,6 +1,5 @@
 // Measurment Decision Risk Application
 use std::error::Error;
-use std::collections::HashMap;
 use eframe::egui;
 use eframe::egui::text::{CCursor, CCursorRange};
 use egui_plot::{Line, VLine, HLine, Plot, PlotPoints, LineStyle, Legend};
@@ -77,7 +76,6 @@ impl Default for SweepParams {
             xstart: 0.50,
             xstop: 0.95,
             xnum: 20,
-//            xvalues: vec![50.0, 55.0, 60.0, 65.0, 70.0, 75.0, 80.0, 85.0, 90.0, 95.0],
             zvalues: vec![1.5, 2.0, 3.0, 4.0],
             itp: 0.95,
             tur: 4.0,
@@ -150,12 +148,14 @@ impl SweepParams {
                             tolerance: acceptance,
                             method: GuardbandMethod::Manual,
                             target: 0.0,  // NA
+                            tur: f64::INFINITY,  // NA
                         }
                     },
                     _ => Guardband{
                         tolerance: tolerance.clone(),
                         method: self.gbmethod.clone(),
                         target: 0.0,   // NA
+                        tur: f64::INFINITY, // NA
                     },
                 };
 
@@ -331,7 +331,7 @@ impl RiskApp {
         let proc_dist = self.proc_dist();
         let test_dist = self.test_dist();
         let (xlow, xhigh) = proc_dist.domain();
-        let tstd = test_dist.std_dev(&HashMap::new());
+        let tstd = test_dist.std_dev(None);
         let xlow = xlow - tstd*3.0;
         let xhigh = xhigh + tstd*3.0;
         let width = xhigh-xlow;
@@ -343,7 +343,7 @@ impl RiskApp {
             let x = xlow + i as f64 * step;
             for j in 0..n {
                 let y = xlow + j as f64 * step;
-                let p = proc_dist.pdf(y) * test_dist.pdf_given_y(y, &HashMap::new()).pdf(x);  // TODO - CHECK (-x?)
+                let p = proc_dist.pdf(y) * test_dist.pdf_given_y(y, None).pdf(x);  // TODO - CHECK (-x?)
                 z.push(p);
             }
         }
@@ -363,12 +363,12 @@ impl RiskApp {
         let tlow = if self.model.tolerance.low.is_finite() {
             self.model.tolerance.low
         } else {
-            self.model.tolerance.high - self.model.test.std_dev(&HashMap::new()) * 4.0
+            self.model.tolerance.high - self.model.test.std_dev(None) * 4.0
         };
         let thigh = if self.model.tolerance.high.is_finite() {
             self.model.tolerance.high
         } else {
-            self.model.tolerance.low + self.model.test.std_dev(&HashMap::new()) * 4.0
+            self.model.tolerance.low + self.model.test.std_dev(None) * 4.0
         };
 
         let width = thigh-tlow;

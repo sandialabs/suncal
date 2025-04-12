@@ -6,4 +6,5 @@ members = [
     "src/suncal2",
     "src/riskcli",
     "src/risk_eframe",
+    "src/mqa_eframe",
 ]

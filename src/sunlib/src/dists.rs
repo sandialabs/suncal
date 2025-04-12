@@ -1,13 +1,14 @@
 // Probability Distributions
 use std::fmt;
 use std::f64::consts::{PI, SQRT_2};
-use std::collections::HashMap;
+//use std::collections::HashMap;
 use serde::{Serialize, Deserialize};
 use rand::{thread_rng, Rng};
 use special::{Gamma, Error};
+use roots::find_root_brent;
 
 use crate::cfg::{TypeBDist, Tolerance};
-use crate::result::QuantityResult;
+use crate::result::{QuantityResult, get_qresult};
 
 
 const PDF_N: usize = 1001;
@@ -26,6 +27,7 @@ impl fmt::Display for DistributionError {
 }
 
 
+
 // TypeB distributions don't have a nominal/mean value
 impl TypeBDist {
     pub fn check(&self) -> Result<(), Box<dyn std::error::Error>> {
@@ -37,7 +39,7 @@ impl TypeBDist {
             _ => Ok(()),
         }
     }
-    pub fn variance(&self, qty_results: &HashMap<String, QuantityResult>) -> f64 {
+    pub fn variance(&self, qty_results: Option<&Vec<QuantityResult>>) -> f64 {
         match self {
             TypeBDist::Normal(d) => d.stddev.powi(2),
             TypeBDist::Uniform(d) => d.a.powi(2) / 3.0,
@@ -47,7 +49,7 @@ impl TypeBDist {
             },
             TypeBDist::Gamma(d) => d.a / d.b.powi(2),
             TypeBDist::Symbol(d) => {
-                match qty_results.get(d) {
+                match get_qresult(d, qty_results) {
                     Some(qty) => {
                         match &qty.reliability {
                             Some(r) => r.sigma_aop.powi(2),
@@ -62,10 +64,10 @@ impl TypeBDist {
             }
         }
     }
-    pub fn std_dev(&self, qty_results: &HashMap<String, QuantityResult>) -> f64 {
+    pub fn std_dev(&self, qty_results: Option<&Vec<QuantityResult>>) -> f64 {
         self.variance(qty_results).sqrt()
     }
-    pub fn degrees_freedom(&self, qty_results: &HashMap<String, QuantityResult>) -> f64 {
+    pub fn degrees_freedom(&self, qty_results: Option<&Vec<QuantityResult>>) -> f64 {
         match self {
             TypeBDist::Normal(d) => d.degf,
             TypeBDist::Uniform(d) => d.degf,
@@ -73,7 +75,7 @@ impl TypeBDist {
             TypeBDist::Gamma(d) => d.degf,
             TypeBDist::Tolerance(d) => d.degf,
             TypeBDist::Symbol(d) => {
-                match qty_results.get(d) {
+                match get_qresult(d, qty_results) {
                     Some(qty) => {
                         qty.uncertainty.degrees_freedom()
                     },
@@ -82,7 +84,7 @@ impl TypeBDist {
             }
         }
     }
-    pub fn pdf_given_y(&self, y: f64, qty_results: &HashMap<String, QuantityResult>) -> Distribution {
+    pub fn pdf_given_y(&self, y: f64, qty_results: Option<&Vec<QuantityResult>>) -> Distribution {
         // Place uncertainty at the measured value y and convert to Distribution
         match self {
             TypeBDist::Normal(d) => Distribution::Normal{mu: y, sigma: d.stddev},
@@ -94,7 +96,8 @@ impl TypeBDist {
                 Distribution::Normal{mu: y, sigma: sigma}
             },
             TypeBDist::Symbol(d) => {
-                let sigma = match qty_results.get(d) {
+                let sigma = match get_qresult(d, qty_results) {
+
                     Some(qty) => {
                         match &qty.reliability {
                             Some(r) => r.sigma_aop,
@@ -107,13 +110,13 @@ impl TypeBDist {
             },
         }
     }
-    pub fn integrate_given_y(&self, a: f64, b: f64, qty_results: &HashMap<String, QuantityResult>) -> Distribution {
+    pub fn integrate_given_y(&self, a: f64, b: f64, qty_results: Option<&Vec<QuantityResult>>) -> Distribution {
         // Integrate f(x|y) dy from a to b, returning Distribution
         // Same as convolving a step function between a and b
         let rect = Distribution::Step{a: a, b: b};
         rect.convolve(&self, qty_results)
     }
-    pub fn sample(&self, qty_results: &HashMap<String, QuantityResult>) -> f64 {
+    pub fn sample(&self, qty_results: Option<&Vec<QuantityResult>>) -> f64 {
         // Random variate, centered around 0
         let mut rng = thread_rng();
 
@@ -145,7 +148,7 @@ impl TypeBDist {
                 // Box-Muller (JCGM101 C.4 and 6.4.7.4)
                 let r1: f64 = rng.gen_range(0.0..1.0);
                 let r2: f64 = rng.gen_range(0.0..1.0);
-                let sigma = match qty_results.get(d) {
+                let sigma = match get_qresult(d, qty_results) {
                     Some(qty) => {
                         match &qty.reliability {
                             Some(r) => r.sigma_aop,
@@ -189,10 +192,14 @@ pub fn linspace(start: f64, stop: f64, n: usize) -> Vec<f64> {
 pub fn trapz_integral(v: &[f64], dx: f64) -> f64 {
     // Trapezoidal integration
     let n = v.len();
-    let mut i: f64 = v[1..n-1].iter().sum::<f64>() * 2.0;
-    i += v[0];
-    i += v[n-1];
-    i * dx / 2.0
+    if n > 2 {
+        let mut i: f64 = v[1..n-1].iter().sum::<f64>() * 2.0;
+        i += v[0];
+        i += v[n-1];
+        i * dx / 2.0
+    } else {
+        0.0
+    }
 }
 
 fn interpolate(x: f64, xs: &[f64], ys: &[f64]) -> f64 {
@@ -208,10 +215,22 @@ fn interpolate(x: f64, xs: &[f64], ys: &[f64]) -> f64 {
 }
 
 
-pub fn std_from_itp(itp: f64, _nominal: f64, tolerance: &Tolerance) -> f64 {
-    // TODO - asymmetric (will use nominal)
+pub fn std_from_itp(itp: f64, nominal: f64, tolerance: &Tolerance) -> f64 {
     let plusminus = (tolerance.high - tolerance.low) / 2.0;
-    plusminus / Distribution::standard_norm().inverse_cdf((1.0+itp)/2.0)
+    let center = (tolerance.high + tolerance.low) / 2.0;
+    let bias = (nominal - center) / plusminus;
+
+    if bias.abs() < 1E-12 {
+        plusminus / Distribution::standard_norm().inverse_cdf((1.0+itp)/2.0)
+    } else {
+        match find_root_brent(1E-9f64, 10.0, |x| {
+            let d = Distribution::Normal{mu: bias, sigma: x};
+            d.cdf(1.0) - d.cdf(-1.0) - itp
+        }, &mut 1E-5f64) {
+            Ok(sig) => sig * plusminus,
+            Err(_) => f64::NAN,
+        }
+    }
 }
 pub fn itp_from_norm(nominal: f64, stddev: f64, tolerance: &Tolerance) -> f64 {
     let pdf = Distribution::Normal{mu: nominal, sigma: stddev};
@@ -414,7 +433,7 @@ impl Distribution {
         let p2 = other.to_discrete(&nrange);
         (p1, p2)
     }
-    pub fn convolve(&self, typeb: &TypeBDist, qty_results: &HashMap<String, QuantityResult>) -> Distribution {
+    pub fn convolve(&self, typeb: &TypeBDist, qty_results: Option<&Vec<QuantityResult>>) -> Distribution {
         // Convolve this Distribution with a TypeB distribution
         // Most combos will be done numerically and return a Discrete
             // Normals = RSS

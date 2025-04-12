@@ -90,7 +90,7 @@ failure = {low = 70.0, high = 130.0}
 [quantity.interval]
 eopr.Observed = 0.99993
 years = 1.0
-target = {Eopr=0.9973}
+#target = {Eopr=0.9973}
 
 [quantity.calibration]
 policy = "Asneeded"

@@ -11,31 +11,49 @@ pub mod cfg;
 pub mod result;
 pub mod risk;
 use crate::dists::{normal_cdf, std_from_itp, itp_from_norm};
-use crate::cfg::{ModelQuantity, ModelFunction, MeasureSystem, CorrelationCoeff, Tolerance, Utility, Costs, Eopr, Guardband, RenewalPolicy, ReliabilityModel, Interval, IntervalTarget, Calibration};
-use crate::result::{UncertResult, QuantityResult, GumResult, MonteCarloResult, RiskResult, RiskResultGlobal, ReliabilityResult, CostResult, SystemResult, ReliabilityDecay, ReliabilityDecayParameters};
+use crate::cfg::{ModelQuantity, ModelFunction, MeasureSystem, CorrelationCoeff, Tolerance, Utility, Costs, Eopr, Guardband, RenewalPolicy, ReliabilityModel, TypeBTolerance, TypeBDist, Interval, IntervalTarget, Calibration};
+use crate::result::{UncertResult, QuantityResult, GumResult, MonteCarloResult, RiskResult, RiskResultGlobal, ReliabilityResult, CostResult, SystemResult, ReliabilityDecay, ReliabilityDecayParameters, get_qresult};
 use crate::risk::RiskModel;
 
 
 // Quantities, Functions, and eventually Curves implement this Trait
 trait Uncertainty {
+    fn symbol(&self) -> String;
     fn utility(&self) -> &Option<Utility>;
     fn interval(&self) -> &Option<Interval>;
     fn costs(&self) -> &Option<Costs>;
     fn tolerance(&self) -> Option<Tolerance>;
     fn calibration(&self) -> &Option<Calibration>;
     fn enditem(&self) -> bool;
-    fn evaluate(&self, qty_results: &HashMap<String, QuantityResult>, correlation: &Vec<CorrelationCoeff>) -> Result<UncertResult, Box<dyn Error>>;
-    fn evaluate_mc(&self, qty_results: &HashMap<String, QuantityResult>, correlation: &Vec<CorrelationCoeff>, nsamples: usize) -> Result<UncertResult, Box<dyn Error>>;
+    fn evaluate(&self, qty_results: &Vec<QuantityResult>, correlation: &Vec<CorrelationCoeff>) -> Result<UncertResult, Box<dyn Error>>;
+    fn evaluate_mc(&self, qty_results: &Vec<QuantityResult>, correlation: &Vec<CorrelationCoeff>, nsamples: usize) -> Result<UncertResult, Box<dyn Error>>;
 }
 
 
 impl ModelQuantity {
+    pub fn new_mqa() -> Self {
+        Self{
+            name: String::new(),
+            symbol: String::from("a"),
+            measured: 0.0,
+            units: None,
+            typeb: vec![
+                TypeBDist::Tolerance(TypeBTolerance{tolerance: 0.25, confidence:0.9545, degf: f64::INFINITY, name: String::new()})
+            ],
+            repeatability: None,
+            reproducibility: None,
+            utility: Some(Utility::default()),
+            interval: Some(Interval::default()),
+            calibration: None,
+            cost: None,
+        }
+    }
     fn expected(&self) -> f64 {
         // Expectation
         self.measured
         // TODO - use R/R mean if defined
     }
-    fn degrees_freedom(&self, variance: f64, qty_results: &HashMap<String, QuantityResult>) -> f64 {
+    fn degrees_freedom(&self, variance: f64, qty_results: Option<&Vec<QuantityResult>>) -> f64 {
         // Effective Degrees of Freedom
         // Welch-Satterthwaite
         let mut denom: f64 = 0.0;
@@ -53,12 +71,12 @@ impl ModelQuantity {
         // TODO - Reproducibility
         variance*variance / denom
     }
-    fn variance(&self, qty_results: &HashMap<String, QuantityResult>) -> f64 {
+    fn variance(&self, qty_results: &Vec<QuantityResult>) -> f64 {
         // Standard variance RSSing components
         // combine typebs and R/R
         let mut variance: f64 = 0.0;
         for typeb in self.typeb.iter() {
-            variance += typeb.variance(qty_results)
+            variance += typeb.variance(Some(qty_results))
         }
 
         // Repeatability
@@ -71,17 +89,20 @@ impl ModelQuantity {
         // TODO - Reproducibility
         variance
     }
-    fn sample(&self, qty_results: &HashMap<String, QuantityResult>) -> f64 {
+    fn sample(&self, qty_results: &Vec<QuantityResult>) -> f64 {
         // Random sample, combining all uncertainty components
         let mut sample = self.measured;
         for typeb in self.typeb.iter() {
-            sample += typeb.sample(qty_results);
+            sample += typeb.sample(Some(qty_results));
         }
         // TODO - R&R
         sample
     }
 }
 impl Uncertainty for ModelQuantity {
+    fn symbol(&self) -> String {
+        self.symbol.clone()
+    }
     fn utility(&self) -> &Option<Utility> {
         &self.utility
     }
@@ -109,7 +130,7 @@ impl Uncertainty for ModelQuantity {
         }
     }
     fn evaluate(&self,
-        qty_results: &HashMap<String, QuantityResult>,
+        qty_results: &Vec<QuantityResult>,
         _correlation: &Vec<CorrelationCoeff>,
     ) -> Result<UncertResult, Box<dyn Error>> {
         let variance = self.variance(qty_results);
@@ -117,12 +138,12 @@ impl Uncertainty for ModelQuantity {
             expected: self.expected(),
             variance: variance,
             std_dev: variance.sqrt(),
-            degrees_freedom: self.degrees_freedom(variance, qty_results),
+            degrees_freedom: self.degrees_freedom(variance, Some(qty_results)),
             ..Default::default()
         };
         Ok(UncertResult::Gum(gum))
     }
-    fn evaluate_mc(&self, qty_results: &HashMap<String, QuantityResult>, _correlation: &Vec<CorrelationCoeff>, nsamples: usize) -> Result<UncertResult, Box<dyn Error>> {
+    fn evaluate_mc(&self, qty_results: &Vec<QuantityResult>, _correlation: &Vec<CorrelationCoeff>, nsamples: usize) -> Result<UncertResult, Box<dyn Error>> {
         // TODO - handle correlated
         let mut samples = Vec::<f64>::with_capacity(nsamples);
         for _i in 0..nsamples {
@@ -135,7 +156,7 @@ impl Uncertainty for ModelQuantity {
 
 impl ModelFunction {
     fn calc_gum(&self,
-            qty_results: &HashMap<String, QuantityResult>,
+            qty_results: &Vec<QuantityResult>,
             correlation: &Vec<CorrelationCoeff>) -> Result<GumResult, Box<dyn Error>> {
         let expr = exmex::parse::<f64>(&self.expr)?;
         let varnames = expr.var_names();
@@ -149,7 +170,7 @@ impl ModelFunction {
         for name in varnames.iter() {
             // TODO - catch panic here if quantity is not defined
             // Return Err and maybe come back later
-            match &qty_results[name].uncertainty {
+            match &get_qresult(name, Some(qty_results)).unwrap().uncertainty {
                 UncertResult::Gum(v) => {
                     expects.push(v.expected);
                     variances.push(v.variance);
@@ -197,7 +218,7 @@ impl ModelFunction {
         })
     }
     fn calc_monte(&self,
-                   qty_results: &HashMap<String, QuantityResult>,
+                   qty_results: &Vec<QuantityResult>,
                    nsamples: usize) -> Result<MonteCarloResult, Box<dyn Error>> {
         let expr = exmex::parse::<f64>(&self.expr)?;
         let varnames = expr.var_names();
@@ -206,7 +227,8 @@ impl ModelFunction {
         for i in 0..nsamples {
             let mut var_samples: Vec<f64> = Vec::new();
             for name in varnames.iter() {
-                match &qty_results[name].uncertainty {
+                let qty = get_qresult(name, Some(qty_results)).unwrap();
+                match &qty.uncertainty {
                     UncertResult::Montecarlo(v) => var_samples.push(v.get_sample(i)),
                     UncertResult::Gum(_) => panic!(),
                 }
@@ -218,6 +240,9 @@ impl ModelFunction {
     }
 }
 impl Uncertainty for ModelFunction {
+    fn symbol(&self) -> String {
+        self.symbol.clone()
+    }
     fn utility(&self) -> &Option<Utility> {
         &self.utility
     }
@@ -244,11 +269,11 @@ impl Uncertainty for ModelFunction {
     fn calibration(&self) -> &Option<Calibration> {
         &self.calibration
     }
-    fn evaluate(&self, qty_results: &HashMap<String, QuantityResult>, correlation: &Vec<CorrelationCoeff>) -> Result<UncertResult, Box<dyn Error>> {
+    fn evaluate(&self, qty_results: &Vec<QuantityResult>, correlation: &Vec<CorrelationCoeff>) -> Result<UncertResult, Box<dyn Error>> {
         let gum = self.calc_gum(qty_results, &correlation)?;
         Ok(UncertResult::Gum(gum))
     }
-    fn evaluate_mc(&self, qty_results: &HashMap<String, QuantityResult>, _correlation: &Vec<CorrelationCoeff>, nsamples: usize) -> Result<UncertResult, Box<dyn Error>> {
+    fn evaluate_mc(&self, qty_results: &Vec<QuantityResult>, _correlation: &Vec<CorrelationCoeff>, nsamples: usize) -> Result<UncertResult, Box<dyn Error>> {
         let monte = self.calc_monte(qty_results, nsamples)?;
         Ok(UncertResult::Montecarlo(monte))
     }
@@ -278,10 +303,7 @@ fn global_pfa(uncert: &UncertResult, true_eopr: f64, item: &impl Uncertainty) ->
 
     let guardband = match &item.utility() {
         Some(utility) => { 
-            match &utility.guardband {
-                Some(g) => g.clone(),
-                None => Guardband::default(),
-            }
+            utility.guardband.clone()
         },
         None => Guardband::default(),
     };
@@ -296,10 +318,12 @@ fn global_pfa(uncert: &UncertResult, true_eopr: f64, item: &impl Uncertainty) ->
     let pfa = riskmodel.pfa(&acceptance);
     let pfr = riskmodel.pfr(&acceptance);
     let cpfa = riskmodel.cpfa(&acceptance);
+    let tur = riskmodel.tur();
     RiskResultGlobal{
         pfa_true: pfa,
         pfr_true: pfr,
         cpfa_true: cpfa,
+        tur: tur,
         acceptance: acceptance,
     }
 }
@@ -349,8 +373,9 @@ fn true_eopr(uncert: &UncertResult, item: &impl Uncertainty) -> Option<Eopr> {
 }
 
 
-fn calc_reliability(uncert: &UncertResult, acceptance: Tolerance, eopr: f64, item: &impl Uncertainty, qty_results: &HashMap<String, QuantityResult>) -> ReliabilityResult {
+fn calc_reliability(uncert: &UncertResult, acceptance: Tolerance, eopr: f64, item: &impl Uncertainty, qty_results: &Vec<QuantityResult>) -> ReliabilityResult {
     // Calculate reliability data
+    let qr = Some(qty_results);
     let tolerance = &item.tolerance().unwrap();
     let utility = match &item.utility() {
         Some(v) => v,
@@ -363,18 +388,18 @@ fn calc_reliability(uncert: &UncertResult, acceptance: Tolerance, eopr: f64, ite
     // Pre-measurement stress
     let pdf_bt = match item.calibration() {
         Some(calib) => match &calib.prestress {
-            Some(p) => dists::Distribution::from_itp(expected, eopr, &tolerance).convolve(&p, &HashMap::new()),
+            Some(p) => dists::Distribution::from_itp(expected, eopr, &tolerance).convolve(&p, None),
             None => dists::Distribution::from_itp(expected, eopr, &tolerance),
         },
         None => dists::Distribution::from_itp(expected, eopr, &tolerance),
     };
 
-    let pdf_t = pdf_bt.convolve(&fyx, qty_results);
-    let accepted_x = fyx.integrate_given_y(acceptance.low, acceptance.high, qty_results);
+    let pdf_t = pdf_bt.convolve(&fyx, qr);
+    let accepted_x = fyx.integrate_given_y(acceptance.low, acceptance.high, qr);
     let p_accepted = pdf_t.integrate(acceptance.low, acceptance.high);
     let x_given_accepted = accepted_x.mul(&pdf_bt, p_accepted.recip());
     // let x_given_rejected = accepted_x.invert().mul(&pdf_bt, (1.0-p_accepted).recip());
-    let obs_oot = 1.0 - pdf_bt.convolve(&fyx, qty_results).integrate(tolerance.low, tolerance.high);
+    let obs_oot = 1.0 - pdf_bt.convolve(&fyx, qr).integrate(tolerance.low, tolerance.high);
 
     let mut p_repair = 0.0;
     let mut p_adjust = 0.0;
@@ -387,12 +412,12 @@ fn calc_reliability(uncert: &UncertResult, acceptance: Tolerance, eopr: f64, ite
                 _ => {  // Always or As-needed
 
                     let fy_ap = match &calib.mte_adjust {
-                        Some(m) => m.pdf_given_y(expected, qty_results),
-                        None => fyx.pdf_given_y(expected, qty_results),
+                        Some(m) => m.pdf_given_y(expected, qr),
+                        None => fyx.pdf_given_y(expected, qr),
                     };
                     let fy_rp = match &calib.mte_repair {
-                        Some(m) => m.pdf_given_y(expected, qty_results),
-                        None => fyx.pdf_given_y(expected, qty_results),
+                        Some(m) => m.pdf_given_y(expected, qr),
+                        None => fyx.pdf_given_y(expected, qr),
                     };
 
                     let repair_limit = match &calib.repair {
@@ -402,7 +427,7 @@ fn calc_reliability(uncert: &UncertResult, acceptance: Tolerance, eopr: f64, ite
 
                     // let x_adjust = &fy_rp;
                     p_repair = 1.0 - pdf_t.integrate(repair_limit.low, repair_limit.high);
-                    // let notadjust_x = fyx.integrate_given_y(acceptance.low, acceptance.high, qty_results);
+                    // let notadjust_x = fyx.integrate_given_y(acceptance.low, acceptance.high, qr);
                     // let adjust_x = notadjust_x.invert();
                     p_adjust = 1.0 - pdf_t.integrate(acceptance.low, acceptance.high) - p_repair;
                     p_repair = p_repair * (1.0 - calib.prob_discard);
@@ -430,7 +455,7 @@ fn calc_reliability(uncert: &UncertResult, acceptance: Tolerance, eopr: f64, ite
     // Post-measurement stress
     let pdf_bop = match item.calibration() {
         Some(calib) => match &calib.prestress {
-            Some(p) => pdf_pt.convolve(&p, &HashMap::new()),
+            Some(p) => pdf_pt.convolve(&p, None),
             None => pdf_pt.clone(),
         },
         None => pdf_pt.clone(),
@@ -442,9 +467,10 @@ fn calc_reliability(uncert: &UncertResult, acceptance: Tolerance, eopr: f64, ite
     let decay = match &item.calibration() {
         Some(c) => {
             match &c.reliability_model {
-                Some(model) => {
+                ReliabilityModel::None => None,
+                _ => {
                     Some(ReliabilityDecay::new(
-                        model.clone(),
+                        c.reliability_model.clone(),
                         p_bop,
                         eopr,
                         interval.years,
@@ -452,7 +478,6 @@ fn calc_reliability(uncert: &UncertResult, acceptance: Tolerance, eopr: f64, ite
                         expected,
                     ))
                 },
-                None => None,
             }
         },
         None => None,
@@ -473,17 +498,19 @@ fn calc_reliability(uncert: &UncertResult, acceptance: Tolerance, eopr: f64, ite
         None => tolerance,
     };
 
+    let sig = dists::std_from_itp(eopr, expected, &tolerance);
+    let mut utility_curve = dists::Distribution::Step{a: tolerance.low, b: tolerance.high};
+    let pdf_eop = dists::Distribution::Normal{mu: expected, sigma: sig};
     let mut p_success = f64::NAN;
+
     if item.enditem() {
-        let utility_curve = dists::Distribution::cosine(degrade, fail);
+        utility_curve = dists::Distribution::cosine(degrade, fail);
         p_success = match &decay {
             None => {
-                let sig = dists::std_from_itp(eopr, expected, &tolerance);
-                let eopr_pdf = dists::Distribution::Normal{mu: expected, sigma: sig};
-                utility_curve.mul(&eopr_pdf, utility.psr).integrate(-f64::INFINITY, f64::INFINITY)
+                utility_curve.mul(&pdf_eop, utility.psr).integrate(-f64::INFINITY, f64::INFINITY)
             },
             Some(d) => {
-                d.success(utility_curve, utility.psr)
+                d.success(&utility_curve, utility.psr)
             },
         };
     }
@@ -493,7 +520,8 @@ fn calc_reliability(uncert: &UncertResult, acceptance: Tolerance, eopr: f64, ite
         _pdf_bt: pdf_bt,
         _pdf_t: pdf_t,
         _pdf_pt: pdf_pt,
-        _pdf_bop: pdf_bop,
+        pdf_bop: pdf_bop,
+        pdf_eop: pdf_eop,
         _obs_oot: obs_oot,
         decay: decay,
         p_bop: p_bop,
@@ -502,6 +530,7 @@ fn calc_reliability(uncert: &UncertResult, acceptance: Tolerance, eopr: f64, ite
         p_repair: p_repair,
         p_adjust: p_adjust,
         p_success: p_success,
+        utility: utility_curve,
     }
 }
 
@@ -527,7 +556,7 @@ impl ReliabilityDecay {
             ReliabilityModel::RandomWalk => {
                 let sig_bop = dists::std_from_itp(p_bop, expected, tolerance);
                 let sig_eop = dists::std_from_itp(p_eop, expected, tolerance);
-                let alpha = (sig_eop.powi(2) + sig_bop.powi(2)) / interval;
+                let alpha = (sig_eop.powi(2) - sig_bop.powi(2)) / interval;
                 let sig_aop = (sig_bop.powi(2) + alpha*interval/2.0).sqrt();
                 let p_aop = itp_from_norm(expected, sig_aop, tolerance);
 
@@ -545,6 +574,7 @@ impl ReliabilityDecay {
                         alpha: alpha},
                 }
             },
+            ReliabilityModel::None => { unreachable!(); },
         }
     }
     fn bop_pdf(&self) -> dists::Distribution {
@@ -576,7 +606,19 @@ impl ReliabilityDecay {
             },
         }
     }
-    fn success(&self, utility: dists::Distribution, psr: f64) -> f64 {
+    pub fn reliability_time(&self, t: f64) -> f64 {
+        // Get reliability at time t
+        match self.decay {
+            ReliabilityDecayParameters::Exponential{lambda, sig_aop: _} => {
+                self.p_bop * (-lambda * t).exp()
+            },
+            ReliabilityDecayParameters::RandomWalk{sig_bop, sig_aop: _, sig_eop: _, alpha} => {
+                let sig = (sig_bop.powi(2) + alpha * t).sqrt();
+                itp_from_norm(self.expected, sig, &self.tolerance)
+            },
+        }
+    }
+    fn success(&self, utility: &dists::Distribution, psr: f64) -> f64 {
         // Probability of success over the interval
         let times = dists::linspace(0.0, self.interval, 50);
         let dt = times[1]-times[0];
@@ -622,7 +664,7 @@ impl ReliabilityDecay {
 }
 
 
-fn reliability(uncert: &UncertResult, riskresult: &Option<RiskResult>, eopr: f64, item: &impl Uncertainty, qty_results: &HashMap<String, QuantityResult>) -> Option<ReliabilityResult> {
+fn reliability(uncert: &UncertResult, riskresult: &Option<RiskResult>, eopr: f64, item: &impl Uncertainty, qty_results: &Vec<QuantityResult>) -> Option<ReliabilityResult> {
     // Calculate reliability data
     let acceptance = match riskresult {
         Some(r) => {
@@ -655,7 +697,7 @@ fn calc_costs(risk: &RiskResultGlobal, rel: &ReliabilityResult, item: &impl Unce
                 + cost.down_adj * rel.p_adjust
                 + cost.down_rep * rel.p_repair;
 
-            let interval_years = match &rel.decay { Some(d) => d.interval, None => unreachable!(),};
+            let interval_years = match &rel.decay { Some(d) => d.interval, None => 1.0, };  // TODO - Get interval from calib?
             let interval_days = interval_years * 365.25;
             let p_available = (1.0 + downtime / interval_days).recip();
             let num_spares = (downtime / interval_days) * cost.num_uuts * cost.spare_factor;
@@ -707,7 +749,7 @@ impl fmt::Display for UndefinedCorrelationError {
 fn calc_item(
         item: &impl Uncertainty,
         mcsamples: usize,
-        qty_results: &HashMap<String, QuantityResult>,
+        qty_results: &Vec<QuantityResult>,
         correlation: &Vec<CorrelationCoeff>) -> Result<QuantityResult, Box<dyn Error>> {
     // Calculate the quantity - whether Direct or Indirect
     let uncert_result = match mcsamples {
@@ -754,6 +796,7 @@ fn calc_item(
     };
 
     Ok(QuantityResult{
+        symbol: item.symbol(),
         uncertainty: uncert_result,
         eopr: eopr_result,
         interval: interval,
@@ -764,40 +807,45 @@ fn calc_item(
 }
 
 
-pub fn calculate(model: &MeasureSystem) -> Result<SystemResult, Box<dyn Error>> {
-    // Calculate all quantities, GUM and Monte Carlo
-    let mut qty_results: HashMap<String, QuantityResult> = HashMap::new();
-    for qty in model.quantity.iter() {
-        qty_results.insert(
-            qty.symbol.clone(),
-            calc_item(qty, 0, &qty_results, &model.correlation)?
-        );
+impl MeasureSystem {
+    pub fn load_toml(config: &str) -> Result<MeasureSystem, Box<dyn std::error::Error>> {
+        let model = toml::from_str::<MeasureSystem>(&config)?;
+        Ok(model)
     }
-    for func in model.function.iter() {
-        qty_results.insert(
-            func.symbol.clone(),
-            calc_item(func, 0, &qty_results, &model.correlation)?
-        );
+    pub fn get_config(&self) -> Result<String, toml::ser::Error> {
+        toml::to_string(self)
     }
+    pub fn calculate(&self) -> Result<SystemResult, Box<dyn Error>> {
+        // Calculate all quantities, GUM and Monte Carlo
+        let mut qty_results: Vec<QuantityResult> = vec![];
+        for qty in self.quantity.iter() {
+            qty_results.push(
+                calc_item(qty, 0, &qty_results, &self.correlation)?
+            );
+        }
+        for func in self.function.iter() {
+            qty_results.push(
+                calc_item(func, 0, &qty_results, &self.correlation)?
+            );
+        }
 
-    // MC
-    let mut mc_results: HashMap<String, QuantityResult> = HashMap::new();
-    if model.settings.montecarlo > 1 {
-        for qty in model.quantity.iter() {
-            mc_results.insert(
-                qty.symbol.clone(),
-                calc_item(qty, model.settings.montecarlo, &mc_results, &model.correlation)?
-            );
+        // MC
+        let mut mc_results: Vec<QuantityResult> = vec![];
+        if self.settings.montecarlo > 1 {
+            for qty in self.quantity.iter() {
+                mc_results.push(
+                    calc_item(qty, self.settings.montecarlo, &mc_results, &self.correlation)?
+                );
+            }
+            for func in self.function.iter() {
+                mc_results.push(
+                    calc_item(func, self.settings.montecarlo, &mc_results, &self.correlation)?
+                );
+            }
         }
-        for func in model.function.iter() {
-            mc_results.insert(
-                func.symbol.clone(),
-                calc_item(func, model.settings.montecarlo, &mc_results, &model.correlation)?
-            );
-        }
+        Ok(SystemResult{
+            quantities: qty_results,
+            montecarlo: mc_results,
+            system: self})
     }
-    Ok(SystemResult{
-        quantities: qty_results,
-        montecarlo: mc_results,
-        system: model})
 }

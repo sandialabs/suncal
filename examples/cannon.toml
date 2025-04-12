@@ -1,0 +1,17 @@
+[[quantity]]
+symbol = "cannonball"
+measured = 19.7
+units = "cm"
+typeb = [
+    {Tolerance = {name = "Calipers", tolerance=0.004, confidence=0.95}},
+    {Normal = {name="Repeatability", stddev=0.0648}},
+    {Normal = {name="Resolution", stddev=0.00029}},
+]
+
+[quantity.utility]
+tolerance = {low = 19.51, high = 19.81}
+degrade = {low = 19.575, high = 19.808}
+failure = {low = 19.48, high = 19.827}
+
+[quantity.interval]
+eopr.True = 0.95

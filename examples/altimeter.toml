@@ -1,0 +1,204 @@
+function = []
+correlation = []
+
+[[quantity]]
+name = ""
+symbol = "adt321"
+measured = 29.25
+
+[[quantity.typeb]]
+
+[quantity.typeb.Tolerance]
+tolerance = 0.002
+confidence = 0.999
+degf = inf
+name = ""
+
+[[quantity.typeb]]
+
+[quantity.typeb.Normal]
+stddev = 0.000577
+degf = inf
+name = ""
+
+[quantity.utility]
+psr = 1.0
+
+[quantity.utility.tolerance]
+low = 29.248
+high = 29.252
+
+[quantity.utility.guardband]
+method = "None"
+target = 0.02
+tur = 4.0
+
+[quantity.utility.guardband.tolerance]
+low = 29.248
+high = 29.252
+
+[quantity.interval]
+years = 0.25
+
+[quantity.interval.eopr]
+Observed = 0.9364
+
+[quantity.calibration]
+policy = "Asneeded"
+prob_discard = 0.0
+reliability_model = "RandomWalk"
+
+[quantity.cost]
+cal = 250.0
+adjust = 0.0
+repair = 1000.0
+new_uut = 175000.0
+num_uuts = 75.0
+spare_factor = 0.1
+spare_startup = 0.0
+down_cal = 30.0
+down_adj = 0.0
+down_rep = 30.0
+p_use = 1.0
+cost_fa = 0.0
+cost_fr = 0.0
+
+[[quantity]]
+name = ""
+symbol = "ttu205"
+measured = 29.25
+
+[[quantity.typeb]]
+Symbol = "adt321"
+
+[[quantity.typeb]]
+
+[quantity.typeb.Normal]
+stddev = 0.00153
+degf = inf
+name = ""
+
+[[quantity.typeb]]
+
+[quantity.typeb.Normal]
+stddev = 0.00085
+degf = inf
+name = ""
+
+[quantity.utility]
+psr = 1.0
+
+[quantity.utility.tolerance]
+low = 29.24
+high = 29.26
+
+[quantity.utility.guardband]
+method = "None"
+target = 0.02
+tur = 4.0
+
+[quantity.utility.guardband.tolerance]
+low = 29.24
+high = 29.26
+
+[quantity.interval]
+years = 0.833333
+
+[quantity.interval.eopr]
+Observed = 0.9775
+
+[quantity.calibration]
+policy = "Asneeded"
+prob_discard = 0.0
+reliability_model = "RandomWalk"
+
+[quantity.cost]
+cal = 25.0
+adjust = 0.0
+repair = 800.0
+new_uut = 75000.0
+num_uuts = 75.0
+spare_factor = 0.2
+spare_startup = 0.0
+down_cal = 0.2
+down_adj = 0.0
+down_rep = 14.0
+p_use = 1.0
+cost_fa = 0.0
+cost_fr = 0.0
+
+[[quantity]]
+name = ""
+symbol = "f18alt"
+measured = 29.25
+
+[[quantity.typeb]]
+Symbol = "ttu205"
+
+[[quantity.typeb]]
+
+[quantity.typeb.Normal]
+stddev = 0.00765
+degf = inf
+name = ""
+
+[[quantity.typeb]]
+
+[quantity.typeb.Normal]
+stddev = 0.0023
+degf = inf
+name = ""
+
+[quantity.utility]
+psr = 0.9999
+
+[quantity.utility.tolerance]
+low = 29.2
+high = 29.3
+
+[quantity.utility.degrade]
+low = 29.205
+high = 29.295
+
+[quantity.utility.failure]
+low = 29.195
+high = 29.305
+
+[quantity.utility.guardband]
+method = "None"
+target = 0.02
+tur = 4.0
+
+[quantity.utility.guardband.tolerance]
+low = 29.2
+high = 29.3
+
+[quantity.interval]
+years = 0.25
+
+[quantity.interval.eopr]
+Observed = 0.95
+
+[quantity.calibration]
+policy = "Asneeded"
+prob_discard = 0.0
+reliability_model = "RandomWalk"
+
+[quantity.cost]
+cal = 25.0
+adjust = 0.0
+repair = 300.0
+new_uut = 3500.0
+num_uuts = 400.0
+spare_factor = 1.0
+spare_startup = 0.0
+down_cal = 0.5
+down_adj = 0.0
+down_rep = 7.0
+p_use = 0.02
+cost_fa = 32000000.0
+cost_fr = 0.0
+
+[settings]
+confidence = 0.9545
+montecarlo = 0

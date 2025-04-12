@@ -3,7 +3,6 @@ use std::{error::Error, fs, env};
 use toml;
 
 use sunlib::cfg::MeasureSystem;
-use sunlib::calculate;
 
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -31,7 +30,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     const STACKSIZE: usize = 8;  // How big should the stack be??
     std::thread::Builder::new().stack_size(1024*1024*STACKSIZE).spawn(move || {
-        let result = calculate(&model);
+        let result = model.calculate();
         match result {
             Ok(r) => r.printit(),
             Err(r) => eprintln!("{}", r),

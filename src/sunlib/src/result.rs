@@ -6,7 +6,7 @@ use crate::stats;
 use crate::dists;
 
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ReliabilityDecay {
     pub expected: f64,
     pub tolerance: Tolerance,
@@ -16,7 +16,7 @@ pub struct ReliabilityDecay {
     pub p_aop: f64,
     pub decay: ReliabilityDecayParameters,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum ReliabilityDecayParameters {
     Exponential{lambda: f64, sig_aop: f64},
     RandomWalk{sig_bop: f64, sig_aop: f64, sig_eop: f64, alpha: f64}
@@ -76,6 +76,7 @@ pub struct RiskResultGlobal {
     pub pfa_true: f64,
     pub pfr_true: f64,
     pub cpfa_true: f64,
+    pub tur: f64,
     pub acceptance: Tolerance,
 }
 #[derive(Debug)]
@@ -122,7 +123,8 @@ pub struct ReliabilityResult {
     pub _pdf_bt: dists::Distribution,
     pub _pdf_t: dists::Distribution,
     pub _pdf_pt: dists::Distribution,
-    pub _pdf_bop: dists::Distribution,
+    pub pdf_bop: dists::Distribution,
+    pub pdf_eop: dists::Distribution,
     pub _obs_oot: f64,
     pub decay: Option<ReliabilityDecay>,
     pub p_bop: f64,
@@ -130,7 +132,8 @@ pub struct ReliabilityResult {
     pub sigma_aop: f64,
     pub p_repair: f64,
     pub p_adjust: f64,
-    pub p_success: f64
+    pub p_success: f64,
+    pub utility: dists::Distribution,
 }
 
 #[derive(Debug)]
@@ -169,6 +172,7 @@ impl CostResult {
 
 #[derive(Debug)]
 pub struct QuantityResult {
+    pub symbol: String,
     pub uncertainty: UncertResult,
     pub eopr: Option<Eopr>,  // True EOPR at test interval
     pub interval: f64,       // Test interval
@@ -177,33 +181,54 @@ pub struct QuantityResult {
     pub cost: Option<CostResult>,
 }
 
+
+pub fn get_qresult<'a>(name: &String, qty_results: Option<&'a Vec<QuantityResult>>) -> Option<&'a QuantityResult> {
+    match qty_results {
+        Some(v) => {
+            let mut q = None;
+            for qty in v {
+                if qty.symbol == *name {
+                    q = Some(qty);
+                    break;
+                }
+            }
+            q
+        },
+        None => None,
+    }
+}
+
+
 #[derive(Debug)]
 pub struct SystemResult<'a> {
-    pub quantities: HashMap<String, QuantityResult>,
-    pub montecarlo: HashMap<String, QuantityResult>,
+    pub quantities: Vec<QuantityResult>,
+    pub montecarlo: Vec<QuantityResult>,
     pub system: &'a MeasureSystem,
 }
 impl SystemResult<'_> {
-    pub fn printit(&self) {
-        for (qname, qty) in self.quantities.iter() {
+    pub fn to_string(&self) -> String {
+        let mut string_list: Vec<String> = vec![];
+
+//        for (qname, qty) in self.quantities.iter() {
+        for qty in self.quantities.iter() {
             let gum = match &qty.uncertainty {
                 UncertResult::Gum(v) => v,
                 UncertResult::Montecarlo(_) => panic!(),
             };
-            println!("{} = {} ± {} (ν={}, k={}, {}%)",
-                qname, gum.expected, gum.std_dev,
+            string_list.push(format!("{} = {} ± {} (ν={}, k={}, {}%)",
+                qty.symbol, gum.expected, gum.std_dev,
                 gum.degrees_freedom, gum.coverage_factor,
                 gum.confidence * 100.0,
-           );
+           ));
 
             match &qty.risk {
                 Some(r) => {
                     match r {
                         RiskResult::Specific(v) => println!("  Conformance: {}", v),
                         RiskResult::Global(v) => {
-                            println!("  PFA: {}", v.pfa_true);
-                            println!("  CPFA: {}", v.cpfa_true);
-                            println!("  PFR: {}", v.pfr_true);
+                            string_list.push(format!("  PFA: {}", v.pfa_true));
+                            string_list.push(format!("  CPFA: {}", v.cpfa_true));
+                            string_list.push(format!("  PFR: {}", v.pfr_true));
                         },
                     }
                 }
@@ -213,8 +238,8 @@ impl SystemResult<'_> {
             match &qty.eopr {
                 Some(r) => match r {
                     Eopr::True(t) => { 
-                        println!("  EOPR: {}", t);
-                        println!("  Interval: {}", qty.interval);
+                        string_list.push(format!("  EOPR: {}", t));
+                        string_list.push(format!("  Interval: {}", qty.interval));
                     },
                     Eopr::Observed(_) => panic!(),
                 },
@@ -222,43 +247,47 @@ impl SystemResult<'_> {
             }
             match &qty.reliability {
                 Some(r) => {
-                    println!("  AOPR: {}", r.p_aop);
-                    println!("  BOPR: {}", r.p_bop);
+                    string_list.push(format!("  AOPR: {}", r.p_aop));
+                    string_list.push(format!("  BOPR: {}", r.p_bop));
+                    if r.p_success.is_finite() {
+                        string_list.push(format!("  Success: {}", r.p_success));
+                    };
                 },
                 None => {},
             }
 
             match &qty.cost {
                 Some(c) => {
-                    println!("  COSTS:");
-                    println!("    Calibration: {:.0}", c.calibration);
-                    println!("    Adjustment: {:.0}", c.adjustment);
-                    println!("    Repair: {:.0}", c.repair);
-                    println!("    Support Total: {:.0}", c.support);
-                    println!("    Annual Total: {:.0}", c.total);
-                    println!("    Spares Acquisition: {:.0}", c.spare_cost);
+                    string_list.push(format!("  COSTS:"));
+                    string_list.push(format!("    Calibration: {:.0}", c.calibration));
+                    string_list.push(format!("    Adjustment: {:.0}", c.adjustment));
+                    string_list.push(format!("    Repair: {:.0}", c.repair));
+                    string_list.push(format!("    Support Total: {:.0}", c.support));
+                    string_list.push(format!("    Annual Total: {:.0}", c.total));
+                    string_list.push(format!("    Spares Acquisition: {:.0}", c.spare_cost));
                 },
                 _ => {}
             }
         }
 
         if self.system.settings.montecarlo > 1 {
-            println!("-- MONTE CARLO --");
-            for (qname, qty) in self.montecarlo.iter() {
+            string_list.push(format!("-- MONTE CARLO --"));
+//            for (qname, qty) in self.montecarlo.iter() {
+            for qty in self.montecarlo.iter() {
                 let mc = match &qty.uncertainty {
                     UncertResult::Montecarlo(v) => v,
                     UncertResult::Gum(_) => panic!(),
                 };
-                println!("{} = {} ± {}", qname, mc.mean(), mc.std_dev());
+                string_list.push(format!("{} = {} ± {}", qty.symbol, mc.mean(), mc.std_dev()));
 
                 match &qty.risk {
                     Some(r) => {
                         match r {
-                            RiskResult::Specific(v) => println!("  Conformance: {}", v),
+                            RiskResult::Specific(v) => string_list.push(format!("  Conformance: {}", v)),
                             RiskResult::Global(v) => {
-                                println!("  PFA: {}", v.pfa_true);
-                                println!("  CPFA: {}", v.cpfa_true);
-                                println!("  PFR: {}", v.pfr_true);
+                                string_list.push(format!("  PFA: {}", v.pfa_true));
+                                string_list.push(format!("  CPFA: {}", v.cpfa_true));
+                                string_list.push(format!("  PFR: {}", v.pfr_true));
                             },
                         }
                     }
@@ -267,35 +296,40 @@ impl SystemResult<'_> {
 
                 match &qty.eopr {
                     Some(r) => match r {
-                        Eopr::True(t) => println!("  EOPR: {}", t),
+                        Eopr::True(t) => string_list.push(format!("  EOPR: {}", t)),
                         Eopr::Observed(_) => panic!(),
                     },
                     None => {},
                 }
                 match &qty.reliability {
                     Some(r) => {
-                        println!("  AOPR: {}", r.p_aop);
-                        println!("  BOPR: {}", r.p_bop);
+                        string_list.push(format!("  AOPR: {}", r.p_aop));
+                        string_list.push(format!("  BOPR: {}", r.p_bop));
+                        string_list.push(format!("  Success: {}", r.p_success));
                     },
                     None => {},
                 }
 
                 match &qty.cost {
                     Some(c) => {
-                        println!("  COSTS:");
-                        println!("    Calibration: {:.0}", c.calibration);
-                        println!("    Adjustment: {:.0}", c.adjustment);
-                        println!("    Repair: {:.0}", c.repair);
-                        println!("    Support Total: {:.0}", c.support);
-                        println!("    Annual Total: {:.0}", c.total);
-                        println!("    Spares Acquisition: {:.0}", c.spare_cost);
+                        string_list.push(format!("  COSTS:"));
+                        string_list.push(format!("    Calibration: {:.0}", c.calibration));
+                        string_list.push(format!("    Adjustment: {:.0}", c.adjustment));
+                        string_list.push(format!("    Repair: {:.0}", c.repair));
+                        string_list.push(format!("    Support Total: {:.0}", c.support));
+                        string_list.push(format!("    Annual Total: {:.0}", c.total));
+                        string_list.push(format!("    Spares Acquisition: {:.0}", c.spare_cost));
                         if c.performance > 0.0 {
-                            println!("    Annaul Performance: {:.0}", c.performance);
+                            string_list.push(format!("    Annaul Performance: {:.0}", c.performance));
                         }
                     },
                     _ => {}
                 }
             }
         }
+        string_list.join("\n")
+    }
+    pub fn printit(&self) {
+        println!("{}", self.to_string());
     }
 }
