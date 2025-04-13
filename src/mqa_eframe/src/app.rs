@@ -495,7 +495,28 @@ impl eframe::App for MqaApp {
         egui::TopBottomPanel::top("top_panel")
             .show(ctx, |ui| {
             egui::menu::bar(ui, |ui| {
-
+                let response = ui.button("ℹ").on_hover_text("About");
+                let popup_id = ui.make_persistent_id("about");
+                if response.clicked() {
+                    ui.memory_mut(|mem| mem.toggle_popup(popup_id));
+                }
+                egui::popup::popup_above_or_below_widget(
+                    ui, popup_id, &response,
+                    egui::AboveOrBelow::Below,
+                    egui::popup::PopupCloseBehavior::CloseOnClickOutside, |ui| {
+                        ui.set_min_width(400.0);
+                        ui.heading("Suncal - Sandia Uncertainty Calculator");
+                        ui.strong("End-to-end Measurement Quality Assurance");
+                        ui.add_space(20.0);
+                        ui.strong("Primary Standards Laboratory");
+                        ui.strong("Sandia National Laboratories");
+                        ui.add_space(20.0);
+                        ui.label("© 2025 National Technology & Engineering Solutions of Sandia, LLC (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S. Government retains certain rights in this software.");
+                        ui.add_space(20.0);
+                        ui.label("This software is distributed under the GNU General Public License.");
+                        ui.add_space(20.0);
+                        ui.hyperlink_to("Homepage", "https://sandialabs.github.io/suncal/suncal/index.html");
+                });
 
                 if ui.button("💾")
                     .on_hover_text("Export configuration")
@@ -587,6 +608,7 @@ impl eframe::App for MqaApp {
                 ui.add_space(62.0);
 
                 egui::widgets::global_theme_preference_buttons(ui);
+                ui.add_space(62.0);
             });
 
             if self.save_window_open || self.load_window_open {
@@ -612,6 +634,8 @@ impl eframe::App for MqaApp {
             .show(ctx, |ui| {
             self.draw_output(ui);
         });
+
+    
     }
 }
 impl MqaApp {

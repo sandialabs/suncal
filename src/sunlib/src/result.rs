@@ -208,8 +208,6 @@ pub struct SystemResult<'a> {
 impl SystemResult<'_> {
     pub fn to_string(&self) -> String {
         let mut string_list: Vec<String> = vec![];
-
-//        for (qname, qty) in self.quantities.iter() {
         for qty in self.quantities.iter() {
             let gum = match &qty.uncertainty {
                 UncertResult::Gum(v) => v,
