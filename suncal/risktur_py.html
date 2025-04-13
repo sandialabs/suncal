@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Suncal - Measurement Decision Risk</title>
+  <link rel="stylesheet" href="style/style.css" />
+  <link rel="stylesheet" href="https://pyscript.net/releases/2024.3.2/core.css">
+  <script type="module" src="https://pyscript.net/releases/2024.3.2/core.js"></script>
+  <script type="module">
+    const loading = document.getElementById('loading');
+    addEventListener('py:ready', () => loading.close());
+    loading.showModal();
+  </script>
+</head>
+<body>
+  <dialog id="loading">
+    <h2>Loading...</h2>
+  </dialog>
+  <div class="container">
+    <h1>Suncal Web - Decision Risk Calculator (TUR)</h1>
+  </div>
+  <div class="container" style="margin-top: 2em; margin-bottom: 2em;">
+      <table class="inputTable">
+        <tr>
+          <td><label for="TUR" id="TURLabel">Test Uncertainty Ratio:&nbsp</label></td>
+          <td><input type="number" py-change="risk_simple" value="4.0" min="0" max="100" step="0.1" id="TUR" name="TUR"
+              required></td>
+        </tr>
+        <tr>
+          <td><label for="ITP" id="ITPLabel">In-tolerance Probability:&nbsp</label></td>
+          <td><input type="number" py-change="risk_simple" value="95.0" min="0" max="99.99" step="1" id="ITP" name="ITP"
+              required></td>
+        </tr>
+        <tr>
+          <td><label for="GBF" id="GBFLabel">Guardband Factor:&nbsp</label></td>
+          <td><input type="number" py-change="risk_simple" value="1" min="0" max="2" step="0.01" id="GBF" name="GBF"
+              required></td>
+        </tr>
+      </table>
+    <div class="risk-grid-child">
+      <div id="output">Initializing...</div>
+    </div>
+  </div>
+  <br><br>
+  <div class="footer" style="margin-top: 3em;">
+    <p><a href="index.html">Suncal-Web Home</a></p>
+  </div>
+
+  <script type="py" src="src/risktur.py" ></script>
+</body>
+</html>
