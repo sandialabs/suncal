@@ -13,7 +13,7 @@
 ## Training
 
 - Introduction to Measurement Uncertainty [Slides](PSL_measurement_uncertainty.pdf)
-- Measurement Decision Risk [Slides](PSL_measurement_decision_risk.pdf)
+- Measurement Decision Risk [Slides](PSL_Measurement_Decision Risk_Training.pptx)
 - Suncal tutorial [Slides](PSL_suncal_tutorial.pptx)
 
 
