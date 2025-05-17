@@ -1,0 +1,43 @@
+
+[[quantity]]
+symbol = "x"
+measured = 0.01
+#units = "m"
+typeb = [
+    {Normal = {stddev=0.01, degf=inf}}
+]
+
+
+
+[[quantity]]
+symbol = "y"
+measured = 0.0
+#units = "m"
+typeb = [
+    {Normal = {stddev=0.01, degf=inf}}
+]
+
+
+[[function]]
+symbol = "mag"
+expr = "sqrt(x^2 + y^2)"
+#units = "m"
+
+[[function]]
+symbol = "ph"
+expr = "atan(y/x)"
+
+
+[[correlation]]
+v1 = "x"
+v2 = "y"
+coeff = 0.9
+
+
+[settings]
+confidence = 0.95
+montecarlo = 100000   # Set to 0 to not run
+
+# seed = 
+# correlate_typea = true/false
+# mc_confidence = 'shortest'

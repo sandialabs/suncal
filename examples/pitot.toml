@@ -1,0 +1,36 @@
+[[quantity]]
+symbol = "Delta"
+measured = 8.0
+units = "inH2O"
+typeb = [
+    {Normal = {name = "u(Delta)", stddev = 0.05}},
+]
+
+[[quantity]]
+symbol = "Rs"
+measured = 287.06
+units = "J/K/kg"
+
+[[quantity]]
+symbol = "T"
+measured = 67.4
+units = "degF"
+typeb = [
+    {Normal = {name = "u(T)", stddev = 0.1}},
+]
+
+[[quantity]]
+symbol = "p"
+measured = 14.7
+units = "psi"
+typeb = [
+    {Normal = {name = "u(p)", stddev = 0.15}},
+]
+
+[[function]]
+symbol = "v"
+expr = "sqrt(2*Delta*Rs*T/p)"
+units = "knot"
+
+[settings]
+montecarlo = 100000

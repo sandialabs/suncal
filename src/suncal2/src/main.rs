@@ -2,6 +2,7 @@
 use std::{error::Error, fs, env};
 use toml;
 
+use units;
 use sunlib::cfg::MeasureSystem;
 
 
@@ -19,6 +20,8 @@ fn main() -> Result<(), Box<dyn Error>> {
             std::process::exit(0);
         }
     };
+
+    units::init();
 
     let model: MeasureSystem = match toml::from_str(&config) {
         Ok(v) => v,

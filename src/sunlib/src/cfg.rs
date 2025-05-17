@@ -3,8 +3,10 @@ use serde::{Serialize, Deserialize};
 
 // serde default functions
 fn default_infinity() -> f64 { std::f64::INFINITY }
+fn default_nan() -> f64 { std::f64::NAN }
 fn default_1() -> f64 { 1.0 }
 fn default_0() -> f64 { 0.0 }
+fn default_u0() -> u32 { 0 }
 fn default_4() -> f64 { 4.0 }
 fn default_095() -> f64 { 0.9545 }
 fn default_02() -> f64 { 0.02 }
@@ -59,8 +61,11 @@ pub struct TypeBTriangular {
 }
 #[derive(Serialize, Deserialize, Debug)]
 pub struct TypeBTolerance {
+    // Normal but defined by tolerance and confidence level
     pub tolerance: f64,
     pub confidence: f64,
+    #[serde(default = "default_nan")]
+    pub kfactor: f64,
     #[serde(default = "default_infinity")]
     pub degf: f64,
     #[serde(default = "String::new")]
@@ -275,7 +280,7 @@ impl Default for Costs {
 
 
 // Correlation between two variables
-#[derive(Clone, Serialize, Deserialize, Debug)]
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
 pub struct CorrelationCoeff {
     pub v1: String,
     pub v2: String,
@@ -304,9 +309,12 @@ impl Settings {
 // Measurement System, consisting of multiple quantities
 #[derive(Serialize, Deserialize, Debug)]
 pub struct MeasureSystem {
+    #[serde(default = "Vec::new")]
     pub quantity: Vec<ModelQuantity>,  // singular naming makes the TOML nicer
     #[serde(default = "Vec::new")]
     pub function: Vec<ModelFunction>,
+    #[serde(default = "Vec::new")]
+    pub curve: Vec<ModelCurve>,
     #[serde(default = "Vec::new")]
     pub correlation: Vec<CorrelationCoeff>,
     #[serde(default = "Settings::new")]
@@ -317,6 +325,7 @@ impl Default for MeasureSystem {
         Self{
             quantity: vec![],
             function: vec![],
+            curve: vec![],
             correlation: vec![],
             settings: Settings::new(),
         }
@@ -337,6 +346,8 @@ pub struct ModelQuantity {
     pub typeb: Vec<TypeBDist>,
     pub repeatability: Option<Vec<f64>>,
     pub reproducibility: Option<Vec<Vec<f64>>>,
+    #[serde(default = "default_u0")]
+    pub new_meas: u32,
 
     pub utility: Option<Utility>,
     pub interval: Option<Interval>,
@@ -354,4 +365,57 @@ pub struct ModelFunction {
     pub interval: Option<Interval>,
     pub calibration: Option<Calibration>,
     pub cost: Option<Costs>,
+    #[serde(default = "String::new")]
+    pub name: String,
+}
+impl ModelFunction {
+    pub fn new() -> Self {
+        Self{
+            symbol: String::from("f"),
+            expr: String::new(),
+            units: None,
+            utility: None,
+            interval: None,
+            calibration: None,
+            cost: None,
+            name: String::new(),
+        }
+    }
+}
+
+
+#[derive(Serialize, Deserialize, PartialEq, Debug)]
+pub enum CurveModel {
+    Line,
+    Quadratic,
+    Cubic,
+    Exponential,
+    DampedSine,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ModelCurve {
+    pub model: CurveModel,
+    pub x: Vec<f64>,
+    pub y: Vec<f64>,
+    pub uy: Option<Vec<f64>>,
+    pub guess: Option<Vec<f64>>,
+}
+impl ModelCurve {
+    pub fn new(model: CurveModel, x: Vec<f64>, y: Vec<f64>) -> Self {
+        Self{
+            model: model,
+            x: x,
+            y: y,
+            uy: None,
+            guess: None,
+        }
+    }
+    pub fn data_string(&self) -> String {
+        let mut out = String::new();
+        for i in 0..self.x.len() {
+            out.push_str(&format!("{}, {}\n", self.x[i], self.y[i]));
+        }
+        out
+    }
 }

@@ -1,10 +1,18 @@
 [[quantity]]
 symbol = "a"
 measured = 10.0
+units = "inch"
+typeb = [
+    {Normal = {name = "u", stddev = 0.1}},
+]
 
 [[quantity]]
 symbol = "b"
 measured = 10.0
+units = "cm"
+typeb = [
+    {Uniform = {name = "u", a = 0.1}},
+]
 
 [[function]]
 symbol = "f"

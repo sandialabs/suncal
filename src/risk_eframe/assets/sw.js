@@ -2,8 +2,8 @@ var cacheName = 'egui-template-pwa';
 var filesToCache = [
   './',
   './index.html',
-  './collin_app.js',
-  './collin_app_bg.wasm',
+  './suncal2_riskapp.js',
+  './suncal2_riskapp_bg.wasm',
 ];
 
 /* Start the service worker and cache all of the app's content */

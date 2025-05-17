@@ -116,6 +116,7 @@ impl QuantityUi {
                item.typeb.push(
                    TypeBDist::Tolerance(TypeBTolerance{
                        tolerance: self.equip_tol,
+                       kfactor: f64::NAN,
                        confidence: self.equip_reliability,
                        degf: f64::INFINITY,
                        name: String::new(),
@@ -578,8 +579,7 @@ impl eframe::App for MqaApp {
 
                 ui.add_space(20.0);
 
-                let response = ui.button("⛭").on_hover_text("Show/Hide Columns")
-                ;
+                let response = ui.button("⛭").on_hover_text("Show/Hide Columns");
                 let popup_id = ui.make_persistent_id("column_setup");
                 if response.clicked() {
                     ui.memory_mut(|mem| mem.toggle_popup(popup_id));

@@ -343,7 +343,7 @@ impl RiskApp {
             let x = xlow + i as f64 * step;
             for j in 0..n {
                 let y = xlow + j as f64 * step;
-                let p = proc_dist.pdf(y) * test_dist.pdf_given_y(y, None).pdf(x);  // TODO - CHECK (-x?)
+                let p = proc_dist.pdf(y) * test_dist.pdf_given_y(y, None).pdf(x);
                 z.push(p);
             }
         }

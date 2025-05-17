@@ -1,13 +1,13 @@
 // Probability Distributions
 use std::fmt;
-use std::f64::consts::{PI, SQRT_2};
-//use std::collections::HashMap;
+use std::f64::consts::{PI};
 use serde::{Serialize, Deserialize};
-use rand::{thread_rng, Rng};
-use special::{Gamma, Error};
 use roots::find_root_brent;
+use mathru::algebra::linear::{matrix::General};
+use mathru::algebra::linear::matrix::{CholeskyDecomposition};
+use mathru::statistics::distrib::{Distribution as DistributionRu, Continuous, Normal, Gamma, Uniform};
 
-use crate::cfg::{TypeBDist, Tolerance};
+use crate::cfg::{CorrelationCoeff, TypeBDist, TypeBNormal, TypeBUniform, TypeBTriangular, TypeBGamma, TypeBTolerance, Tolerance};
 use crate::result::{QuantityResult, get_qresult};
 
 
@@ -27,7 +27,6 @@ impl fmt::Display for DistributionError {
 }
 
 
-
 // TypeB distributions don't have a nominal/mean value
 impl TypeBDist {
     pub fn check(&self) -> Result<(), Box<dyn std::error::Error>> {
@@ -39,13 +38,28 @@ impl TypeBDist {
             _ => Ok(()),
         }
     }
+    pub fn scale(&self, scale: f64) -> TypeBDist {
+        // Apply scale factor (ie units)
+        match self {
+            TypeBDist::Normal(d) => TypeBDist::Normal(TypeBNormal::new(d.stddev * scale)),
+            TypeBDist::Uniform(d) => TypeBDist::Uniform(TypeBUniform{a: d.a*scale, degf: d.degf, name: d.name.clone()}),
+            TypeBDist::Triangular(d) => TypeBDist::Triangular(TypeBTriangular{a: d.a*scale, degf: d.degf, name: d.name.clone()}),
+            TypeBDist::Gamma(d) => TypeBDist::Gamma(TypeBGamma{a: d.a*scale, b: d.b, degf: d.degf, name: d.name.clone()}),
+            TypeBDist::Tolerance(d) => TypeBDist::Tolerance(TypeBTolerance{tolerance: d.tolerance*scale, confidence:d.confidence, kfactor:d.kfactor, degf:d.degf, name:d.name.clone()}),
+            _ => todo!(),
+        }
+    }
     pub fn variance(&self, qty_results: Option<&Vec<QuantityResult>>) -> f64 {
         match self {
             TypeBDist::Normal(d) => d.stddev.powi(2),
             TypeBDist::Uniform(d) => d.a.powi(2) / 3.0,
             TypeBDist::Triangular(d) => d.a.powi(2) / 6.0,
             TypeBDist::Tolerance(d) => {
-                (d.tolerance / normal_inv_cdf((1.0+d.confidence)/2.0, 0.0, 1.0)).powi(2)
+                if d.kfactor.is_finite() {
+                    (d.tolerance / d.kfactor).powi(2)
+                } else {
+                    (d.tolerance / normal_inv_cdf((1.0+d.confidence)/2.0, 0.0, 1.0)).powi(2)
+                }
             },
             TypeBDist::Gamma(d) => d.a / d.b.powi(2),
             TypeBDist::Symbol(d) => {
@@ -92,7 +106,11 @@ impl TypeBDist {
             TypeBDist::Triangular(d) => Distribution::Triangular{mu: y, a: d.a},
             TypeBDist::Gamma(d) => Distribution::Gamma{a: d.a, b: d.b},
             TypeBDist::Tolerance(d) => {
-                let sigma = d.tolerance / normal_inv_cdf((1.0+d.confidence)/2.0, 0.0, 1.0);
+                let sigma = if d.kfactor.is_finite() {
+                    d.tolerance / d.kfactor
+                } else {
+                    d.tolerance / normal_inv_cdf((1.0+d.confidence)/2.0, 0.0, 1.0)
+                };
                 Distribution::Normal{mu: y, sigma: sigma}
             },
             TypeBDist::Symbol(d) => {
@@ -116,68 +134,15 @@ impl TypeBDist {
         let rect = Distribution::Step{a: a, b: b};
         rect.convolve(&self, qty_results)
     }
-    pub fn sample(&self, qty_results: Option<&Vec<QuantityResult>>) -> f64 {
-        // Random variate, centered around 0
-        let mut rng = thread_rng();
-
-        match self {
-             TypeBDist::Normal(d) => {
-                // Box-Muller (JCGM101 C.4 and 6.4.7.4)
-                let r1: f64 = rng.gen_range(0.0..1.0);
-                let r2: f64 = rng.gen_range(0.0..1.0);
-                d.stddev * (-2.0 * r1.ln()).sqrt() * (2.0*PI*r2).cos()
-            },
-            TypeBDist::Uniform(d) => {
-                rng.gen_range(-d.a..d.a)
-            },
-            TypeBDist::Triangular(d) => {
-                let r1: f64 = rng.gen_range(-d.a..d.a);
-                let r2: f64 = rng.gen_range(-d.a..d.a);
-                -d.a + d.a * (r1 + r2)  // JCGM101 6.4.5.4
-            },
-            TypeBDist::Gamma(_d) => {
-                todo!()
-            },
-            TypeBDist::Tolerance(d) => {
-                let sigma = d.tolerance / normal_inv_cdf((1.0+d.confidence)/2.0, 0.0, 1.0);
-                let r1: f64 = rng.gen_range(0.0..1.0);
-                let r2: f64 = rng.gen_range(0.0..1.0);
-                sigma * (-2.0 * r1.ln()).sqrt() * (2.0*PI*r2).cos()
-            },
-            TypeBDist::Symbol(d) => {
-                // Box-Muller (JCGM101 C.4 and 6.4.7.4)
-                let r1: f64 = rng.gen_range(0.0..1.0);
-                let r2: f64 = rng.gen_range(0.0..1.0);
-                let sigma = match get_qresult(d, qty_results) {
-                    Some(qty) => {
-                        match &qty.reliability {
-                            Some(r) => r.sigma_aop,
-                            None => 0.0,
-                        }
-                    },
-                    None => 0.0,
-                };
-                sigma * (-2.0 * r1.ln()).sqrt() * (2.0*PI*r2).cos()
-            },
-
-        }
-    }
 }
 
 
-fn gamma_pdf(x: f64, a: f64, b: f64) -> f64 {
-    b.powf(a) / Gamma::gamma(a) * x.powf(a-1.0) * (-b*x).exp()
-}
-fn gamma_cdf(x: f64, a: f64, b: f64) -> f64 {
-    a.inc_gamma(x*b)
-}
 pub fn normal_cdf(x: f64, mu: f64, sigma: f64) -> f64 {
-    0.5 * (1.0 + ((x - mu)/(sigma * SQRT_2)).error())
+    Normal::new(mu, sigma.powi(2)).cdf(x)
 }
 fn normal_inv_cdf(p: f64, mu: f64, sigma: f64) -> f64 {
-    mu + sigma * SQRT_2 * (2.0*p-1.0).inv_error()
+    Normal::new(mu, sigma.powi(2)).quantile(p)
 }
-
 
 pub fn linspace(start: f64, stop: f64, n: usize) -> Vec<f64> {
     // Vector of evenly spaced values
@@ -221,7 +186,7 @@ pub fn std_from_itp(itp: f64, nominal: f64, tolerance: &Tolerance) -> f64 {
     let bias = (nominal - center) / plusminus;
 
     if bias.abs() < 1E-12 {
-        plusminus / Distribution::standard_norm().inverse_cdf((1.0+itp)/2.0)
+        plusminus / normal_inv_cdf((1.0+itp)/2.0, 0.0, 1.0)
     } else {
         match find_root_brent(1E-9f64, 10.0, |x| {
             let d = Distribution::Normal{mu: bias, sigma: x};
@@ -276,6 +241,7 @@ impl Distribution {
             Distribution::Normal{mu, sigma} => (SQRT_2PI * sigma).recip() * (-(x-mu).powi(2) / (2.0*sigma.powi(2))).exp(),
             Distribution::NormalItp{mu, itp, low, high} => {
                 let sigma = std_from_itp(*itp, *mu, &Tolerance{low:*low, high:*high});
+                // Getting weird results using mathru::Normal::pdf()...?
                 (SQRT_2PI * sigma).recip() * (-(x-mu).powi(2) / (2.0*sigma.powi(2))).exp()
             },
             Distribution::Step{a, b} => {
@@ -293,7 +259,13 @@ impl Distribution {
                     0.0
                 }
             },
-            Distribution::Gamma{a, b} => gamma_pdf(x, *a, *b),
+            Distribution::Gamma{a, b} => {
+                if *a > 0.0 && *b > 0.0 && x > 0.0 {
+                    Gamma::new(*a, *b).pdf(x)
+                } else {
+                    0.0
+                }
+            },
             Distribution::Discrete{x: xs, y: ys} => interpolate(x, &xs, &ys),
         }
     }
@@ -323,20 +295,31 @@ impl Distribution {
             Distribution::Gamma{a, b} => {
                 match x {
                     x if x <= 0.0 => 0.0,
-                    _ => gamma_cdf(x, *a, *b),
+                    _ => Gamma::new(*a, *b).cdf(x),
                 }
             },
             _ => todo!()
         }
     }
-    fn inverse_cdf(&self, p: f64) -> f64 {
+    pub fn inverse_cdf(&self, p: f64) -> f64 {
         // Inverse Cumulative Distribution Function
         match self {
-            Distribution::Normal{mu, sigma} => normal_inv_cdf(p, *mu, *sigma),
+            Distribution::Normal{mu, sigma} => {
+                Normal::<f64>::new(*mu, sigma.powi(2)).quantile(p)
+            },
             Distribution::NormalItp{mu, itp, low, high} => {
                 let sigma = std_from_itp(*itp, *mu, &Tolerance{low:*low, high:*high});
-                normal_inv_cdf(p, *mu, sigma)
+                Normal::<f64>::new(*mu, sigma.powi(2)).quantile(p)
             },
+            Distribution::Uniform{mu, a} => Uniform::<f64>::new(mu-a, mu+a).quantile(p),
+            Distribution::Gamma{a, b} => Gamma::<f64>::new(*a, *b).quantile(p),
+            Distribution::Triangular{mu, a} => {
+                if p < *mu {
+                    mu - a + (p*2.0*a*(mu-a)).sqrt()
+                } else {
+                    mu + a - ((1.0-p)*2.0*a*a).sqrt()
+                }
+            }
             _ => todo!(),
         }
     }
@@ -353,6 +336,17 @@ impl Distribution {
                 let sigma = std_from_itp(*itp, *mu, &Tolerance{low:*low, high:*high});
                 (mu - 6.0*sigma, mu + 6.0*sigma)
             },
+        }
+    }
+    pub fn std_dev(&self) -> f64 {
+        match self {
+            Distribution::Normal{mu: _, sigma} => *sigma,
+            Distribution::Step{a, b} => {(b-a)/2.0/3.0_f64.sqrt()},
+            Distribution::Uniform{mu: _, a} => a/3.0_f64.sqrt(),
+            Distribution::NormalItp{mu, itp, low, high} => std_from_itp(*itp, *mu, &Tolerance{low:*low, high:*high}),
+            Distribution::Triangular{mu: _, a} => a/6.0_f64.sqrt(),
+            Distribution::Gamma{a, b} => Gamma::<f64>::new(*a, *b).variance().sqrt(),
+            _ => todo!(),
         }
     }
     fn xvalues(&self) -> Vec<f64> {
@@ -489,4 +483,39 @@ impl Distribution {
         }
         Distribution::Discrete{x: xrange, y: y}
     }
+}
+
+pub fn multivariate_random(nsamples: usize, varnames: Vec<String>, corr: &Vec<CorrelationCoeff>) -> General<f64> {
+    let nvars = varnames.len();
+    let mut cov = General::<f64>::one(nvars);
+
+    for cc in corr {
+        let idx1 = varnames.iter().position(|r| *r == cc.v1).unwrap();
+        let idx2 = varnames.iter().position(|r| *r == cc.v2).unwrap();
+        let sub = General::<f64>::new(1, 1, vec![cc.coeff]);
+        cov = cov.set_slice(&sub, idx1, idx2);
+    }
+
+    let standard_norm: Normal<f64> = Normal::new(0.0, 1.0);
+    let r = &cov.clone().dec_cholesky().unwrap().l();
+
+    let mut samples = General::<f64>::zero(nsamples, nvars);
+    for i in 0..nsamples {
+        let z = General::new(nvars, 1, standard_norm.random_sequence(nvars.try_into().unwrap()));
+        let row = General::<f64>::from(r.clone()*z.into());
+        samples.set_row(&row.get_column(0).transpose(), i);
+    }
+    samples.apply(&|x| standard_norm.cdf(*x))
+}
+
+pub fn random(nsamples: usize, n: usize) -> General<f64> {
+    let standard_norm: Normal<f64> = Normal::new(0.0, 1.0);
+    let s = standard_norm.random_sequence((n*nsamples).try_into().unwrap());
+    let s = s.iter().map(|x| standard_norm.cdf(*x)).collect();
+    let samples = General::new(nsamples, n, s);
+    samples
+}
+
+pub fn norm_pdf(x: f64, mu: f64, sigma: f64) -> f64 {
+    (SQRT_2PI * sigma).recip() * (-(x-mu).powi(2) / (2.0*sigma.powi(2))).exp()
 }

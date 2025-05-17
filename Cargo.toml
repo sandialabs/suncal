@@ -3,8 +3,10 @@ resolver = "2"
 
 members = [
     "src/sunlib",
+    "src/units",
     "src/suncal2",
     "src/riskcli",
     "src/risk_eframe",
     "src/mqa_eframe",
+    "src/suncal_eframe",
 ]
