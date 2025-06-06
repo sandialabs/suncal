@@ -314,8 +314,8 @@ impl Distribution {
             Distribution::Uniform{mu, a} => Uniform::<f64>::new(mu-a, mu+a).quantile(p),
             Distribution::Gamma{a, b} => Gamma::<f64>::new(*a, *b).quantile(p),
             Distribution::Triangular{mu, a} => {
-                if p < *mu {
-                    mu - a + (p*2.0*a*(mu-a)).sqrt()
+                if p < 0.5 {
+                    mu - a + (p*2.0*a*a).sqrt()
                 } else {
                     mu + a - ((1.0-p)*2.0*a*a).sqrt()
                 }
