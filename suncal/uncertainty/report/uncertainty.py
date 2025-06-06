@@ -11,7 +11,8 @@ class VariablesReport:
         Args:
             variables (Variables): Variables instance to report
     '''
-    def __init__(self, variables):
+    def __init__(self, variables, correlations):
+        self._correlations = correlations
         self._variables = variables
         self._variablenames = list(self._variables.expected.keys())
 
@@ -52,6 +53,21 @@ class VariablesReport:
         rpt.table(rows, hdr=cols)
         return rpt
 
+    def correlations(self, **kwargs):
+        ''' Report input correlation matrix '''
+        assert self._correlations is not None
+        matrix = self._correlations
+        cols = ['&nbsp;'] + [report.Math(name) for name in self._variablenames]
+        rows = []
+        for (row, varname) in enumerate(self._variablenames):
+            r = [report.Math(varname)]
+            for (col, value) in enumerate(matrix[row, :]):
+                r.append(report.Number(value, fmin=3))
+            rows.append(r)
+        rpt = report.Report(**kwargs)
+        rpt.table(rows, hdr=cols)
+        return rpt
+
 
 class ReportUncertainty:
     ''' Report combined GUM and Monte Carlo Uncertainties
@@ -67,7 +83,7 @@ class ReportUncertainty:
         self._functionnames = self._results.gum.functionnames
         self._variablenames = self._results.gum.variablenames
         self._noutputs = len(self._functionnames)
-        self.variables = VariablesReport(self._results.gum.variables)
+        self.variables = VariablesReport(self._results.gum.variables, self._results.gum.input_correlation)
         self.plot = UncertaintyPlot(self._results)
 
     def _repr_markdown_(self):
@@ -200,6 +216,9 @@ class ReportUncertainty:
         rpt = report.Report(**kwargs)
         rpt.hdr('Input Measurements', level=2)
         rpt.append(self.variables.summary())
+        if self.variables._correlations is not None:
+            rpt.hdr('Correlations', level=2)
+            rpt.append(self.variables.correlations())
         rpt.div()
         rpt.hdr('Uncertainty Budget', level=2)
         rpt.append(self.variables.components())

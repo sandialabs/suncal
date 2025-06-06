@@ -1053,6 +1053,7 @@ class UncertPreview(QtWidgets.QWidget):
 class CorrelationTableWidget(QtWidgets.QTableWidget):
     ''' Widget for setting correlations between inputs '''
     resizerows = QtCore.pyqtSignal()
+    changed = QtCore.pyqtSignal()
 
     def __init__(self):
         super().__init__()
@@ -1138,6 +1139,8 @@ class CorrelationTableWidget(QtWidgets.QTableWidget):
             v2.addItems(self.varnames)
             self.setCellWidget(row, 0, v1)
             self.setCellWidget(row, 1, v2)
+            v1.currentIndexChanged.connect(lambda x: self.changed.emit())
+            v2.currentIndexChanged.connect(lambda x: self.changed.emit())
             val = widgets.EditableTableItem('0')
             self.setItem(row, 2, val)
             if name1 is not None:

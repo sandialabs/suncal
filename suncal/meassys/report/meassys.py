@@ -204,9 +204,9 @@ class SystemReport:
         for qty in self.result.quantities:
             rows.append([
                 Math(qty.symbol),
-                Number(unitmgr.make_quantity(qty.value, qty.units), matchto=qty.uncertainty),
-                Number(unitmgr.make_quantity(qty.uncertainty, qty.units)),
-                Number(unitmgr.make_quantity(qty.expanded(), qty.units)),
+                Number(qty.value, matchto=qty.uncertainty),
+                Number(qty.uncertainty),
+                Number(qty.expanded()),
                 Number(qty.degrees_freedom, fmin=1),
                 str(qty.tolerance) if qty.tolerance else '-',
                 Number(qty.p_conformance*100, fmin=1, postfix=' %') if qty.tolerance else '-',

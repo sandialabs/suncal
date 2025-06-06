@@ -95,10 +95,11 @@ class RandomVariable:
     def _typea_variance_ofmean(self):
         ''' Calculate Type A variance of the mean '''
         values, units = unitmgr.split_units(self.value)
+        varunits = str(units**2) if units else None
         if values.size < 2:
             unc = self._typea**2 if self._typea is not None else 0
             if units:
-                return unitmgr.make_quantity(unc, str(units**2))
+                return unitmgr.make_quantity(unc, varunits)
             return unc
 
         if len(self.value.shape) == 1:  # 1D, use regular variance
@@ -107,14 +108,14 @@ class RandomVariable:
                 unc = uncert_autocorrelated(values)
                 if unc.r > 1.3:
                     autocor_factor = unc.r
-            return autocor_factor * self.value.var(ddof=1) / self.num_new_meas
+            return unitmgr.make_quantity(autocor_factor * values.var(ddof=1) / self.num_new_meas, varunits)
 
         if self.num_new_meas != self.value.size:
             unc = DataSet(values).result.uncertainty.stdev**2 / self.num_new_meas
         else:
             unc = DataSet(values).result.uncertainty.stderr**2
         if units:
-            return unitmgr.make_quantity(unc, str(units**2))
+            return unitmgr.make_quantity(unc, varunits)
         return unc
 
     @property
@@ -224,7 +225,11 @@ class RandomVariable:
             if unitmgr.has_units(mean):
                 units = mean.units
                 mean = mean.magnitude
-                unc = unc.to(units).magnitude
+                uncunits = unc.units
+                if (('delta_' in str(unc.units) or 'Δ' in str(unc.units)) and
+                    ('delta_' not in str(units) and 'Δ' not in str(units))):
+                        uncunits = unitmgr.parse_units(f'delta_{units}')
+                unc = unc.to(uncunits).magnitude
             samples = stats.norm.rvs(mean, unc, nsamples)
             if units:
                 samples = samples * units

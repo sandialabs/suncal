@@ -52,16 +52,18 @@ class CurveHelp:
         rpt.txt('The Confidence Band shows the zone where the best fit line is expected '
                 'at the entered level of confidence. The Prediction Band shows where new '
                 'measurements (predictions) along this curve could be expected to the same '
-                'level of confidence.\n\n')
+                'level of confidence; it is the confidence band combined with the measurement '
+                'uncertainty by RSS.\n\n')
         return rpt
 
     @staticmethod
     def prediction():
         rpt = report.Report()
-        rpt.hdr('Curve Fit - Prediction')
-        rpt.txt('This page shows values entered on the "Predictions" tab predicted '
-                'along the curve. The predicted y value, its confidence interval '
-                'and prediction interval are displayed for each point.\n\n')
+        rpt.hdr('Curve Fit - Estimates')
+        rpt.txt('This page shows values entered on the "Estimates" tab estimated '
+                'along the curve. The estimated y value its uncertainty (confidence interval)'
+                'are displayed for each point. The prediction interval describes where a future '
+                'measured data point would be expected with the given level of confidence.\n\n')
         return rpt
 
     @staticmethod

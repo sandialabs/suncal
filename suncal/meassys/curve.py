@@ -137,6 +137,8 @@ class SystemCurve:
             raise ValueError('Predictor (x) variable not defined')
         if y is None:
             raise ValueError('Response (y) variable not defined')
+        if len(x) != len(y):
+            raise ValueError('Curve Fit X and Y arrays must be same length')
 
         ux = uncerts.get(self.predictor_var)
         uy = uncerts.get(self.response_var)
@@ -185,7 +187,7 @@ class SystemCurve:
 
         for name, (xvalue, tol) in self.predictions.items():
             value = fitlsq.y(xvalue)
-            uncert = fitlsq.prediction_band(xvalue, k=1)  # Standard
+            uncert = fitlsq.confidence_band(xvalue, k=1)  # Standard
             poc = tol.probability_conformance(value, uncert, fitlsq.degf) if tol else None
             units = self.units.get(self.response_var)
             quantities.append(SystemQuantityResult(

@@ -1,55 +1,80 @@
-- description: "Example from the original 1953 Kline-McClintock uncertainty paper\
-    \ on which the GUM is based, and discussed again in NIST 1900 Example E3.\n\n\
-    Here, the built-in units conversions are used with the original units given by\
-    \ Kline-McClintock. Note that air temperature is an absolute temperature (fahrenheit),\
-    \ while its uncertainty is a delta temperature (\u0394fahrenheit). Uncertainties\
-    \ were given at 95% (\"20 to 1 odds\"). "
-  functions:
+- confidence: 0.95
+  correlate: true
+  desc: ''
+  mode: system
+  name: system
+  quantities:
   - desc: Airspeed
-    expr: sqrt(2)*sqrt(Delta*R_s*T/p)
-    name: v
+    description: Airspeed
+    equation: sqrt(2)*sqrt(Delta_p*R_s*T_a/p_a)
+    name: ''
+    symbol: v
+    tolerance: null
+    type: indirect
     units: meter / second
-  inputs:
   - desc: Difference in static vs total pressure
-    mean: 8.0
-    name: Delta
-    uncerts:
+    description: Difference in static vs total pressure
+    name: ''
+    symbol: Delta_p
+    testpoint: 8.0
+    tolerance: null
+    type: direct
+    typea: null
+    typeb:
     - degf: .inf
       desc: ''
+      df: .inf
       dist: normal
-      k: '2'
-      name: u(Delta)
-      unc: '.1'
+      k: 2.0
+      name: Type B
+      unc: 0.1
       units: inch_H2O
     units: inch_H2O
-  - desc: Air Temperature
-    mean: 67.4
-    name: T
-    uncerts:
+  - desc: Specific gas constant for dry air
+    description: Specific gas constant for dry air
+    name: ''
+    symbol: R_s
+    testpoint: 287.06
+    tolerance: null
+    type: direct
+    typea: null
+    typeb: []
+    units: joule / kelvin / kilogram
+  - desc: Air temperature
+    description: Air temperature
+    name: ''
+    symbol: T_a
+    testpoint: 67.4
+    tolerance: null
+    type: direct
+    typea: null
+    typeb:
     - degf: .inf
       desc: ''
+      df: .inf
       dist: normal
-      k: '2'
-      name: u(T)
-      unc: '0.2'
+      k: 2.0
+      name: Type B
+      unc: 0.2
       units: delta_degree_Fahrenheit
     units: degree_Fahrenheit
-  - desc: Air Pressure
-    mean: 14.7
-    name: p
-    uncerts:
+  - desc: Air pressure
+    description: Air pressure
+    name: ''
+    symbol: p_a
+    testpoint: 14.7
+    tolerance: null
+    type: direct
+    typea: null
+    typeb:
     - degf: .inf
       desc: ''
+      df: .inf
       dist: normal
-      k: '2'
-      name: u(p)
-      unc: '.3'
+      k: 2.0
+      name: Type B
+      unc: 0.3
       units: pound_force_per_square_inch
     units: pound_force_per_square_inch
-  - desc: Specific gas constant for dry air
-    mean: 287.06
-    name: R_s
-    units: joule / kelvin / kilogram
-  mode: uncertainty
-  name: uncertainty
   samples: 1000000
+  seed: null

@@ -249,11 +249,14 @@ class ReportCurveFit:
         rows = []
         for i in range(len(x)):
             if k == 1:
+                uconf_std = uconf[i]
                 upred_std = upred[i]
             else:
-                upred_std = self._results.prediction_band(x[i], k=1, mode=mode)
+                uconf_std = self._results.confidence_band(x[i], k=1)
+                upred_std = self._results.prediction_band(x[i], k=1)
 
-            poc = tolerances[i].probability_conformance(y[i], upred_std, self._results.degf) if tolerances[i] else None
+            poc_conf = tolerances[i].probability_conformance(y[i], uconf_std, self._results.degf) if tolerances[i] else None
+            poc_pred = tolerances[i].probability_conformance(y[i], upred_std, self._results.degf) if tolerances[i] else None
             yi, yconfminus, yconfplus, ypredminus, ypredplus = report.Number.number_array(
                 [y[i], y[i]-uconf[i], y[i]+uconf[i], y[i]-upred[i], y[i]+upred[i]], fmin=2, **kwargs)
 
@@ -261,13 +264,18 @@ class ReportCurveFit:
                 xlabel = mdates.num2date(x[i]).strftime('%Y-%m-%d')
             else:
                 xlabel = str(xvalues[i])
+
+            poc_row = '' if not poc_conf else (
+                report.Number(poc_conf*100, fmin=1, postfix=' %'), " (Confidence Band); ",
+                report.Number(poc_pred*100, fmin=1, postfix=' %'), " (Prediction Band) "
+            )
             rows.append([xnames[i],
                          xlabel,
                          yi,
                          ('±', report.Number(uconf[i], fmin=2, **kwargs), ' (', yconfminus, ', ', yconfplus, ')'),
                          ('±', report.Number(upred[i], fmin=2, **kwargs), ' (', ypredminus, ', ', ypredplus, ')'),
                          '' if tolerances[i] is None else str(tolerances[i]),
-                         report.Number(poc*100, fmin=1, postfix=' %') if poc else ''
+                         poc_row
                          ])
 
         r = report.Report(**kwargs)
@@ -426,15 +434,14 @@ class PlotCurveFit:
         else:
             ax.plot(self._inputx(self._results.setup.points.xdate), u_pred, **kwargs)
 
-    def pred_value(self, xval, k=2, conf=None, ax=None, **kwargs):
-        ''' Plot a single prediction band value as errorbar
+    def conf_value(self, xval, k=2, conf=None, ax=None):
+        ''' Plot a single confidence band value as errorbar
 
             Args:
                 x (array): x values to include in plot
                 ax (plt.axes): Axis to plot on
                 k (float): Coverage factor for bands
                 conf (float): Level of confidence (0 to 1). Overrides value of k.
-                **kwargs: passed to matplotlib plot
         '''
         xval = np.asarray(xval)
         _, ax = plotting.initplot(ax)
@@ -447,9 +454,9 @@ class PlotCurveFit:
             xplot = xval
 
         y = self._results.y(xfloat)
-        upred = self._results.prediction_band(xfloat, k=k, conf=conf, **kwargs)
+        upred = self._results.confidence_band(xfloat, k=k, conf=conf)
         ax.errorbar(xplot, y, yerr=upred, marker='s', markersize=8,
-                    capsize=4, label='Predicted Value', ls='', color='C4')
+                    capsize=4, label='Estimated Value', ls='', color='C4')
 
     def summary_prediction(self, x, k=2, conf=None, ax=None, mode='Syx', **kwargs):
         ''' Plot summary of prediction band showing specific x values
@@ -465,8 +472,7 @@ class PlotCurveFit:
         xx = self._full_xrange(np.nanmin(x), np.nanmax(x))
         self.points(ax=ax, marker='o', ls='')
         self.fit(ax=ax, x=xx, ls='-', label='Fit')
-        self.pred(ax=ax, x=xx, k=k, conf=conf, ls='--', mode=mode)
-        self.pred_value(ax=ax, xval=x, k=k, conf=conf, mode=mode)
+        self.conf_value(ax=ax, xval=x, k=k, conf=conf)
         ax.set_xlabel(self._results.setup.xname)
         ax.set_ylabel(self._results.setup.yname)
         ax.legend(loc='best')
@@ -485,7 +491,6 @@ class PlotCurveFit:
         self.points(ax=ax, marker='o', ls='')
         self.fit(ax=ax, ls='-', label='Fit')
         self.conf(ax=ax, k=k, conf=conf, ls=':')
-        self.pred(ax=ax, k=k, conf=conf, ls='--', mode=kwargs.pop('mode', 'Syx'))
         ax.set_xlabel(self._results.setup.xname)
         ax.set_ylabel(self._results.setup.yname)
         ax.legend(loc='best')

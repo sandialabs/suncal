@@ -141,7 +141,7 @@ class InsertCalcWidget(QtWidgets.QWidget):
         self.btnMqa = widgets.ToolButton('End-to-end\nMQA', 'map')
         self.btnSystem = widgets.ToolButton('All-in-one\nUncertainty', 'trace')
         self.btnDistexp = widgets.ToolButton('Distribution\nExplorer', 'dists')
-        self.btnHelp = widgets.ToolButton('Help', 'help')
+        self.btnReverse = widgets.ToolButton('Reverse\nUncertainty', 'calipers')
 
         self.btnUnc.clicked.connect(lambda x: self.newcomp.emit('uncertainty'))
         self.btnCurve.clicked.connect(lambda x: self.newcomp.emit('curvefit'))
@@ -151,7 +151,17 @@ class InsertCalcWidget(QtWidgets.QWidget):
         self.btnInterval.clicked.connect(lambda x: self.newcomp.emit('interval'))
         self.btnSystem.clicked.connect(lambda x: self.newcomp.emit('system'))
         self.btnDistexp.clicked.connect(lambda x: self.newcomp.emit('distributions'))
-        self.btnHelp.clicked.connect(self.showhelp)
+        self.btnReverse.clicked.connect(lambda x: self.newcomp.emit('reverse'))
+
+        self.btnUnc.setToolTip('Calculate uncertainty of indirect measurements using the GUM and Monte Carlo methods.')
+        self.btnDataset.setToolTip('Calculate Type A uncertainty, repeatability, reproducibility, and analysis of variance.')
+        self.btnCurve.setToolTip('Calculate uncertainty in curve fitting problems.')
+        self.btnRisk.setToolTip('Calculate global and specific false accept and reject risks.')
+        self.btnInterval.setToolTip('Find optimal calibration intervals using methods from NCSLI RP-1.')
+        self.btnMqa.setToolTip('Calculate overall reliabilities, intervals, and costs using end-to-end measurement quality assurances methods from NCSLI RP-19.')
+        self.btnSystem.setToolTip('Combines direct, indirect, and curve fit uncertainty calculations in a single tool.')
+        self.btnDistexp.setToolTip('Generate random values from probability distributions and perform Monte Carlo calculations.')
+        self.btnReverse.setToolTip('Determine uncertianty in an input measurand required to acheive the desired uncertainty in the model output.')
 
         glayout = QtWidgets.QGridLayout()
         glayout.addWidget(self.btnUnc, 0, 0)
@@ -161,8 +171,8 @@ class InsertCalcWidget(QtWidgets.QWidget):
         glayout.addWidget(self.btnInterval, 1, 1)
         glayout.addWidget(self.btnMqa, 1, 2)
         glayout.addWidget(self.btnSystem, 2, 0)
-        glayout.addWidget(self.btnDistexp, 2, 1)
-        glayout.addWidget(self.btnHelp, 2, 2)
+        glayout.addWidget(self.btnReverse, 2, 1)
+        glayout.addWidget(self.btnDistexp, 2, 2)
 
         layout = QtWidgets.QVBoxLayout()
         layout.setAlignment(QtCore.Qt.AlignmentFlag.AlignHCenter)

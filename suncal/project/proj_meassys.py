@@ -59,6 +59,7 @@ class ProjectMeasSys(ProjectComponent):
                 'fitmodel': qty.fitmodel,
                 'predictor': qty.predictor_var,
                 'response': qty.response_var,
+                'units': {name: str(u) for name, u in qty.units.items()},
                 'odr': qty.odr,
                 'guess': qty.guess,
                 'tolerances': {name: tol.config() for name, tol in qty.tolerances.items()},
@@ -77,6 +78,7 @@ class ProjectMeasSys(ProjectComponent):
         d['seed'] = self.model.seed
         d['confidence'] = self.model.confidence
         d['correlate'] = self.model.correlate_typeas
+        d['correlations'] = self.model.correlations
         d['samples'] = self.model.samples
         d['quantities'] = []
         for qty in self.model.quantities:
@@ -93,7 +95,7 @@ class ProjectMeasSys(ProjectComponent):
             qty.description = qcfg.get('desc')
             qty.testpoint = qcfg.get('testpoint')
             qty.units = qcfg.get('units')
-            qty.typebs = [typeb_from_config(bcfg) for bcfg in qcfg.get('typeb', []) if bcfg is not None]
+            qty.typebs = [typeb_from_config(bcfg, qty.testpoint) for bcfg in qcfg.get('typeb', []) if bcfg is not None]
             typea = qcfg.get('typea')
             if typea is not None:
                 typea = np.asarray(typea)
@@ -112,13 +114,14 @@ class ProjectMeasSys(ProjectComponent):
         else:
             assert qtytype == 'curve'
             qty = SystemCurve()
-            qty.fitmodel = qcfg.get('fitmodel')
+            qty.set_fitmodel(qcfg.get('fitmodel'))
             qty.predictor_var = qcfg.get('predictor', 'x')
             qty.response_var = qcfg.get('response', 'y')
             qty.odr = qcfg.get('odr', False)
             qty.guess = qcfg.get('guess')
             qty.tolerances = {name: Limit.from_config(tol) for name, tol in qcfg.get('tolerances')}
             qty.predictions = qcfg.get('predictions', {})
+            qty.units = qcfg.get('units', {})
             data = qcfg.get('data')
             qty.data = [(name, data) for name, data in data.items()]
         return qty
@@ -132,6 +135,7 @@ class ProjectMeasSys(ProjectComponent):
         self.model.confidence = config.get('confidence', .95)
         self.model.samples = config.get('samples', 1000000)
         self.model.correlate_typeas = config.get('correlate', True)
+        self.model.correlations = config.get('correlations', [])
         for qcfg in config.get('quantities', []):
             qty = self._qty_from_config(qcfg)
             qty.quantities = self.model.quantities
@@ -158,8 +162,8 @@ def config_typeb(typeb) -> dict:
     return cfg
 
 
-def typeb_from_config(config: dict) -> Typeb:
+def typeb_from_config(config: dict, nominal: float) -> Typeb:
     ''' Make an MqaUncertainty from config '''
     desc = config.pop('desc', None)
     dist = config.pop('dist', 'normal')
-    return Typeb(dist, description=desc, **config)
+    return Typeb(dist, nominal=nominal, description=desc, **config)

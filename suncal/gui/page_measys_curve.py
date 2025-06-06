@@ -53,7 +53,7 @@ class TabUnits(QtWidgets.QTableWidget):
         for row, name in enumerate(names):
             unit = self.qty.units.get(name)
             self.setItem(row, 0, widgets.ReadOnlyTableItem(name))
-            self.setItem(row, 1, widgets.EditableTableItem(unit if unit else ''))
+            self.setItem(row, 1, widgets.EditableTableItem(str(unit) if unit else ''))
             # COULD DO: add inferred units for coefficients
         self.loading = False
 

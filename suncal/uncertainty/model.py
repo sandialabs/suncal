@@ -190,7 +190,7 @@ class Model(ModelBase):
             Uy = Ux
             uncerts = {f'u_{name}': 0 for name in self.functionnames}
         degf = self._degrees_freedom(Cx)
-        return GumOutputData(uncerts, Uy, Ux, Cx, degf, self.basesympys, self.sympys)
+        return GumOutputData(uncerts, Uy, Ux, Cx, degf, self.basesympys, None, self.sympys)
 
     def calculate_gum(self):
         ''' Run the GUM calculation
@@ -206,6 +206,7 @@ class Model(ModelBase):
         subvalues.update(expected)
         subvalues.update(uncerts)  # degf needs to sub these too
 
+        ux_correlation = self.variables.correlation_matrix() if self.variables.has_correlation() else None
         Cx = matrix.eval_matrix(symbolic.Cx, subvalues)
         Ux = matrix.eval_matrix(symbolic.Ux, subvalues)
         Uy = matrix.eval_matrix(symbolic.Uy, subvalues)
@@ -219,7 +220,7 @@ class Model(ModelBase):
         if not all(all(np.isfinite(u) for u in k) for k in Uy):
             warns.append('Overflow in GUM uncertainty calculation')
 
-        outnumeric = GumOutputData(uncerts, Uy, Ux, Cx, degf, expected, self.sympys)
+        outnumeric = GumOutputData(uncerts, Uy, Ux, Cx, degf, expected, ux_correlation, self.sympys)
         return GumResults(outnumeric, symbolic, self.variables.info, self.constants, self.descriptions, warns, self.tolerances)
 
     def monte_carlo(self, samples=1000000, copula='gaussian'):
@@ -435,6 +436,7 @@ class ModelCallable(Model):
         Cx = self._sensitivity()
         CxT = matrix.transpose(Cx)
         Ux = self.variables.covariance()
+        ux_correlation = self.variables.correlation_matrix() if self.variables.has_correlation() else None
         Uy = matrix.matmul(matrix.matmul(Cx, Ux), CxT)
         uncerts = {name: np.sqrt(x) for name, x in zip(self.functionnames, matrix.diagonal(Uy))}
         uncerts = dict(zip(self.functionnames, uncerts.values()))  # Rename to use funciton name instead of u_XXX
@@ -445,7 +447,7 @@ class ModelCallable(Model):
         if not all(all(np.isfinite(u) for u in k) for k in Uy):
             warns.append('Overflow in GUM uncertainty calculation')
 
-        outnumeric = GumOutputData(uncerts, Uy, Ux, Cx, degf, expected, None)
+        outnumeric = GumOutputData(uncerts, Uy, Ux, Cx, degf, expected, ux_correlation, None)
         return GumResults(outnumeric, None, self.variables.info, None, None, self.tolerances)
 
     def monte_carlo(self, samples=1000000, copula='gaussian'):

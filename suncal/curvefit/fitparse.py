@@ -82,6 +82,12 @@ def fit_callable(model: str, polyorder: int = 2, predictor_var='x'):
         def func(x, a, b, c, d):
             return a + b*x + c*x*x + d*x*x*x
 
+    elif model == 'quartic' or (model == 'poly' and polyorder == 4):
+        expr = sympy.sympify('a + b*x + c*x**2 + d*x**3 + f*x**4')
+
+        def func(x, a, b, c, d, e):
+            return a + b*x + c*x*x + d*x*x*x + e*x*x*x*x
+
     elif model == 'poly':
         def func(x, *p):
             return np.poly1d(p[::-1])(x)  # Coeffs go in reverse order (...e, d, c, b, a)

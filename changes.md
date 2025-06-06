@@ -2,13 +2,11 @@
 
 ## Version 1.7
 
-UI Changes:
-- Rearranged start page to distinguish uncertainty calculations from other statistical calculations. Other tools may be accessed from the Project-Insert menu.
-- "Data Sets" has been renamed "R & R" repeatability & reproducibility.
-
 
 Enhancements:
 
+- "Data Sets" has been renamed "R & R" repeatability & reproducibility.
+- Added "All-in-one" measurement system uncertainty, combining GUM, R&R, and Curve Fits into one component.
 - Added end-to-end measurement quality assurance calculation type based on draft NCSLI RP-19
 - Added optional tolerance entry to Uncertainty, R&R, and Curve Fit for caclulating probability of conformance
 - Added waveform feature calculations to curve fit module for min, max, peak-peak, threshold crossing, and pulse width determination with uncertainties

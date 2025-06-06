@@ -206,10 +206,10 @@ class DNormal(Distribution):
             if 'conf' in self.kwds:
                 # Calculate confidence based on infinite degf since this is normal distribution
                 k = ttable.k_factor(self.kwds['conf'], np.inf)
-                std = self.kwds['unc']/k
+                std = float(self.kwds['unc'])/k
             else:
                 k = self.kwds.get('k', 1)
-                std = self.kwds['unc']/k
+                std = float(self.kwds['unc'])/k
         elif 'std' in self.kwds:
             std = self.kwds.get('std')
         elif 'scale' in self.kwds:

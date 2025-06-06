@@ -1,6 +1,6 @@
 ---
 title: Suncal User's Guide
-date: March 18, 2025
+date: June 6, 2025
 author:
 - Sandia National Laboratories^[Sandia National Laboratories is a multimission laboratory managed and operated by National Technology and Engineering Solutions of Sandia, LLC., a wholly owned subsidiary of Honeywell International, Inc., for the U.S. Department of Energy’s National Nuclear Security Administration under contract DE-NA-0003525.]
 - uncertainty@sandia.gov

@@ -135,3 +135,19 @@ def match_units(value1, value2):
     if not has_units(value1) or not has_units(value2):
         return value1
     return convert(value1, value2.units)
+
+
+def to_delta_units(unit: str):
+    ''' Convert an offset unit (ie temperature) to its delta version '''
+    if unit is None:
+        return None
+    return parse_units(unit
+        .replace('°C', 'Δ°C')
+        .replace('°F', 'Δ°F')
+        .replace('degree_Celsius', 'delta_degree_Celsius')
+        .replace('degree_Fahrenheit', 'delta_degree_Fahrenheit')
+        .replace('degC', 'delta_degC')
+        .replace('celsius', 'delta_degC')
+        .replace('degF', 'delta_degF')
+        .replace('fahrenheit', 'delta_degF')
+    )

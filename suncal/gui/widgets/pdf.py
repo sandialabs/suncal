@@ -31,16 +31,25 @@ class PdfPopupTable(QtWidgets.QTableWidget):
         self.setHorizontalHeaderLabels(['Parameter', 'Value'])
         self.dist = None
         self.degf = np.inf
+        self.config = {}
         self.itemChanged.connect(self.edit_item)
+
+    def set_distribution(self, dist: distributions.Distribution):
+        self.dist = dist
+        self.config = self.dist.get_config()
+        self.fill_table()
 
     def fill_table(self):
         ''' Fill the table with the distribution parameters '''
         with gui_common.BlockedSignals(self):
             self.clear()
             self.setHorizontalHeaderLabels(['Parameter', 'Value'])
-
-            config = self.dist.get_config()
-            distname = config.get('dist')
+            if self.config:
+                config = self.config
+            else:
+                config = self.dist.get_config()
+                self.config = config
+            distname = config.get('dist', 'normal')
             cmbdist = ComboNoWheel()
             cmbdist.addItems(gui_settings.distributions)
             cmbdist.setCurrentIndex(cmbdist.findText(distname))
@@ -71,10 +80,13 @@ class PdfPopupTable(QtWidgets.QTableWidget):
                 self.setItem(self.ROW_UNCERT, self.COL_NAME, ReadOnlyTableItem('Uncertainty'))
                 self.setItem(self.ROW_UNCERT, self.COL_VALUE, EditableTableItem(uncstr))
             else:
-                self.setRowCount(len(self.dist.argnames)+1)
-                for row, arg in enumerate(reversed(sorted(self.dist.argnames))):
-                    self.setItem(row+1, self.COL_NAME, ReadOnlyTableItem(arg))
-                    self.setItem(row+1, self.COL_VALUE, EditableTableItem(str(self.dist.kwds.get(arg, 1))))
+                try:
+                    self.setRowCount(len(self.dist.argnames)+1)
+                    for row, arg in enumerate(reversed(sorted(self.dist.argnames))):
+                        self.setItem(row+1, self.COL_NAME, ReadOnlyTableItem(arg))
+                        self.setItem(row+1, self.COL_VALUE, EditableTableItem(str(self.dist.kwds.get(arg, 1))))
+                except AttributeError:
+                    pass   # self.dist is not defined
 
             cmbdist.currentIndexChanged.connect(self.change_dist)
 
@@ -82,12 +94,15 @@ class PdfPopupTable(QtWidgets.QTableWidget):
         ''' Distribution type in combobox was changed '''
         with gui_common.BlockedSignals(self):
             distname = self.cellWidget(self.ROW_DIST, self.COL_VALUE).currentText()
-            if self.dist:
-                cfg = self.dist.get_config()
+            if self.config:
+                cfg = self.config
             else:
-                cfg = {}
+                cfg = self.dist.get_config()
             cfg['dist'] = distname
-            self.dist = distributions.get_distribution(distname, **cfg)
+            try:
+                self.dist = distributions.get_distribution(distname, **cfg)
+            except (ValueError, TypeError):
+                self.dist = None
             self.fill_table()
         self.changed.emit()
 
@@ -109,7 +124,7 @@ class PdfPopupTable(QtWidgets.QTableWidget):
                 floatval = None
 
             if param == 'Uncertainty':
-                config['unc'] = floatval
+                config['unc'] = value
                 config.pop('std', None)
             elif param == 'k':
                 valid = floatval is not None and floatval > 0
@@ -150,6 +165,29 @@ class PdfPopupTable(QtWidgets.QTableWidget):
             self.changed.emit()
         else:
             self.dist = None
+        self.config = config
+
+
+class PdfPopupDialog(QtWidgets.QDialog):
+    ''' Entry of Type B PDF values '''
+    changed = QtCore.pyqtSignal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent=parent, flags=QtCore.Qt.WindowType.Popup)
+        font = self.font()
+        font.setPointSize(10)
+        self.setFont(font)
+        self.setFixedSize(300, 300)
+        self.table = PdfPopupTable()
+        self.table.changed.connect(self.changed)
+        self.set_distribution(distributions.get_distribution('norm', unc=1))
+        layout = QtWidgets.QVBoxLayout()
+        layout.addWidget(self.table)
+        self.setLayout(layout)
+
+    def set_distribution(self, dist: distributions.Distribution):
+        ''' Set the distribution '''
+        self.table.set_distribution(dist)
 
 
 class PdfPopupButton(QtWidgets.QToolButton):
@@ -173,8 +211,7 @@ class PdfPopupButton(QtWidgets.QToolButton):
 
     def set_distribution(self, dist: distributions.Distribution):
         ''' Set the distribution '''
-        self.table.dist = dist
-        self.table.fill_table()
+        self.table.set_distribution(dist)
 
     def get_distribution(self) -> distributions.Distribution:
         ''' Get the Distribution'''

@@ -19,13 +19,9 @@ from .widgets.mqa import TypeADialog, ToleranceDelegate
 from .delegates import SuncalDelegate, NoEditDelegate, EditDelegate, LatexDelegate, PopupDelegate
 from .help_strings import SystemHelp, CurveHelp
 from .page_uncert_output import PageOutput as PageGumOutput
+from .page_uncert_input import CorrelationTableWidget
 from .page_measys_curve import MeasSysCurveWidget
 from .page_curvefit import PageOutputCurveFit as PageCurveOutput
-
-
-def set_background(item: QtWidgets.QTreeWidgetItem, column: int, valid: bool):
-    ''' Set background color of a table item '''
-    item.setBackground(column, gui_styles.color.transparent if valid else gui_styles.color.invalid)
 
 
 class Settings(QtWidgets.QDialog):
@@ -114,6 +110,12 @@ class FunctionTree(QtWidgets.QTreeWidget):
         self.fill_tree()
         self.itemChanged.connect(self.edit_data)
 
+    def set_background(self, item: QtWidgets.QTreeWidgetItem, column: int, valid: bool):
+        ''' Set background color of a table item '''
+        item.setBackground(column, gui_styles.color.transparent if valid else gui_styles.color.invalid)
+        if not valid:
+            self.clearSelection()
+
     def fill_tree(self):
         ''' Fill tree with component values '''
         self.loading = True
@@ -144,36 +146,36 @@ class FunctionTree(QtWidgets.QTreeWidget):
                 value = item.data(self.COL_SYM, LatexDelegate.ROLE_ENTERED)
                 mathvalue = uparser.parse_math(value)
             except ValueError:
-                set_background(item, column, False)
+                self.set_background(item, column, False)
             else:
                 if isinstance(mathvalue, sympy.Symbol):  # name must be single symbol
                     qty.symbol = value
-                    set_background(item, column, True)
+                    self.set_background(item, column, True)
                 else:
-                    set_background(item, column, False)
+                    self.set_background(item, column, False)
 
         elif column == self.COL_EXPR:  # May need additional logic if other rows are added
             try:
                 value = item.data(self.COL_EXPR, LatexDelegate.ROLE_ENTERED)
-                mathvalue = uparser.parse_math(value)
+                mathvalue = uparser.parse_math_with_quantities(value)
             except ValueError:
-                set_background(item, column, False)
+                self.set_background(item, column, False)
             else:
                 if mathvalue is not None:
-                    qty.equation = str(mathvalue)  # Set to the string expression
+                    qty.equation = value   # Set to the string expression
                     self.equation_changed.emit()
                 else:
-                    set_background(item, column, False)
+                    self.set_background(item, column, False)
 
         elif column == self.COL_UNITS:
             try:
                 unit = uparser.parse_unit(item.text(self.COL_UNITS))
             except ValueError:
-                set_background(item, column, False)
+                self.set_background(item, column, False)
             else:
                 qty.outunits = str(unit)
                 item.setText(self.COL_UNITS, f'{unit:~P}')
-                set_background(item, column, True)
+                self.set_background(item, column, True)
 
         elif column == self.COL_DESC:
             qty.description = item.text(self.COL_DESC)
@@ -216,43 +218,69 @@ class FunctionTree(QtWidgets.QTreeWidget):
                 remove.triggered.connect(lambda x, qty=qty, item=item: self.remove_quantity(qty, item))
             menu.exec(event.globalPos())
 
+    def moveCursor(self, cursorAction, modifiers):
+        ''' Move by columns, not rows '''
+        index = self.currentIndex()
+        column = index.column()
+        if column < self.COL_CNT:
+            return index.sibling(index.row(), column+1)
+        return super().moveCursor(cursorAction, modifiers)
+
 
 class QtyValueDelegate(PopupDelegate):
     ''' Delegate for Quantity Value column '''
     def createEditor(self, parent, option, index):
         if index.model().data(index, PopupDelegate.ROLE_TYPEA):
             return TypeADialog(parent)
+        elif index.model().data(index, PopupDelegate.ROLE_TYPEB):
+            return widgets.PdfPopupDialog(parent)
         else:
             return super().createEditor(parent, option, index)
 
     def updateEditorGeometry(self, editor, option, index):
-        if index.model().data(index, PopupDelegate.ROLE_TYPEA):  # Popup
+        if index.model().data(index, PopupDelegate.ROLE_TYPEA) or index.model().data(index, PopupDelegate.ROLE_TYPEB):
             return super().updateEditorGeometry(editor, option, index)
         editor.setGeometry(option.rect)  # no popup
 
     def setEditorData(self, editor, index):
-        if index.model().data(index, PopupDelegate.ROLE_TYPEA):  # Popup
+        if index.model().data(index, PopupDelegate.ROLE_TYPEA):
             qty = index.model().data(index, PopupDelegate.ROLE_QUANTITY)
             editor.set_values(qty.typea)
             editor.autocorr.setChecked(qty.autocorrelation)
             if qty.num_newmeas is not None:
                 editor.chkNewmeas.setChecked(True)
                 editor.Nnewmeas.setValue(qty.num_newmeas)
+        elif (typeb := index.model().data(index, PopupDelegate.ROLE_TYPEB)):
+            qty = index.model().data(index, PopupDelegate.ROLE_QUANTITY)
+            editor.dist = typeb.distribution
+            editor.table.config = typeb.kwargs
+            editor.table.fill_table()
         else:
             super().setEditorData(editor, index)
 
     def setModelData(self, editor, model, index):
-        if index.model().data(index, PopupDelegate.ROLE_TYPEA):  # Popup
+        if index.model().data(index, PopupDelegate.ROLE_TYPEA):
             qty = index.model().data(index, PopupDelegate.ROLE_QUANTITY)
             qty.typea = editor.get_data()
             qty.autocorrelation = editor.autocorr.isChecked()
             qty.num_newmeas = editor.Nnewmeas.value() if editor.chkNewmeas.isChecked() else None
             size = editor.data_size()
             if size == 0:
-                display = 'no data'
+                display = '   ± 0   ▾'
             else:
-                display = f'{size} measurements'
+                try:
+                    display = f'   ± {unitmgr.strip_units(qty.typea_uncertainty()):.4g} (k=1)   ▾'
+                except (OffsetUnitCalculusError, DimensionalityError, UndefinedUnitError):
+                    display = '   Units Error'
             index.model().setData(index, display, QtCore.Qt.ItemDataRole.DisplayRole)
+        elif (typeb := index.model().data(index, PopupDelegate.ROLE_TYPEB)):
+            qty = index.model().data(index, PopupDelegate.ROLE_QUANTITY)
+            kwargs = editor.table.config
+            kwargs['df'] = editor.table.degf
+            if 'name' in kwargs:
+                typeb.distname = kwargs.pop('name')
+            typeb.set_kwargs(**kwargs)
+            index.model().setData(index, f'   ±{typeb.uncertainty.magnitude:.4g} (k=1)   ▾', QtCore.Qt.ItemDataRole.DisplayRole)
         else:
             super().setModelData(editor, model, index)
 
@@ -281,6 +309,12 @@ class QuantityTree(QtWidgets.QTreeWidget):
         self.fill_tree()
         self.itemChanged.connect(self.edit_data)
 
+    def set_background(self, item: QtWidgets.QTreeWidgetItem, column: int, valid: bool):
+        ''' Set background color of a table item '''
+        item.setBackground(column, gui_styles.color.transparent if valid else gui_styles.color.invalid)
+        if not valid:
+            self.clearSelection()
+
     def fill_tree(self):
         ''' Fill tree with component values '''
         self.loading = True
@@ -307,8 +341,10 @@ class QuantityTree(QtWidgets.QTreeWidget):
         ''' Item was changed, update the model '''
         if self.loading:
             return
+
+        self.loading = True
         qty = item.data(0, SuncalDelegate.ROLE_QUANTITY)
-        typeb = item.data(0, SuncalDelegate.ROLE_TYPEB)
+        typeb = item.data(self.COL_VALUE, SuncalDelegate.ROLE_TYPEB)
         typea = item.data(self.COL_VALUE, SuncalDelegate.ROLE_TYPEA)
         if typeb is not None:
             self._edit_typeb_data(item, qty, typeb, column)
@@ -316,6 +352,7 @@ class QuantityTree(QtWidgets.QTreeWidget):
             self._edit_typea_data(item, qty, column)
         else:
             self._edit_quantity_data(item, qty, column)
+        self.loading = False
 
     def _edit_quantity_data(self, item: TreeItem, qty: SystemQuantity, column: int):
         if column == self.COL_SYM:
@@ -323,43 +360,51 @@ class QuantityTree(QtWidgets.QTreeWidget):
                 value = item.data(self.COL_SYM, LatexDelegate.ROLE_ENTERED)
                 mathvalue = uparser.parse_math(value)
             except ValueError:
-                set_background(item, column, False)
+                self.set_background(item, column, False)
             else:
                 if isinstance(mathvalue, sympy.Symbol):  # name must be single symbol
                     qty.symbol = value
-                    set_background(item, column, True)
+                    self.set_background(item, column, True)
                     self.symbol_changed.emit()
                 else:
-                    set_background(item, column, False)
+                    self.set_background(item, column, False)
 
         elif column == self.COL_VALUE:
             try:
                 value = float(item.text(self.COL_VALUE))
             except ValueError:
-                set_background(item, column, False)
+                self.set_background(item, column, False)
             else:
                 qty.testpoint = value
-                set_background(item, column, True)
+                self.set_background(item, column, True)
+                for typeb in qty.typebs:
+                    typeb.nominal = value
 
         elif column == self.COL_UNITS:
             try:
                 unit = uparser.parse_unit(item.text(self.COL_UNITS))
             except ValueError:
-                set_background(item, column, False)
+                self.set_background(item, column, False)
             else:
                 qty.units = str(unit)
                 item.setText(self.COL_UNITS, f'{unit:~P}')
-                set_background(item, column, True)
+                self.set_background(item, column, True)
+                bunit = unitmgr.to_delta_units(qty.units)
 
                 # Keep Type B units compatible
-                for child, typeb in zip(item.children(), qty.typebs):
-                    if typeb.units is None or typeb.units == 'dimensionless':
-                        typeb.units = unit
-                        child.setText(self.COL_UNITS, f'{unit:~P}')
-                    elif typeb.units:
+                for child in item.children():
+                    typeb = child.data(self.COL_VALUE, SuncalDelegate.ROLE_TYPEB)
+                    typea: bool = child.data(self.COL_VALUE, SuncalDelegate.ROLE_TYPEA)
+
+                    if typea:
+                        child.setText(self.COL_UNITS, f'{bunit:~P}')
+                    elif typeb and typeb.units is None or unitmgr.is_dimensionless(typeb.units):
+                        typeb.units = bunit
+                        child.setText(self.COL_UNITS, f'{bunit:~P}')
+                    elif typeb and typeb.units:
                         if typeb.units.dimensionality != unit.dimensionality:
-                            typeb.units = unit
-                            child.setText(self.COL_UNITS, f'{unit:~P}')
+                            typeb.units = bunit
+                            child.setText(self.COL_UNITS, f'{bunit:~P}')
 
         elif column == self.COL_DESC:
             if item.data(self.COL_VALUE, SuncalDelegate.ROLE_TYPEA):
@@ -388,22 +433,18 @@ class QuantityTree(QtWidgets.QTreeWidget):
         elif column == self.COL_UNITS:
             unit = item.text(self.COL_UNITS)
             try:
-                unit = unit.replace('degC', 'delta_degC').replace('celsius', 'delta_degC').replace('degF', 'delta_degF').replace('fahrenheit', 'delta_degF')
-                units = uparser.parse_unit(unit)
+                units = unitmgr.to_delta_units(unit)
             except ValueError:
-                set_background(item, column, False)
+                self.set_background(item, column, False)
             else:
                 if qty.units and units.dimensionality == uparser.parse_unit(qty.units).dimensionality:
                     typeb.units = units
-                    set_background(item, column, True)
+                    self.set_background(item, column, True)
                 else:
-                    set_background(item, column, False)
+                    self.set_background(item, column, False)
 
         elif column == self.COL_DESC:
             typeb.description = item.text(self.COL_DESC)
-
-        else:
-            raise NotImplementedError
 
     def add_quantity(self, qty: SystemQuantity):
         ''' Add a quantity to the tree '''
@@ -438,18 +479,15 @@ class QuantityTree(QtWidgets.QTreeWidget):
         self.loading = True
         item.addChild(uitem := TreeItem([
             typeb.name,
-            '',  # Popup
+            f'   ± {unitmgr.strip_units(typeb.uncertainty)} (k=1)    ▾',  # Type B
             f'{typeb.units:~P}' if typeb.units else '',
             '',  # Tolerance (NA)
             typeb.description
-        ]).enableEdit(True, False, True, False, True))
+        ]).enableMath(True).enableEdit(True, False, True, False, True))
         uitem.setData(0, SuncalDelegate.ROLE_QUANTITY, qty)
-        uitem.setData(0, SuncalDelegate.ROLE_TYPEB, typeb)
         uitem.setData(self.COL_TOLERANCE, SuncalDelegate.ROLE_DISABLE, True)
-        self.setItemWidget(uitem, self.COL_VALUE, bpop := widgets.PdfPopupButton())
-        bpop.set_distribution(typeb.distribution)
-        bpop.changed.connect(lambda typeb=typeb, widget=bpop: self.change_typeb(typeb, widget))
-
+        uitem.setData(self.COL_VALUE, SuncalDelegate.ROLE_TYPEB, typeb)
+        uitem.setData(self.COL_VALUE, SuncalDelegate.ROLE_DISABLE, True)
         self.setItemWidget(uitem, self.COL_BTNB, remb := widgets.MinusButton())
         remb.setToolTip('Remove Type B Uncertainty Component')
         remb.clicked.connect(lambda x, qty=qty, typeb=typeb, item=uitem: self.remove_uncertainty(qty, item, typeb))
@@ -457,13 +495,6 @@ class QuantityTree(QtWidgets.QTreeWidget):
         item.setExpanded(True)
         self.loading = False
         self.added.emit()
-
-    def change_typeb(self, typeb: Typeb, widget: widgets.PdfPopupButton):
-        ''' Type B distribution parameter was changed '''
-        config = widget.get_config()
-        kwargs = config.get('dist')
-        kwargs['df'] = config.get('degrees_freedom')
-        typeb.set_kwargs(**kwargs)
 
     def remove_quantity(self, qty: SystemQuantity, item: TreeItem):
         ''' Remove the quantity '''
@@ -475,8 +506,16 @@ class QuantityTree(QtWidgets.QTreeWidget):
     def add_uncertainty(self, qty: SystemQuantity, item: TreeItem):
         ''' Add a new uncertainty component '''
         typeb = Typeb(nominal=qty.testpoint)
+        units = ''
         if qty.units is not None:
-            typeb.units = unitmgr.parse_units(qty.units)
+            if qty.units.lower() in ['celsius', 'degree_celsius', 'degc', '°c']:
+                units = 'delta_degree_Celsius'
+            elif qty.units.lower() in ['fahrenheit', 'degree_fahrenheit', 'degf', '°f']:
+                units = 'delta_degree_Fahrenheit'
+            else:
+                units = str(qty.units)
+
+        typeb.units = unitmgr.parse_units(units)
         qty.typebs.append(typeb)
         self.add_uncertainty_item(item, qty, typeb)
         self.added.emit()
@@ -496,7 +535,7 @@ class QuantityTree(QtWidgets.QTreeWidget):
         self.loading = True
         item.addChild(aitem := TreeItem([
             'Type A',
-            'double-click to enter data',  # popup,
+            '   ± 0   ▾',  # popup,
             '', '',
             qty.typea_description
         ]).enableEdit(False, False, False, False, False))
@@ -524,7 +563,7 @@ class QuantityTree(QtWidgets.QTreeWidget):
         if item:
             menu = QtWidgets.QMenu()
             qty = item.data(0, SuncalDelegate.ROLE_QUANTITY)
-            typeb = item.data(0, SuncalDelegate.ROLE_TYPEB)
+            typeb = item.data(self.COL_VALUE, SuncalDelegate.ROLE_TYPEB)
             typea = item.data(self.COL_VALUE, SuncalDelegate.ROLE_TYPEA)
             if typea:
                 remtypea = menu.addAction('Remove Type A uncertainty data')
@@ -540,6 +579,14 @@ class QuantityTree(QtWidgets.QTreeWidget):
                 remove = menu.addAction('&Remove Quantity')
                 remove.triggered.connect(lambda x, qty=qty, item=item: self.remove_quantity(qty, item))
             menu.exec(event.globalPos())
+
+    def moveCursor(self, cursorAction, modifiers):
+        ''' Move by columns, not rows '''
+        index = self.currentIndex()
+        column = index.column()
+        if column < self.COL_BTNA:
+            return index.sibling(index.row(), column+1)
+        return super().moveCursor(cursorAction, modifiers)
 
 
 class CurveTree(QtWidgets.QTreeWidget):
@@ -562,6 +609,12 @@ class CurveTree(QtWidgets.QTreeWidget):
         self._toldelegate = ToleranceDelegate(required=False)
         self.fill_tree()
         self.itemChanged.connect(self.edit_data)
+
+    def set_background(self, item: QtWidgets.QTreeWidgetItem, column: int, valid: bool):
+        ''' Set background color of a table item '''
+        item.setBackground(column, gui_styles.color.transparent if valid else gui_styles.color.invalid)
+        if not valid:
+            self.clearSelection()
 
     def fill_tree(self):
         ''' Fill tree with component values '''
@@ -600,7 +653,7 @@ class CurveTree(QtWidgets.QTreeWidget):
             try:
                 guess = float(guess)
             except (TypeError, ValueError):
-                set_background(item, self.COL_DATA, False)
+                self.set_background(item, self.COL_DATA, False)
             else:
                 names = qty.coeff_names()
                 idx = names.index(name)
@@ -609,7 +662,7 @@ class CurveTree(QtWidgets.QTreeWidget):
                 if len(qty.guess) < len(names):
                     qty.guess = qty.guess + [1] * (len(names) - len(qty.guess))
                 qty.guess[idx] = guess
-                set_background(item, self.COL_DATA, True)
+                self.set_background(item, self.COL_DATA, True)
 
         elif coeff and column == self.COL_TOLERANCE:
             tol = item.data(self.COL_TOLERANCE, SuncalDelegate.ROLE_TOLERANCE)
@@ -622,12 +675,12 @@ class CurveTree(QtWidgets.QTreeWidget):
             try:
                 value = float(value)
             except (ValueError, TypeError):
-                set_background(item, self.COL_DATA, False)
+                self.set_background(item, self.COL_DATA, False)
             else:
                 qty.predictions.pop(pred, None)
                 qty.predictions[name] = (value, tol)
                 item.setData(0, SuncalDelegate.ROLE_PREDICT, name)
-                set_background(item, self.COL_DATA, True)
+                self.set_background(item, self.COL_DATA, True)
 
     def add_quantity(self, qty: SystemCurve):
         ''' Add a quantity to the tree '''
@@ -643,8 +696,18 @@ class CurveTree(QtWidgets.QTreeWidget):
         item.setData(0, SuncalDelegate.ROLE_QUANTITY, qty)
         item.setData(self.COL_TOLERANCE, SuncalDelegate.ROLE_DISABLE, True)
         model = QtWidgets.QComboBox()
-        model.addItems(['Line', 'Quadratic', 'Cubic', 'Quartic', 'Exponential', 'Exponential Decay', 'Log', 'Logistic Growth', 'Custom'])
-        model.setCurrentText(qty.fitmodel)
+        fitmodels = ['Line', 'Quadratic', 'Cubic', 'Quartic', 'Exponential', 'Exponential Decay', 'Log', 'Logistic Growth', 'Custom']
+        model.addItems(fitmodels)
+        cmodel = {
+            'line': 'Line',
+            'exp': 'Exponential',
+            'decay': 'Exponential Decay',
+            'log': 'Log',
+            'logistic': 'Logistic Growth',
+            'quad': 'Quadratic',
+            'cubic': 'Cubic',
+        }.get(qty.fitmodel, 'Custom')
+        model.setCurrentText(cmodel)
         model.currentIndexChanged.connect(lambda x, qty=qty, widget=model, item=item: self.change_model(qty, model, item))
         data = QtWidgets.QToolButton()
         data.setText('Curve Data...')
@@ -692,7 +755,7 @@ class CurveTree(QtWidgets.QTreeWidget):
         try:
             qty.polyorder = order
             qty.set_fitmodel(fit)
-        except ValueError as exc:
+        except (TypeError, ValueError) as exc:
             QtWidgets.QMessageBox.warning(self, 'Suncal', exc)
         else:
             item.takeChildren()
@@ -727,7 +790,7 @@ class CurveTree(QtWidgets.QTreeWidget):
         self.loading = True
         item.addChild(pitem := TreeItem([
             name,
-            'Prediction at x =',
+            'Estimate at x =',
             str(value),
             str(tolerance) if tolerance else '',
             qty.descriptions.get(name, '')  # Description
@@ -767,14 +830,22 @@ class CurveTree(QtWidgets.QTreeWidget):
             coeff = item.data(0, SuncalDelegate.ROLE_COEFF)
             pred = item.data(0, SuncalDelegate.ROLE_PREDICT)
             if qty and not coeff and not pred:
-                addpred = menu.addAction('Add Prediction Value')
+                addpred = menu.addAction('Add Estimate Value')
                 addpred.triggered.connect(lambda x, qty=qty, item=item: self.add_prediction(qty, item))
                 remove = menu.addAction('Remove Quantity')
                 remove.triggered.connect(lambda x, qty=qty, item=item: self.remove_quantity(qty, item))
             elif qty and pred:
-                remove = menu.addAction('Remove Prediction Value')
+                remove = menu.addAction('Remove Estimate Value')
                 remove.triggered.connect(lambda x, qty=qty, item=item, pred=pred: self.remove_prediction(qty, item, pred))
             menu.exec(event.globalPos())
+
+    def moveCursor(self, cursorAction, modifiers):
+        ''' Move by columns, not rows '''
+        index = self.currentIndex()
+        column = index.column()
+        if column < self.COL_CNT:
+            return index.sibling(index.row(), column+1)
+        return super().moveCursor(cursorAction, modifiers)
 
 
 class MeasSysInput(QtWidgets.QWidget):
@@ -798,20 +869,15 @@ class MeasSysInput(QtWidgets.QWidget):
         self.btn_addqty.setToolTip('Add a direct-measured quantity.')
         self.btn_addeqn.setToolTip('Add an indirect measurement quantity, calculated via equation.')
         self.btn_addcurve.setToolTip('Add a curve fit calculation.')
-        self.panel = widgets.WidgetPanel()
         font = QtGui.QFont('Arial', 14)
-        self.panel.setFont(font)
-        self.panel.setAnimated(True)
         self.tree_func = FunctionTree(component)
         self.tree_qty = QuantityTree(component)
         self.tree_curve = CurveTree(component)
-
-        self.panel.add_widget('Measurement Equations', self.tree_func)
-        self.panel.add_widget('Measured Quantities', self.tree_qty)
-        self.panel.add_widget('Curve Fit Quantities', self.tree_curve)
-        self.panel.hide_widget('Measurement Equations', True)
-        self.panel.hide_widget('Measured Quantities', True)
-        self.panel.hide_widget('Curve Fit Quantities', True)
+        self.label_func = QtWidgets.QLabel("<b>Measurement Equations</b>")
+        self.label_qty = QtWidgets.QLabel("<b>Measured Quantities</b>")
+        self.label_curve = QtWidgets.QLabel("<b>Curve Fit Quantities</b>")
+        self.corrwidget = CorrelationWidget()
+        self.corrwidget.setVisible(False)
 
         layout = QtWidgets.QVBoxLayout()
         blayout = QtWidgets.QHBoxLayout()
@@ -820,7 +886,14 @@ class MeasSysInput(QtWidgets.QWidget):
         blayout.addWidget(self.btn_addcurve)
         blayout.addStretch()
         layout.addLayout(blayout)
-        layout.addWidget(self.panel)
+        layout.addWidget(self.label_qty)
+        layout.addWidget(self.tree_qty, stretch=2)
+        layout.addWidget(self.corrwidget, stretch=1)
+        layout.addWidget(self.label_curve)
+        layout.addWidget(self.tree_curve, stretch=2)
+        layout.addWidget(self.label_func)
+        layout.addWidget(self.tree_func, stretch=2)
+        layout.addStretch(stretch=0)
         b2layout = QtWidgets.QHBoxLayout()
         b2layout.addStretch()
         b2layout.addWidget(self.btn_calc)
@@ -829,43 +902,51 @@ class MeasSysInput(QtWidgets.QWidget):
 
         self.tree_func.equation_changed.connect(self.add_missing_symbols)
         self.tree_qty.symbol_changed.connect(self.add_missing_symbols)
-        self.tree_func.added.connect(self.rows_added)
-        self.tree_qty.added.connect(self.rows_added)
-        self.tree_curve.added.connect(self.rows_added)
+        self.tree_func.added.connect(self.set_visibility)
+        self.tree_qty.added.connect(self.set_visibility)
+        self.tree_curve.added.connect(self.set_visibility)
+        self.corrwidget.changed.connect(self.set_correlation)
         self.btn_addeqn.clicked.connect(self.add_indirect)
         self.btn_addqty.clicked.connect(self.add_quantity)
         self.btn_addcurve.clicked.connect(self.add_curve)
         self.btn_calc.clicked.connect(self.calculate)
-
-        self.rows_added()
-        self.panel.expandAll()
+        self.set_visibility()
 
     def clear(self):
         ''' Clear everything '''
         self.tree_func.clear()
         self.tree_qty.clear()
         self.tree_curve.clear()
-        self.rows_added()
+        self.set_visibility()
+
+    def set_visibility(self):
+        ''' Show/hide the trees '''
+        qtys = [q for q in self.component.model.quantities if isinstance(q, SystemQuantity)]
+        show_qty = len(qtys) > 0
+        show_func = len([q for q in self.component.model.quantities if isinstance(q, SystemIndirectQuantity)]) > 0
+        show_curve = len([q for q in self.component.model.quantities if isinstance(q, SystemCurve)]) > 0
+        self.tree_func.setVisible(show_func)
+        self.tree_qty.setVisible(show_qty)
+        self.tree_curve.setVisible(show_curve)
+        self.label_func.setVisible(show_func)
+        self.label_qty.setVisible(show_qty)
+        self.label_curve.setVisible(show_curve)
+        names = [q.symbol for q in qtys]
+        self.corrwidget.table.setVarNames(names)
 
     def add_missing_symbols(self):
         ''' Check measurement model and add any missing variables '''
-        missing = self.component.model.missing_symbols()
-        if missing:
-            for v in missing:
-                qty = SystemQuantity(v)
-                self.component.model.quantities.append(qty)
-            self.tree_qty.fill_tree()
-            self.panel.hide_widget('Measurement Equations', False)
-            self.panel.expandAll()
-
-    def rows_added(self):
-        ''' Rows were added or removed. Adjust the tree '''
-        qty = [q for q in self.component.model.quantities if isinstance(q, SystemQuantity)]
-        indirect = [q for q in self.component.model.quantities if isinstance(q, SystemIndirectQuantity)]
-        curves = [q for q in self.component.model.quantities if isinstance(q, SystemCurve)]
-        self.panel.hide_widget('Measured Quantities', len(qty) == 0)
-        self.panel.hide_widget('Measurement Equations', len(indirect) == 0)
-        self.panel.hide_widget('Curve Fit Quantities', len(curves) == 0)
+        try:
+            missing = self.component.model.missing_symbols()
+        except ValueError as exc:
+            # Possibly recursive function
+            QtWidgets.QMessageBox.warning(self, 'Suncal', str(exc))
+        else:
+            if missing:
+                for v in missing:
+                    qty = SystemQuantity(v)
+                    self.component.model.quantities.append(qty)
+                self.tree_qty.fill_tree()
 
     def add_indirect(self):
         ''' Add an indirect quantity '''
@@ -873,8 +954,6 @@ class MeasSysInput(QtWidgets.QWidget):
         qty.symbol = self.component.model.unused_symbol()
         self.component.model.quantities.append(qty)
         self.tree_func.add_quantity(qty)
-        self.panel.hide_widget('Measurement Equations', False)
-        self.panel.expandAll()
 
     def add_quantity(self):
         ''' Add a Quantity to the system '''
@@ -882,16 +961,17 @@ class MeasSysInput(QtWidgets.QWidget):
         qty.symbol = self.component.model.unused_symbol()
         self.component.model.quantities.append(qty)
         self.tree_qty.add_quantity(qty)
-        self.panel.hide_widget('Measured Quantities', False)
-        self.panel.expandAll()
 
     def add_curve(self):
         ''' Add a CurveFit to the system '''
         qty = SystemCurve()
         self.component.model.quantities.append(qty)
         self.tree_curve.fill_tree()
-        self.panel.hide_widget('Curve Fit Quantities', False)
-        self.panel.expandAll()
+
+    def set_correlation(self):
+        ''' Set correlation coefficients '''
+        corr = self.corrwidget.table.get_config()
+        self.component.model.correlations = corr
 
 
 class MeasSysOutput(QtWidgets.QWidget):
@@ -967,6 +1047,29 @@ class MeasSysOutput(QtWidgets.QWidget):
             self.change_help.emit()
 
 
+class CorrelationWidget(QtWidgets.QWidget):
+    changed = QtCore.pyqtSignal()
+
+    def __init__(self):
+        super().__init__()
+        self.buttons = widgets.PlusMinusButton()
+        self.table = CorrelationTableWidget()
+        hlayout = QtWidgets.QHBoxLayout()
+        hlayout.addWidget(QtWidgets.QLabel('<b>Correlation Coefficients</b>'))
+        hlayout.addWidget(self.buttons)
+        layout = QtWidgets.QVBoxLayout()
+        layout.addLayout(hlayout)
+        layout.addWidget(self.table)
+        layout.addStretch()
+        self.setLayout(layout)
+        self.buttons.plusclicked.connect(self.table.addRow)
+        self.buttons.minusclicked.connect(self.table.remRow)
+        self.table.itemChanged.connect(self.changed)
+        self.table.changed.connect(self.changed)
+        self.buttons.minusclicked.connect(self.changed)
+        self.buttons.plusclicked.connect(self.changed)
+
+
 class MeasSysPage(QtWidgets.QWidget):
     ''' Main All-in-one Measurement System Page '''
     PG_INPUT = 0
@@ -990,17 +1093,21 @@ class MeasSysPage(QtWidgets.QWidget):
         self.menu = QtWidgets.QMenu('&Uncertainty')
         self.actChkUnits = QtGui.QAction('Check &Units...', self)
         self.actClear = QtGui.QAction('&Clear quantities', self)
+        self.actCorr = QtGui.QAction('Show Co&rrelations', self)
+        self.actCorr.setCheckable(True)
         self.actOpts = QtGui.QAction('&Options...', self)
         self.actSaveReport = QtGui.QAction('&Save Report...', self)
         self.menu.addAction(self.actChkUnits)
         self.menu.addAction(self.actClear)
         self.menu.addAction(self.actOpts)
+        self.menu.addAction(self.actCorr)
         self.menu.addSeparator()
         self.menu.addAction(self.actSaveReport)
         self.actClear.triggered.connect(self.clearinput)
         self.actChkUnits.triggered.connect(self.checkunits)
         self.actSaveReport.triggered.connect(self.save_report)
         self.actOpts.triggered.connect(self.show_options)
+        self.actCorr.triggered.connect(self.show_correlation)
         self.pg_output.change_help.connect(self.change_help)
 
     def get_menu(self):
@@ -1030,6 +1137,10 @@ class MeasSysPage(QtWidgets.QWidget):
         self.component.model.quantities = []
         self.pg_input.clear()
         self.stack.slideInRight(self.PG_INPUT)
+
+    def show_correlation(self):
+        ''' Show/hide correlation widget '''
+        self.pg_input.corrwidget.setVisible(self.actCorr.isChecked())
 
     def show_options(self):
         ''' Show the options dialog '''
@@ -1074,8 +1185,11 @@ class MeasSysPage(QtWidgets.QWidget):
                 QtWidgets.QMessageBox.warning(self, 'Suncal', 'Please provide initial guess for curve fit.')
             elif 'operands' in str(exc):
                 QtWidgets.QMessageBox.warning(self, 'Suncal', 'Curve columns must have equal lengths.')
+            elif 'semidefinite' in str(exc):
+                QtWidgets.QMessageBox.warning(self, 'Suncal', 'Invalid value in correlation - matrix not symmetric positive semidefinite.')
             else:
-                QtWidgets.QMessageBox.warning(self, 'Suncal', f'Error: {exc}')
+                QtWidgets.QMessageBox.warning(self, 'Suncal', f'Invalid expression')
+                print(exc)
         else:
             self.pg_output.set_result(result)
             self.stack.slideInLeft(self.PG_OUTPUT)
@@ -1095,7 +1209,7 @@ class MeasSysPage(QtWidgets.QWidget):
         elif self.pg_output.stack.currentIndex() == 2:
             if self.pg_output.curveout.outSelect.currentText() == 'Fit Plot':
                 return CurveHelp.fit()
-            elif self.pg_output.curveout.outSelect.currentText() == 'Prediction':
+            elif self.pg_output.curveout.outSelect.currentText() == 'Estimates':
                 return CurveHelp.prediction()
             elif self.pg_output.curveout.outSelect.currentText() == 'Waveform Features':
                 return CurveHelp.waveform()

@@ -323,13 +323,13 @@ class PredictionWidget(QtWidgets.QWidget):
 
         self.buttons = widgets.PlusMinusButton()
         layout = QtWidgets.QVBoxLayout()
-        layout.addWidget(QtWidgets.QLabel('Predict y-values and uncertainties along the curve:'))
+        layout.addWidget(QtWidgets.QLabel('Estimate y-values and uncertainties along the curve:'))
         layout.addWidget(self.buttons)
         layout.addWidget(self.table)
         self.setLayout(layout)
         self.buttons.plusclicked.connect(self.addrow)
         self.buttons.minusclicked.connect(self.remrow)
-        self.buttons.setToolTip('Add or remove values to predict along the curve')
+        self.buttons.setToolTip('Add or remove values to estimate along the curve')
 
     def addrow(self):
         ''' Add a row to the table '''
@@ -369,14 +369,14 @@ class PredictionWidget(QtWidgets.QWidget):
                 try:
                     val = mdates.date2num(parse(valtext))
                 except ParserError:
-                    QtWidgets.QMessageBox.warning(self, 'Curve Fit', f'Invalid date format in Predictions: {valtext}')
+                    QtWidgets.QMessageBox.warning(self, 'Curve Fit', f'Invalid date format in Estimate: {valtext}')
                     continue
 
             else:
                 try:
                     val = float(valtext)
                 except ValueError:
-                    QtWidgets.QMessageBox.warning(self, 'Curve Fit', f'Invalid number format in Predictions: {valtext}')
+                    QtWidgets.QMessageBox.warning(self, 'Curve Fit', f'Invalid number format in Estimate: {valtext}')
                     continue
 
             tol = self.table.item(row, self.COL_TOL).data(ToleranceDelegate.ROLE_TOLERANCE)
@@ -521,7 +521,7 @@ class PageInputCurveFit(QtWidgets.QWidget):
         self.tab = QtWidgets.QTabWidget()
         self.tab.addTab(self.model, 'Fit Model')
         self.tab.addTab(self.tolerances, 'Tolerances')
-        self.tab.addTab(self.predictions, 'Predictions')
+        self.tab.addTab(self.predictions, 'Estimates')
         self.tab.addTab(self.waveform, 'Waveform')
         self.tab.addTab(self.settings, 'Settings')
         self.tab.addTab(self.notes, 'Notes')
@@ -765,7 +765,7 @@ class FullReportSetup(QtWidgets.QWidget):
         self.chkCoeffs = QtWidgets.QCheckBox('Fit Coefficients')
         self.chkGoodness = QtWidgets.QCheckBox('Goodness of Fit')
         self.chkConfEqn = QtWidgets.QCheckBox('Conf. Band Equations')
-        self.chkPrediction = QtWidgets.QCheckBox('Prediction')
+        self.chkPrediction = QtWidgets.QCheckBox('Estimates')
         self.chkInterval = QtWidgets.QCheckBox('Interval')
         self.chkResid = QtWidgets.QCheckBox('Residuals')
         self.chkCorr = QtWidgets.QCheckBox('Correlations')
@@ -812,7 +812,7 @@ class PageOutputCurveFit(QtWidgets.QWidget):
         self.btnBack = QtWidgets.QPushButton('Back')
 
         self.outSelect = QtWidgets.QComboBox()
-        self.outSelect.addItems(['Fit Plot', 'Prediction', 'Interval', 'Residuals', 'Correlations', 'Full Report'])
+        self.outSelect.addItems(['Fit Plot', 'Estimates', 'Interval', 'Residuals', 'Correlations', 'Full Report'])
         self.cmbMethod = QtWidgets.QComboBox()     # For selecting a single method
         self.cmbMethod.setVisible(False)
 
@@ -919,7 +919,7 @@ class PageOutputCurveFit(QtWidgets.QWidget):
             self.predictmode.setVisible(showpredict)
             self.reportoptions.setVisible(False)
 
-        elif self.outSelect.currentText() == 'Prediction':
+        elif self.outSelect.currentText() == 'Estimates':
             self.cmbMethod.setVisible(self.methodcnt > 1)
             self.chkConfBand.setVisible(True)
             self.chkPredBand.setVisible(True)
@@ -1045,7 +1045,7 @@ class PageOutputCurveFit(QtWidgets.QWidget):
             ax.set_xlabel(out.setup.xname)
             ax.set_ylabel(out.setup.yname)
 
-        elif self.outSelect.currentText() == 'Prediction':
+        elif self.outSelect.currentText() == 'Estimates':
             ax = self.fig.add_subplot(1, 1, 1)
 
             # Extend x-range to the manually entered x-point
@@ -1067,7 +1067,7 @@ class PageOutputCurveFit(QtWidgets.QWidget):
             if self.chkPredBand.isChecked():
                 out.report.plot.pred(ax=ax, x=x, ls='--', color='C3', mode=predmode, **kconf)
             if out.predictions:
-                out.report.plot.pred_value(xvalues, ax=ax, mode=predmode, **kconf)
+                out.report.plot.conf_value(xvalues, ax=ax, **kconf)
 
             ax.legend(loc='best')
             ax.set_xlabel(out.setup.xname)
@@ -1197,7 +1197,7 @@ class PageOutputCurveFit(QtWidgets.QWidget):
                 self.cmbWaves.addItems(list(self.result.waveform.features.keys()))
             with BlockedSignals(self.outSelect):
                 self.outSelect.clear()
-                self.outSelect.addItems(['Fit Plot', 'Prediction', 'Waveform Features', 'Interval', 'Residuals', 'Correlations', 'Full Report'])
+                self.outSelect.addItems(['Fit Plot', 'Estimates', 'Waveform Features', 'Interval', 'Residuals', 'Correlations', 'Full Report'])
                 if methods['montecarlo']:
                     self.outSelect.addItem('Monte Carlo')
                 if methods['markov']:
@@ -1469,7 +1469,7 @@ class CurveFitWidget(QtWidgets.QWidget):
         else:
             if self.pgoutput.outSelect.currentText() == 'Fit Plot':
                 return CurveHelp.fit()
-            elif self.pgoutput.outSelect.currentText() == 'Prediction':
+            elif self.pgoutput.outSelect.currentText() == 'Estimates':
                 return CurveHelp.prediction()
             elif self.pgoutput.outSelect.currentText() == 'Waveform Features':
                 return CurveHelp.waveform()

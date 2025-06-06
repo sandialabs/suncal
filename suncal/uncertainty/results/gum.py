@@ -11,7 +11,7 @@ from ..report.cplx import ReportComplexGum
 
 
 Expanded = namedtuple('Expanded', ['uncertainty', 'k', 'confidence'])
-GumOutputData = namedtuple('GumOutput', ['uncertainty', 'Uy', 'Ux', 'Cx', 'degf', 'expected', 'functions'])
+GumOutputData = namedtuple('GumOutput', ['uncertainty', 'Uy', 'Ux', 'Cx', 'degf', 'expected', 'correlation', 'functions'])
 
 
 @reporter.reporter(ReportGum)
@@ -54,6 +54,7 @@ class GumResults:
         self.Cx = numeric.Cx
         self.degf = numeric.degf
         self.functions = numeric.functions
+        self.input_correlation = numeric.correlation
 
         self._numeric = numeric
         self.symbolic = symbolic
@@ -73,7 +74,8 @@ class GumResults:
         '''
         self._units.update(units)
         self.expected = unitmgr.convert_dict(self.expected, self._units)
-        self.uncertainty = unitmgr.convert_dict(self.uncertainty, self._units)
+        delta_units = {name: unitmgr.to_delta_units(u) for name, u in self._units.items()}
+        self.uncertainty = unitmgr.convert_dict(self.uncertainty, delta_units)
         return self
 
     def getunits(self):

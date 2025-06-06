@@ -48,6 +48,14 @@ class SystemQuantity:
         val = np.nanmean(self.typea) if self.typea is not None else self.testpoint
         return unitmgr.make_quantity(val, self.units)
 
+    def typea_uncertainty(self):
+        ''' Standard uncertainty '''
+        if self.typea is not None:
+            rv = RandomVariable()
+            rv.measure(self.typea, units=self.units, autocor=self.autocorrelation, num_new_meas=self.num_newmeas)
+            return rv.uncertainty
+        return 0
+
     def calculate(self):
         ''' Calculate uncertainty of the quantity '''
         rv = self.randomvariable()
@@ -108,6 +116,7 @@ class MeasureSystem:
         self.samples: int = 1000000
         self.seed: int = None
         self.correlate_typeas = True
+        self.correlations: list[dict] = []   # {'var1': var1, 'var2': var2, 'cor': cor}
 
     def defined_symbols(self) -> list[str]:
         ''' Get a list of symbols defined in the measurement system '''
@@ -223,6 +232,10 @@ class MeasureSystem:
                                     corrcoef = np.corrcoef(qty.typea, qty2.typea)[0][1]
                                     gummodel.variables.correlate(qty.symbol, qty2.symbol, corrcoef)
 
+            # User-entered correlations, override the Type A computed correlations
+            for corr in self.correlations:
+                gummodel.variables.correlate(corr.get('var1'), corr.get('var2'), corr.get('cor'))
+
             # Correlate curvefit variables
             fitresults = []
             for r in results:
@@ -239,7 +252,7 @@ class MeasureSystem:
                         if name1 in gummodel.varnames and name2 in gummodel.varnames:
                             u1 = curveresult.uncerts[i]  # Convert covariance to correlation
                             u2 = curveresult.uncerts[j]
-                            gummodel.variables.correlate(name1, name2, cov[i, j] * u1 * u2)
+                            gummodel.variables.correlate(name1, name2, cov[i, j] / u1 / u2)
 
             # Calculate all indirect at once
             gumout = gummodel.calculate(samples=self.samples)

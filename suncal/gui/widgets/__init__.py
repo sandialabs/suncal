@@ -24,6 +24,6 @@ from .stats import (ExpandedConfidenceWidget,
 from .colormap import ColorMapDialog
 from .intervalbins import BinData
 from .assign import AssignColumnWidget
-from .pdf import PdfPopupButton
+from .pdf import PdfPopupButton, PdfPopupDialog
 from .equipment import EquipmentEdit
 from .mqa import ToleranceCheck, ToleranceWidget
