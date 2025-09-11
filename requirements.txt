@@ -9,6 +9,6 @@ pint==0.22
 pyqt6==6.6.1
 pyqt6-qt6==6.6.1
 scipy==1.15.0
-PyInstaller==5.13.2  # For building exe
+PyInstaller==6.0.0  # For building exe
 pip-licenses        # Needed to generate license info for exe about page
 pytest              # To run test cases
