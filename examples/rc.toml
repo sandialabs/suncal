@@ -1,0 +1,54 @@
+[[quantity]]
+name = ""
+symbol = "R"
+measured = 0.0
+units = "kohm"
+repeatability = [32.205, 32.1878, 32.2081, 32.2201, 32.1807, 32.199, 32.1965, 32.212, 32.194, 32.2108]
+new_meas = 0
+
+[[quantity.typeb]]
+
+[quantity.typeb.Tolerance]
+tolerance = 0.21
+confidence = 0.95
+kfactor = nan
+degf = inf
+name = "Type B"
+
+[[quantity]]
+name = ""
+symbol = "C2"
+measured = 0.1
+units = "uF"
+new_meas = 0
+
+[[quantity.typeb]]
+
+[quantity.typeb.Uniform]
+a = 0.01
+degf = inf
+name = "Type B"
+
+[[quantity]]
+name = ""
+symbol = "C3"
+measured = 0.22
+units = "uF"
+new_meas = 0
+
+[[quantity.typeb]]
+
+[quantity.typeb.Uniform]
+a = 0.05
+degf = inf
+name = "Type B"
+
+[[function]]
+symbol = "tau"
+expr = "R*(C2+C3)"
+units = "ms"
+name = ""
+
+[settings]
+confidence = 0.9545
+montecarlo = 0

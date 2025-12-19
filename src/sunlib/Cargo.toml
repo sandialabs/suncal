@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 units = {path="../units"}
-exmex = {version="0.20.3", features = ["partial"]}
+exmex = {version="0.20.5", features = ["partial"]}
 toml = "0.8.20"
 serde = {version="1.0.217", features=["derive"]}
 rand = "0.8.0"

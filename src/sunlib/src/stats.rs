@@ -19,7 +19,7 @@ pub fn variance(data: &Vec<f64>) -> f64 {
     let sum: f64 = data.iter().sum();
     let n = data.len() as f64;
     let xbar: f64 = sum / n;
-    let sumsq: f64 = data.iter().map(|x| ((x - xbar).powi(2))).sum();
+    let sumsq: f64 = data.iter().map(|x| (x - xbar).powi(2)).sum();
     sumsq / (n - 1.0)
 }
 

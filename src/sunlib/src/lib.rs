@@ -13,7 +13,7 @@ pub mod cfg;
 pub mod result;
 pub mod risk;
 pub mod curves;
-use crate::dists::{Distribution, normal_cdf, std_from_itp, itp_from_norm};
+use crate::dists::{normal_cdf, std_from_itp, itp_from_norm};
 use crate::cfg::{ModelQuantity, ModelFunction, MeasureSystem, TypeBNormal, Tolerance, Utility, Costs, Eopr, Guardband, RenewalPolicy, ReliabilityModel, TypeBTolerance, TypeBDist, Interval, IntervalTarget, Calibration, CurveModel};
 use crate::result::{UncertResult, QuantityResult, GumResult, GumComponents, MonteCarloResult, CurveResult, RiskResult, RiskResultGlobal, ReliabilityResult, CostResult, SystemResult, ReliabilityDecay, ReliabilityDecayParameters, get_qresult};
 use crate::risk::RiskModel;
@@ -152,36 +152,6 @@ impl ModelQuantity {
         };
         variance
     }
-    fn pdf(&self) -> Option<Distribution> {
-        // Build PDF combining all TypeB into one Distribution
-        let nom = units::make_baseqty(self.expected(), self.units.clone(), true).unwrap();
-        if self.typeb.len() > 0 {
-            let scale = match &self.units {
-                Some(u) => {let unit = units::parse_unit(u).unwrap();
-                            unit.scale},
-                None => 1.0,
-            };
-            let mut pdf = self.typeb[0].scale(scale).pdf_given_y(nom.magnitude, None);
-            for typeb in self.typeb[1..].iter() {
-                pdf = pdf.convolve(&typeb.scale(scale), None);
-            }
-            for ta in self.typea_pdfs() {
-                pdf = pdf.convolve(&ta, None);
-            }
-            Some(pdf)
-        } else {
-            let tas = self.typea_pdfs();
-            if tas.len() > 0 {
-                let mut pdf = tas[0].pdf_given_y(nom.magnitude, None);
-                if tas.len() > 1 {
-                    pdf = pdf.convolve(&tas[1], None);
-                }
-                Some(pdf)
-            } else {
-                None
-            }
-        }
-    }
     fn typea_pdfs(&self) -> Vec<TypeBDist> {
         let scale = match &self.units {
             Some(u) => {let unit = units::parse_unit(u).unwrap();
@@ -227,12 +197,27 @@ impl ModelQuantity {
         Ok(UncertResult::Gum(gum))
     }
     fn evaluate_mc(&self, standard_samples: &Vec<f64>, conf: f64) -> Result<UncertResult, Box<dyn Error>> {
-        let samples = match self.pdf() {
-            Some(pdf) => Vec::<f64>::from(standard_samples.iter().map(|x| {pdf.inverse_cdf(*x)}).collect::<Vec<f64>>()),
-            None => {
-                vec![self.expected(); standard_samples.len()]
-            },
+        let scale = match &self.units {
+            Some(u) => {let unit = units::parse_unit(u).unwrap();
+                        unit.scale},
+            None => 1.0,
         };
+
+        let typeas = self.typea_pdfs();
+        let mut samples: Vec<f64> = vec![self.expected()*scale; standard_samples.len()];
+        for typea in typeas {
+            for i in 0..standard_samples.len() {
+                // Type A were already scaled
+                samples[i] += typea.pdf_given_y(0.0, None).inverse_cdf(standard_samples[i])
+            }
+        }
+
+        for typeb in &self.typeb {
+            for i in 0..standard_samples.len() {
+                samples[i] += typeb.scale(scale).pdf_given_y(0.0, None).inverse_cdf(standard_samples[i])
+            }
+        }
+
         Ok(UncertResult::Montecarlo(MonteCarloResult::new(samples, self.units.clone(), conf)))
     }
 }
@@ -944,7 +929,6 @@ impl MeasureSystem {
                     let ci = diff.eval(&fvar_values)?;
                     let sub = General::<f64>::new(1, 1, vec![ci]);
                     cx = cx.set_slice(&sub, i, fvar_indexes[j]);
-                    //fpartials.push(diff.unparse().to_string());
                     fpartials.push(
                         format!("d{}/d{} = {}", funcnames[i], fvarnames[j], diff.unparse().to_string())
                     );
@@ -1094,7 +1078,7 @@ impl MeasureSystem {
         }
         Ok(curve_results)
     }
-    pub fn calculate(&self) -> Result<SystemResult, Box<dyn Error>> {
+    pub fn calculate(&self) -> Result<SystemResult<'_>, Box<dyn Error>> {
         let qty_results = self.calc_gum()?;
         let mc_results = self.calc_monte()?;
         Ok(SystemResult{
