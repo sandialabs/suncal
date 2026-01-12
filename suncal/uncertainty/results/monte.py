@@ -195,6 +195,9 @@ class McResults:
             samples = variable_nom.copy()              # Start with nominal values for all vars
             samples[varname] = self.varsamples[varname]  # And set this one to its real samples
             outsamples = self._model.eval(samples)    # Run it through the model
+            
+            # Convert outsamples to match the units of self.expected (in case units() was called)
+            outsamples = unitmgr.convert_dict(outsamples, self._units)
 
             # np.std() on offset units is broken in Pint - https://github.com/hgrecco/pint/issues/1640
             # Workaround by calculating std ourselves.

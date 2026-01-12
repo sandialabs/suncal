@@ -130,3 +130,35 @@ def test_welch():
     result = proj.calculate()
     assert np.isclose(result.gum.degf['Y_c'], 27.5, atol=.1)
     assert np.isclose(result.gum.expanded()['Y_c'].k, 2.05, atol=.01)
+
+
+def test_sensitivity_units():
+    ''' Test sensitivity units match output/input units '''
+    m = Model('P = V * I')
+    m.var('V').measure(5, units='V').typeb(std=0.1, units='V')
+    m.var('I').measure(2, units='mA').typeb(std=0.05, units='mA')
+    result = m.calculate().units(P='W')
+    
+    # Sensitivity should be in output units / input units
+    # P is in W, so dP/dV should be in W/V, dP/dI should be in W/mA
+    gumsens = result.gum.sensitivity()
+    mcsens = result.montecarlo.sensitivity().sensitivity
+    
+    # Verify invariant: sensitivity * input = output units
+    V_val = result.gum.variables.expected['V']
+    I_val = result.gum.variables.expected['I']
+    P_val = result.gum.expected['P']
+    
+    dP_dV = gumsens['P']['V']
+    dP_dI = gumsens['P']['I']
+    product_V = dP_dV * V_val
+    product_I = dP_dI * I_val
+    assert product_V.units == P_val.units
+    assert product_I.units == P_val.units
+    
+    dP_dV_mc = mcsens['P']['V']
+    dP_dI_mc = mcsens['P']['I']
+    product_V_mc = dP_dV_mc * V_val
+    product_I_mc = dP_dI_mc * I_val
+    assert product_V_mc.units == P_val.units
+    assert product_I_mc.units == P_val.units
