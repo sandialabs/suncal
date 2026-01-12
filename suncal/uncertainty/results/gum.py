@@ -73,9 +73,28 @@ class GumResults:
                     model function result to
         '''
         self._units.update(units)
+        
+        # Store old expected values to compute conversion factors
+        old_expected = self.expected.copy()
+        
+        # Convert expected and uncertainty
         self.expected = unitmgr.convert_dict(self.expected, self._units)
         delta_units = {name: unitmgr.to_delta_units(u) for name, u in self._units.items()}
         self.uncertainty = unitmgr.convert_dict(self.uncertainty, delta_units)
+        
+        # Convert sensitivity coefficients (Cx matrix)
+        # Cx[i][j] is dF_i/dx_j, where F_i is function i and x_j is variable j
+        # When F_i is converted, scale sensitivity by conversion_factor
+        for i, funcname in enumerate(self.functionnames):
+            if funcname in units:
+                # Calculate conversion factor from old to new units
+                old_val = old_expected[funcname]
+                new_val = self.expected[funcname]
+                if unitmgr.has_units(old_val) and unitmgr.has_units(new_val):
+                    conversion_factor = new_val / old_val
+                    # Scale all sensitivities for this function
+                    self.Cx[i] = [c * conversion_factor for c in self.Cx[i]]
+        
         return self
 
     def getunits(self):
