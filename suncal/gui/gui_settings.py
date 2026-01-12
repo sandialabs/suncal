@@ -17,7 +17,7 @@ DFLTCMAP = 'viridis'
 DFLTSTYLE = 'Suncal'
 assert hasattr(mpl.cm, DFLTCMAP)
 DFLTDISTS = ['normal', 'triangular',  'uniform', 't', 'gamma', 'lognorm', 'expon',
-             'curvtrap', 'beta', 'poisson', 'trapz', 'arcsine', 'resolution']
+             'curvtrap', 'beta', 'poisson', 'trapezoid', 'arcsine', 'resolution']
 
 
 class Settings:
