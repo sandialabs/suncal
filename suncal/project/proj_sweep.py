@@ -28,6 +28,14 @@ class ProjectSweep(ProjectComponent):
         if self.seed:
             np.random.seed(self.seed)
         self._result = self.model.calculate(samples=self.nsamples)
+        
+        # Apply output units to each result in the sweep
+        if self.outunits:
+            for gumresult in self._result.gum.gumresults:
+                gumresult.units(**self.outunits)
+            for mcresult in self._result.montecarlo.mcresults:
+                mcresult.units(**self.outunits)
+        
         return self._result
 
     def units_report(self, **kwargs):
