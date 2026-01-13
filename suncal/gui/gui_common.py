@@ -27,6 +27,9 @@ def handle_exception(exc_type, exc_value, exc_traceback):
     msgbox.setWindowTitle('Suncal')
     msgbox.setText('The following exception occurred.')
     msgbox.setInformativeText(msg)
+    for label in msgbox.findChildren(QtWidgets.QLabel):
+        label.setTextInteractionFlags(QtCore.Qt.TextInteractionFlag.TextSelectableByMouse | 
+                                       QtCore.Qt.TextInteractionFlag.TextSelectableByKeyboard)
     msgbox.exec()
 
 
