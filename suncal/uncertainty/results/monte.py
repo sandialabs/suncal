@@ -209,6 +209,16 @@ class McResults:
             sens = {name: x/self.variables.uncertainty[varname] for name, x in stds.items()}
             prop = {name: (x/self.uncertainty[name])**2 for name, x in stds.items()}
 
+            # Fix sensitivity units to be output_units / input_units
+            for funcname, value in sens.items():
+                output_units = unitmgr.get_units(self.expected[funcname])
+                # Use uncertainty units (delta) for input, not expected value units (which may be offset)
+                input_units = unitmgr.get_units(self.variables.uncertainty[varname])
+                if output_units is not None and input_units is not None and unitmgr.has_units(value):
+                    expected_units = output_units / input_units
+                    magnitude = unitmgr.strip_units(value)
+                    sens[funcname] = unitmgr.make_quantity(magnitude, expected_units)
+
             # {funcname: sens} -> for this varname  (Transposed)
             for funcname, value in sens.items():
                 sensitivities[funcname][varname] = value
