@@ -218,6 +218,20 @@ class GumResults:
         funcs = {}
         for i, funcname in enumerate(self.functionnames):
             sens = dict(zip(self.variablenames, Cx[i]))
+            
+            # Fix sensitivity units to be output_units / input_units
+            # This ensures units are in simplified form rather than unreduced from derivatives
+            if not symbolic:
+                output_units = unitmgr.get_units(self.expected[funcname])
+                if output_units is not None:
+                    for varname in self.variablenames:
+                        # Use uncertainty units (delta) for input, not expected value units (which may be offset)
+                        input_units = unitmgr.get_units(self.variables.uncertainty[varname])
+                        if input_units is not None and varname in sens and unitmgr.has_units(sens[varname]):
+                            expected_units = output_units / input_units
+                            magnitude = unitmgr.strip_units(sens[varname])
+                            sens[varname] = unitmgr.make_quantity(magnitude, expected_units)
+            
             funcs[funcname] = sens
         return funcs
 

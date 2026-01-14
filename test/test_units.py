@@ -141,24 +141,56 @@ def test_sensitivity_units():
     
     # Sensitivity should be in output units / input units
     # P is in W, so dP/dV should be in W/V, dP/dI should be in W/mA
-    gumsens = result.gum.sensitivity()
-    mcsens = result.montecarlo.sensitivity().sensitivity
+    sens = result.gum.sensitivity()
+    sensmc = result.montecarlo.sensitivity().sensitivity
     
     # Verify invariant: sensitivity * input = output units
     V_val = result.gum.variables.expected['V']
     I_val = result.gum.variables.expected['I']
     P_val = result.gum.expected['P']
     
-    dP_dV = gumsens['P']['V']
-    dP_dI = gumsens['P']['I']
+    dP_dV = sens['P']['V']
+    dP_dI = sens['P']['I']
     product_V = dP_dV * V_val
     product_I = dP_dI * I_val
     assert product_V.units == P_val.units
     assert product_I.units == P_val.units
     
-    dP_dV_mc = mcsens['P']['V']
-    dP_dI_mc = mcsens['P']['I']
+    dP_dV_mc = sensmc['P']['V']
+    dP_dI_mc = sensmc['P']['I']
     product_V_mc = dP_dV_mc * V_val
     product_I_mc = dP_dI_mc * I_val
     assert product_V_mc.units == P_val.units
     assert product_I_mc.units == P_val.units
+
+
+def test_sensitivity_chained_function_units():
+    """Test that sensitivity units are correct for chained functions.
+    
+    Re_Z_core (ohm) depends on V_cap_pk (V) through the intermediate Q_tank.
+    Sensitivity should be reported in units of ohm/V
+    """
+    m = Model(
+        'Q_tank = V_cap_pk / V_in_pk',
+        'Re_Z_core = 1/(2*pi*f*C_var*Q_tank) - R_dc'
+    )
+    
+    m.var('V_cap_pk').measure(48.77, units='V').typeb(std=1, units='V')
+    m.var('V_in_pk').measure(0.8879, units='V').typeb(std=0.01, units='V')
+    m.var('f').measure(2, units='MHz').typeb(std=0.001, units='MHz')
+    m.var('C_var').measure(600, units='pF').typeb(std=1, units='pF')
+    m.var('R_dc').measure(1.847, units='ohm').typeb(std=0.1, units='ohm')
+    
+    result = m.calculate().units(Re_Z_core='ohm')
+    
+    sens = result.gum.sensitivity()
+    sens_V_cap = sens['Re_Z_core']['V_cap_pk']
+    
+    result_mc = m.monte_carlo(samples=10000)
+    result_mc.units(Re_Z_core='ohm')
+    sens_mc, _ = result_mc.sensitivity()
+    sens_mc_V_cap = sens_mc['Re_Z_core']['V_cap_pk']
+    
+    assert str(sens_V_cap.units) == "ohm / volt"
+    assert str(sens_mc_V_cap.units) == "ohm / volt"
+
