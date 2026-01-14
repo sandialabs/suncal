@@ -39,9 +39,6 @@ def activate_plotstyle(style: str, dark: bool = False) -> None:
         mpl.style.use(style)
 
 
-activate_plotstyle('Suncal')
-
-
 class ReportPlot:
     ''' Context manager for adding figures to report. Ensures figure is closed
         so it doesn't display twice in Jupyter and is properly garbage collected.
