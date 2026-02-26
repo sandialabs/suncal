@@ -241,7 +241,7 @@ The first table lists all the input variables and standardized uncertainties.
 The second table lists the uncertainty components as entered, and as combined for each variable.
 The third table lists the sensitivity coefficients.
 In the GUM method, these are the solved and evaluated partial derivatives for each input.
-The proportions are calculated for each variable from $(c_p^2 + u(x)^2) / u_c^2$ where $c_p$ is the sensitivity coefficient, $u(x)$ is the variable's standard uncertainty, and $u_c$ is the combined uncertainty of the function.
+The proportions are calculated for each variable from $(c_p^2 \times u(x)^2) / u_c^2$ where $c_p$ is the sensitivity coefficient, $u(x)$ is the variable's standard uncertainty, and $u_c$ is the combined uncertainty of the function.
 The Monte Carlo method evaluates sensitivity coefficients and proportions by fixing all but one input constant at the mean values, and sampling the variable of interest. The resulting distribution is compared to the distribution of uncertainty including all inputs [@NPL10].
 
 #### GUM Derivation
