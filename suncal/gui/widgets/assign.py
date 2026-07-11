@@ -66,7 +66,7 @@ class AssignColumnWidget(QtWidgets.QDialog):
                     row, col, QtWidgets.QTableWidgetItem(str(self.data[col][row])))
 
             # Try to match CSV columns with variables of same name
-            if self.datahdr[col] in self.variables:
+            if col < len(self.datahdr) and self.datahdr[col] in self.variables:
                 labels.append(self.datahdr[col])
             else:
                 labels.append('')

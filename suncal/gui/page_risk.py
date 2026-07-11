@@ -18,7 +18,7 @@ from . import page_dataimport
 class AdjustWidget(QtWidgets.QDialog):
     def __init__(self, params):
         super().__init__()
-        self.setWindowTitle('Adjust Process Distribution')
+        self.setWindowTitle('Adjust Product Distribution')
         self.fit = QtWidgets.QComboBox()
         self.fit.addItems(['In-Tolerance Probability', 'Process Capability Index', 'Sigma Level', 'Defects per Million Opportunities'])
         self.target = widgets.FloatLineEdit('95')
@@ -48,10 +48,12 @@ class RiskWidget(QtWidgets.QWidget):
         assert isinstance(component, ProjectRisk)
         self.component = component
         self.outputpage = QtWidgets.QComboBox()
-        self.outputpage.addItems(['Risk',
-                                  'Monte Carlo Risk',
+        self.outputpage.addItems(['Average Risk',
+                                  'Average Risk (Monte Carlo)',
                                   'Guardband sweep',
-                                  'Probability of Conformance'])
+                                  'Specific Risk and Prob. Conformance',
+                                  'Attributes Gage Risk',
+                                  ])
 
         self.limits = widgets.DoubleLineEdit(-2, 2, 'Lower Specification Limit:', 'Upper Specification Limit:')
         self.btnSetItp = QtWidgets.QPushButton('Adjust Distribution...')
@@ -77,23 +79,34 @@ class RiskWidget(QtWidgets.QWidget):
             testargs.update({'bias': self.component.model.testbias})
         self.dproc_table = widgets.DistributionEditTable(initargs=procargs)
         self.dtest_table = widgets.DistributionEditTable(initargs=testargs, locslider=True)
+        self.measdist_label = QtWidgets.QLabel('Measurement Distribution:')
         self.limits.setValue(*self.component.model.speclimits)
         self.guardband.setValue(*self.component.model.gbofsts)
         self.txtNotes.setPlainText(self.component.description)
-        self.tab = QtWidgets.QTabWidget()
+        self.gagetol_value = widgets.FloatLineEdit('0')
+        self.gagetol_type = QtWidgets.QComboBox()
+        self.gagetol_type.addItems(['Maximum Tolerance', 'Minimum Tolerance'])
+        self.gagetol = QtWidgets.QWidget()
+        glayout = QtWidgets.QHBoxLayout()
+        glayout.addWidget(self.gagetol_type)
+        glayout.addWidget(self.gagetol_value)
+        self.gagetol.setLayout(glayout)
+        self.gagetol.setVisible(False)
 
+        self.tab = QtWidgets.QTabWidget()
         vlayout = QtWidgets.QVBoxLayout()
         flayout = QtWidgets.QFormLayout()
         flayout.addRow('Calculation:', self.outputpage)
         vlayout.addLayout(flayout)
         vlayout.addWidget(self.limits)
+        vlayout.addWidget(self.gagetol)
         proclayout = QtWidgets.QHBoxLayout()
-        proclayout.addWidget(QtWidgets.QLabel('Process Distribution:'))
+        proclayout.addWidget(QtWidgets.QLabel('Product Distribution:'))
         proclayout.addStretch()
         proclayout.addWidget(self.btnSetItp)
         vlayout.addLayout(proclayout)
         vlayout.addWidget(self.dproc_table)
-        vlayout.addWidget(QtWidgets.QLabel('Measurement Distribution:'))
+        vlayout.addWidget(self.measdist_label)
         vlayout.addWidget(self.dtest_table)
         vlayout.addWidget(self.chkGB)
         vlayout.addWidget(self.guardband)
@@ -126,6 +139,8 @@ class RiskWidget(QtWidgets.QWidget):
         self.dtest_table.changed.connect(self.replot)
         self.limits.editingFinished.connect(self.replot)
         self.guardband.editingFinished.connect(self.replot)
+        self.gagetol_value.editingFinished.connect(self.replot)
+        self.gagetol_type.currentIndexChanged.connect(self.replot)
         self.txtNotes.textChanged.connect(self.update_description)
         self.outputpage.currentIndexChanged.connect(self.replot)
 
@@ -135,7 +150,7 @@ class RiskWidget(QtWidgets.QWidget):
         self.actShowJointPDF = QtGui.QAction('Plot &Joint PDFs', self)
         self.actShowJointPDF.setCheckable(True)
         self.actShowJointPDF.setChecked(True)
-        self.actImportDistProc = QtGui.QAction('Import &process distribution...', self)
+        self.actImportDistProc = QtGui.QAction('Import &product distribution...', self)
         self.actImportDistMeas = QtGui.QAction('Import &measurement distribution...', self)
         self.actCalcGB = QtGui.QAction('Calculate &guardband...', self)
         self.actSaveReport = QtGui.QAction('&Save Report...', self)
@@ -180,17 +195,55 @@ class RiskWidget(QtWidgets.QWidget):
                 self.component.model.gbofsts = self.guardband.getValue()
             else:
                 self.component.model.gbofsts = (0, 0)
-            self.component.model.speclimits = self.limits.getValue()
+
+            if self.outputpage.currentText() == 'Attributes Gage Risk':
+                if 'Measurement' in self.measdist_label.text():
+                    self.dtest_table.set_measname('gage value')
+                if self.gagetol_type.currentText() == 'Maximum Tolerance':
+                    self.component.model.speclimits = -np.inf, self.gagetol_value.value()
+                else:
+                    self.component.model.speclimits = self.gagetol_value.value(), np.inf
+            else:
+                if 'Gage' in self.measdist_label.text():
+                    self.dtest_table.set_measname('measured value')
+                self.component.model.speclimits = self.limits.getValue()
 
         result = self.component.calculate()
-
+        self.measdist_label.setText('Measurement Distribution')
+        self.limits.setVisible(True)
+        self.gagetol.setVisible(False)
         if self.outputpage.currentText() == 'Guardband sweep':
+            self.chkGB.setEnabled(False)
+            self.guardband.setEnabled(False)
+            self.dproc_table.setEnabled(True)
+            self.btnSetItp.setEnabled(True)
             self.replot_gbsweep()
-        elif self.outputpage.currentText() == 'Monte Carlo Risk':
+        elif self.outputpage.currentText() == 'Average Risk (Monte Carlo)':
+            self.chkGB.setEnabled(True)
+            self.guardband.setEnabled(True)
+            self.dproc_table.setEnabled(True)
+            self.btnSetItp.setEnabled(True)
             self.replot_mcrisk()
-        elif self.outputpage.currentText() == 'Probability of Conformance':
+        elif self.outputpage.currentText() == 'Specific Risk and Prob. Conformance':
+            self.chkGB.setEnabled(True)
+            self.guardband.setEnabled(True)
+            self.dproc_table.setEnabled(False)
+            self.btnSetItp.setEnabled(False)
             self.replot_probconform()
+        elif self.outputpage.currentText() == 'Attributes Gage Risk':
+            self.gagetol.setVisible(True)
+            self.limits.setVisible(False)
+            self.chkGB.setEnabled(False)
+            self.guardband.setEnabled(False)
+            self.dproc_table.setEnabled(True)
+            self.btnSetItp.setEnabled(True)
+            self.measdist_label.setText('Gage Distribution')
+            self.replot_gage()
         else:
+            self.chkGB.setEnabled(True)
+            self.guardband.setEnabled(True)
+            self.dproc_table.setEnabled(True)
+            self.btnSetItp.setEnabled(True)
             self.update_range()
             if (self.actShowJointPDF.isChecked()
                     and self.component.model.process_dist is not None
@@ -200,7 +253,8 @@ class RiskWidget(QtWidgets.QWidget):
             else:
                 result.report.plot.distributions(self.fig)
                 self.canvas.draw_idle()
-        self.update_report()
+            self.update_report()
+        self.change_help.emit()
 
     def update_report(self):
         ''' Update label fields, recalculating risk values '''
@@ -224,6 +278,13 @@ class RiskWidget(QtWidgets.QWidget):
     def replot_probconform(self):
         ''' Plot probability of conformance given a test measurement result '''
         rpt = self.component.model.calc_probability_conformance().report.summary(fig=self.fig)
+        self.canvas.draw_idle()
+        self.txtOutput.setReport(rpt)
+
+    def replot_gage(self):
+        ''' Plot attribute gage risk '''
+        rpt = self.component.model.calculate_gage().report.summary(fig=self.fig)
+        self.fig.tight_layout()
         self.canvas.draw_idle()
         self.txtOutput.setReport(rpt)
 
@@ -396,8 +457,10 @@ class RiskWidget(QtWidgets.QWidget):
         calctype = self.outputpage.currentText()
         if calctype == 'Guardband sweep':
             return RiskHelp.gb_sweep()
-        elif calctype == 'Probability of Conformance':
+        elif calctype == 'Specific Risk and Prob. Conformance':
             return RiskHelp.prob_conform()
+        elif calctype == 'Attributes Gage Risk':
+            return RiskHelp.gage()
         return RiskHelp.full()
 
 

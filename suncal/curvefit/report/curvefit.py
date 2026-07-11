@@ -1,6 +1,6 @@
 ''' Reports for curve fitting calculations '''
-
 from contextlib import suppress
+import itertools
 import numpy as np
 import sympy
 from scipy import stats
@@ -53,22 +53,33 @@ class ReportCurveFit:
             of fit for nonlinear models, but we report it anyway.
         '''
         residuals = self._results.residuals
-        rows = []
-        rows.append([report.Number(residuals.r, fmt='decimal'),
-                     report.Number(residuals.r**2, fmt='decimal'),
-                     report.Number(residuals.Syx),
-                     report.Number(residuals.F, fmt='auto'),
-                     report.Number(max(abs(residuals.residuals)), fmt='auto')
-                     ])
+        rows = [
+            ['r', report.Number(residuals.r, fmt='decimal')],
+            ['r²', report.Number(residuals.r**2, fmt='decimal')],
+            ['Standard Error (Syx)', report.Number(residuals.Syx)],
+            ['F-value', report.Number(residuals.F, fmt='auto')],
+            ['Maximum Residual', report.Number(max(abs(residuals.residuals)), fmt='auto')],
+            ['Bayesian Information Criterion (BIC)', report.Number(residuals.bic, fmin=1)]
+        ]
         r = report.Report(**kwargs)
-        r.table(rows, ['r', 'r-squared', 'Standard Error (Syx)', 'F-value', 'Maximum Residual'])
+        r.table(rows, ['Parameter', 'Value'])
         return r
 
     def correlation(self, **kwargs):
         ''' Report table of correlation coefficients '''
-        hdr = ['Parameter'] + self._results.setup.coeffnames
+        hdr = ['Parameter'] + list(self._results.setup.coeffnames)
         rows = []
         for idx, row in enumerate(self._results.correlation):
+            rows.append([self._results.setup.coeffnames[idx]] + [report.Number(v) for v in row])
+        r = report.Report(**kwargs)
+        r.table(rows, hdr=hdr)
+        return r
+
+    def covariance(self, **kwargs):
+        ''' Report table of covariance matrix '''
+        hdr = ['Parameter'] + list(self._results.setup.coeffnames)
+        rows = []
+        for idx, row in enumerate(self._results.covariance):
             rows.append([self._results.setup.coeffnames[idx]] + [report.Number(v) for v in row])
         r = report.Report(**kwargs)
         r.table(rows, hdr=hdr)
@@ -117,19 +128,29 @@ class ReportCurveFit:
         hdr = ['Measured x', 'Measured y', 'Predicted y', 'Residual',
                f'Confidence Band {kstr}', f'Prediction Band {kstr}']
         x, y = self._results.setup.points.x, self._results.setup.points.y
-        if self._results.setup.points.xdate:
-            xstring = mdates.num2date(x)
-            xstring = [k.strftime('%Y-%m-%d') for k in xstring]
-        else:
-            xstring = [str(k) for k in x]
+
+        if self._results.setup.points.ndim == 2:
+            x = x.transpose()
+
         residuals = self._results.residuals.residuals
+
         rows = []
-        for xs, xx, yy, resid in zip(xstring, x, y, residuals):
+        for xx, yy, resid in zip(x, y, residuals):
             confband = self._results.confidence_band(xx, k=k, conf=conf)
-            rows.append([f'{xs}',
-                         report.Number(yy, matchto=confband),
-                         report.Number(self._results.y(xx), matchto=confband),
-                         report.Number(resid, matchto=confband),
+
+            if self._results.setup.points.ndim == 2:
+                x_format = [report.Number(x1, fmin=1) for x1 in xx]
+                x_format = [a for b in zip(x_format, [', ']*len(x_format)) for a in b][2::-1]
+                x_format = ['('] + x_format + [')']
+            elif self._results.setup.points.xdate:
+                x_format = mdates.num2date(xx)
+            else:
+                x_format = report.Number(xx, fmin=1)
+
+            rows.append([x_format,
+                         report.Number(yy, fmin=0),
+                         report.Number(self._results.y(xx), fmin=0),
+                         report.Number(resid, fmin=0),
                          report.Number(confband),
                          report.Number(self._results.prediction_band(xx, k=k, conf=conf))])
         rpt.table(rows, hdr=hdr)
@@ -146,6 +167,8 @@ class ReportCurveFit:
                 conf (float): Level of confidence, overrides k
                 plot (bool): Include a plot of the curve
         '''
+        assert self._results.setup.points.ndim == 1  # Not implemented for multidim fits
+
         confstr = ''
         if conf is not None:
             k = k_factor(conf, self._results.degf)
@@ -203,14 +226,16 @@ class ReportCurveFit:
     def report_confpred(self, **kwargs):
         ''' Report equations for confidence and prediction intervals, only for line fit. '''
         rpt = report.Report(**kwargs)
+        rpt.txt('Confidence interval:\n\n')
         if self._results.setup.modelname == 'line':
-            rpt.txt('Confidence interval:\n\n')
             rpt.sympy(self._results.confidence_expr(subs=False), end='\n\n')
-            rpt.sympy(self._results.confidence_expr(subs=True), '\n\n')
-            rpt.div()
-            rpt.txt('Prediction interval:\n\n')
+        rpt.sympy(self._results.confidence_expr(subs=True), '\n\n')
+        rpt.div()
+
+        rpt.txt('Prediction interval:\n\n')
+        if self._results.setup.modelname == 'line':
             rpt.sympy(self._results.prediction_expr(subs=False), end='\n\n')
-            rpt.sympy(self._results.prediction_expr(subs=True), end='\n\n')
+        rpt.sympy(self._results.prediction_expr(subs=True), end='\n\n')
         return rpt
 
     def confpred_xval(self, k=2, conf=None, plot=False, mode='Syx', **kwargs):
@@ -224,6 +249,7 @@ class ReportCurveFit:
                 plot (bool): Include a plot showing the full curve fit with the predicted value
                 mode (string): Prediction band mode. One of 'Syx', 'sigy', or 'sigylast'.
         '''
+        r = report.Report(**kwargs)
         xnames = list(self._results.predictions.keys())
         xvalues = [x[0] for x in self._results.predictions.values()]
         tolerances = [x[1] for x in self._results.predictions.values()]
@@ -238,37 +264,48 @@ class ReportCurveFit:
                     x.append(val)
             else:
                 with suppress(ValueError):
-                    x.append(float(val))
+                    x.append(val)
 
-        x = np.asarray(x)
-        y = self._results.y(x)
+        if not len(x):
+            return r
+
+        x = np.asarray(x, dtype=float)
+        y = np.array([self._results.y(xx) for xx in np.atleast_2d(x)])
         uconf = self._results.confidence_band(x, k=k, conf=conf)
         upred = self._results.prediction_band(x, k=k, conf=conf, mode=mode)
+        y = np.atleast_1d(np.squeeze(y))
+
+        uconf = np.atleast_1d(uconf)
+        upred = np.atleast_1d(upred)
         kstr = f'(k={k})' if conf is None else f'({conf*100:.4g}%)'
         hdr = ['Name', 'x', 'y', f'confidence interval {kstr}', f'prediction interval {kstr}', 'Tolerance', 'Probability of Conformance']
         rows = []
-        for i in range(len(x)):
+        for i, xx in enumerate(x):
             if k == 1:
                 uconf_std = uconf[i]
                 upred_std = upred[i]
             else:
-                uconf_std = self._results.confidence_band(x[i], k=1)
-                upred_std = self._results.prediction_band(x[i], k=1)
+                uconf_std = self._results.confidence_band(xx, k=1)
+                upred_std = self._results.prediction_band(xx, k=1)
 
             poc_conf = tolerances[i].probability_conformance(y[i], uconf_std, self._results.degf) if tolerances[i] else None
             poc_pred = tolerances[i].probability_conformance(y[i], upred_std, self._results.degf) if tolerances[i] else None
+
             yi, yconfminus, yconfplus, ypredminus, ypredplus = report.Number.number_array(
                 [y[i], y[i]-uconf[i], y[i]+uconf[i], y[i]-upred[i], y[i]+upred[i]], fmin=2, **kwargs)
 
             if self._results.setup.points.xdate:
-                xlabel = mdates.num2date(x[i]).strftime('%Y-%m-%d')
+                xlabel = mdates.num2date(np.squeeze(xx)).strftime('%Y-%m-%d')
             else:
                 xlabel = str(xvalues[i])
 
-            poc_row = '' if not poc_conf else (
-                report.Number(poc_conf*100, fmin=1, postfix=' %'), " (Confidence Band); ",
-                report.Number(poc_pred*100, fmin=1, postfix=' %'), " (Prediction Band) "
-            )
+            if poc_conf is not None:
+                poc_conf = np.squeeze(poc_conf)
+                poc_pred = np.squeeze(poc_pred)
+                poc_row = (report.Number(poc_conf*100, fmin=1, postfix=' %'), " (Confidence Band); ",
+                           report.Number(poc_pred*100, fmin=1, postfix=' %'), " (Prediction Band) ")
+            else:
+                poc_row = ''
             rows.append([xnames[i],
                          xlabel,
                          yi,
@@ -278,7 +315,6 @@ class ReportCurveFit:
                          poc_row
                          ])
 
-        r = report.Report(**kwargs)
         if plot:
             with plotting.plot_figure() as fig:
                 ax = fig.add_subplot(1, 1, 1)
@@ -312,12 +348,16 @@ class PlotCurveFit:
             return mdates.num2date(xdata)
         return xdata
 
-    def _full_xrange(self, x1=None, x2=None, num=200):
+    def _full_xrange(self, x1=None, x2=None, xdim=0, num=200):
         ''' Get a linspace covering the full range of the curve fit, plus other
             points of interest.
         '''
-        mn = self._results.setup.points.x.min()  # _inputx???
-        mx = self._results.setup.points.x.max()
+        if self._results.setup.points.ndim == 2:
+            mn = self._results.setup.points.x[xdim,:].min()
+            mx = self._results.setup.points.x[xdim,:].max()
+        else:
+            mn = self._results.setup.points.x.min()
+            mx = self._results.setup.points.x.max()
         if x1 is not None:
             mn = min(mn, x1)
             mx = max(mx, x1)
@@ -327,12 +367,37 @@ class PlotCurveFit:
         xx = np.linspace(mn, mx, num=num)
         return xx
 
-    def points(self, ax=None, ebar=False, **kwargs):
+    def _xfixed(self, xdim=0, maxn=100, epsilon=200):
+        ''' Create fixed x values if none were given
+
+            Args:
+                xdim (int): Index of variable axis
+                maxn (int): Maximum number of points
+                epsilon (float): Threshold for determining if points are close enough
+        '''
+        values = []
+        xxs = self._results.setup.points.x
+        for dim in range(len(self._results.setup.points.x)):
+            if dim == xdim:
+                continue
+            xxs = np.sort(xxs)[dim]
+            mx, mn = xxs.max(), xxs.min()
+            tol = (mx-mn)/epsilon
+            i = np.argwhere(np.diff(xxs) > tol)
+            values.append(np.round(np.insert(xxs[i+1], 0, xxs[0]), -int(tol)))
+        out = np.array(list(itertools.product(*values)))
+        if len(out) > maxn:
+            idxs = np.linspace(0, len(out)-1, maxn).astype(int)
+            out = out[idxs]
+        return out
+
+    def points(self, ax=None, ebar=False, xdim=0, **kwargs):
         ''' Plot the original data points used in the line/curve fit
 
             Args:
                 ax (plt.axes): Axis to plot on
                 ebar (bool): Show points with errorbars
+                xdim (int): Index of x axis, for multidimensional fits
                 **kwargs: passed to matplotlib plot
         '''
         fig, ax = plotting.initplot(ax)
@@ -342,6 +407,9 @@ class PlotCurveFit:
         if self._results.setup.points.xdate:
             xdata = mdates.num2date(xdata)
 
+        if self._results.setup.points.ndim == 2:
+            xdata = xdata[xdim, :]
+
         kwargs.setdefault('marker', 'o')
         kwargs.setdefault('ls', '')
         if ebar:
@@ -349,92 +417,122 @@ class PlotCurveFit:
         else:
             ax.plot(xdata, ydata, **kwargs)
 
-    def fit(self, x=None, ax=None, **kwargs):
+    def fit(self, x=None, ax=None, xdim=0, xfixed=None, **kwargs):
         ''' Plot the fit line/curve
 
             Args:
                 x (array): x values to include in plot
                 ax (plt.axes): Axis to plot on
+                xdim (int): Index of x axis, for multidimensional fits
                 **kwargs: passed to matplotlib plot
         '''
         _, ax = plotting.initplot(ax)
 
         if x is None:
-            x = self._full_xrange()
+            x = self._full_xrange(xdim=xdim, num=20)
 
-        yfit = self._results.y(x)
+        if self._results.setup.points.ndim == 2:
+            if xfixed is None:
+                xfixed = self._xfixed(xdim, maxn=20)
 
-        if self._results.setup.points.xdate:
-            x = mdates.num2date(x)
+            for otherx in xfixed:
+                yvals = [self._results.y(np.insert(otherx, xdim, xx)) for xx in x]
+                ax.plot(x, yvals, **kwargs)
+                kwargs.pop('label', None)
 
-        ax.plot(x, yfit, **kwargs)
+        else:
+            yfit = self._results.y(x)
+            if self._results.setup.points.xdate:
+                x = mdates.num2date(x)
+            ax.plot(x, yfit, **kwargs)
 
-    def conf(self, x=None, ax=None, absolute=False, k=1, conf=None, **kwargs):
+    def conf(self, x=None, ax=None, k=1, conf=None, xdim=0, xfixed=None, **kwargs):
         ''' Plot confidence band
 
             Args:
                 x (array): x values to include in plot
                 ax (plt.axes): Axis to plot on
-                absolute (bool): If False, will plot uncertainty on top of nominal value
                 k (float): Coverage factor for bands
                 conf (float): Level of confidence (0 to 1). Overrides value of k.
+                xdim (int): Index of x axis, for multidimensional fits
+                xfixed (array): List of fixed x-values, off the xdim column
                 **kwargs: passed to matplotlib plot
         '''
         _, ax = plotting.initplot(ax)
 
         if x is None:
-            x = self._full_xrange()
+            x = self._full_xrange(xdim=xdim)
 
         if 'label' not in kwargs:
             kstr = f'(k={k:.3g})' if conf is None else f'({conf*100:.4g}%)'
             kwargs['label'] = f'Confidence Band {kstr}'
 
-        u_conf = self._results.confidence_band(x, k=k, conf=conf)
-        if not absolute:
-            # Plot wrt fit line
+        if self._results.setup.points.ndim == 2:
+            if xfixed is None:
+                xfixed = self._xfixed(xdim, maxn=20)
+
+            for otherx in xfixed:
+                u_conf = np.array([self._results.confidence_band(np.insert(otherx, xdim, xx), k=k, conf=conf) for xx in x])
+                yfit = np.array([self._results.y(np.insert(otherx, xdim, xx)) for xx in x])
+                xx = np.append(np.append(x, [np.nan]), x)
+                yy = np.append(np.append(yfit + u_conf, [np.nan]), yfit - u_conf)
+                ax.plot(xx, yy, **kwargs)
+                kwargs.pop('label', None)
+
+        else:
+            u_conf = self._results.confidence_band(x, k=k, conf=conf)
             yfit = self._results.y(x)
             xx = np.append(np.append(x, [1]), x)
             if self._results.setup.points.xdate:
                 xx = mdates.num2date(xx)
             yy = np.append(np.append(yfit + u_conf, [np.nan]), yfit - u_conf)
             ax.plot(xx, yy, **kwargs)
-        else:
-            ax.plot(self._inputx(self._results.setup.points.xdate), u_conf, **kwargs)
 
-    def pred(self, x=None, ax=None, absolute=False, k=1, conf=None, mode='Syx', **kwargs):
+    def pred(self, x=None, ax=None, k=1, conf=None, mode='Syx', xdim=0, xfixed=None, **kwargs):
         ''' Plot prediction band
 
             Args:
                 x (array): x values to include in plot
                 ax (plt.axes): Axis to plot on
-                absolute (bool): If False, will plot uncertainty on top of nominal value
                 k (float): Coverage factor for bands
                 conf (float): Level of confidence (0 to 1). Overrides value of k.
                 mode (string): Prediction band mode. One of 'Syx', 'sigy', or 'sigylast'.
+                xdim (int): Index of x axis, for multidimensional fits
+                xfixed (array): List of fixed x-values, off the xdim column
                 **kwargs: passed to matplotlib plot
         '''
         _, ax = plotting.initplot(ax)
 
         if x is None:
-            x = self._full_xrange()
+            x = self._full_xrange(xdim=xdim)
 
         if 'label' not in kwargs:
             kstr = f'(k={k:.3g})' if conf is None else f'({conf*100:.4g}%)'
             kwargs['label'] = f'Prediction Band {kstr}'
 
-        u_pred = self._results.prediction_band(x, k=k, conf=conf, mode=mode)
-        if not absolute:
-            # Plot wrt fit line
+        if self._results.setup.points.ndim == 2:
+            if xfixed is None:
+                xfixed = self._xfixed(xdim, maxn=20)
+
+            for otherx in xfixed:
+                u_pred = np.array([self._results.prediction_band(np.insert(otherx, xdim, xx), k=k, conf=conf, mode=mode)
+                                   for xx in x])
+                yfit = np.array([self._results.y(np.insert(otherx, xdim, xx)) for xx in x])
+                xx = np.append(np.append(x, [np.nan]), x)
+                yy = np.append(np.append(yfit + u_pred, [np.nan]), yfit - u_pred)
+                ax.plot(xx, yy, **kwargs)
+                kwargs.pop('label', None)
+
+        else:
+            u_pred = self._results.prediction_band(x, k=k, conf=conf, mode=mode)
             yfit = self._results.y(x)
             xx = np.append(np.append(x, [1]), x)
             if self._results.setup.points.xdate:
                 xx = mdates.num2date(xx)
             yy = np.append(np.append(yfit + u_pred, [np.nan]), yfit - u_pred)
             ax.plot(xx, yy, **kwargs)
-        else:
-            ax.plot(self._inputx(self._results.setup.points.xdate), u_pred, **kwargs)
 
-    def conf_value(self, xval, k=2, conf=None, ax=None):
+    def conf_value(self, xval, k=2, conf=None, ax=None, xdim=0):
         ''' Plot a single confidence band value as errorbar
 
             Args:
@@ -443,22 +541,27 @@ class PlotCurveFit:
                 k (float): Coverage factor for bands
                 conf (float): Level of confidence (0 to 1). Overrides value of k.
         '''
-        xval = np.asarray(xval)
         _, ax = plotting.initplot(ax)
 
-        if self._results.setup.points.xdate and isinstance(xval, str):
-            xfloat = np.array([parse(x) for x in xval])
-            xplot = mdates.num2date(xfloat)
-        else:
-            xfloat = xval
-            xplot = xval
+        if self._results.setup.points.ndim == 2:
+            xval = np.atleast_2d(xval)
+            upred = self._results.confidence_band(xval, k=k, conf=conf)
+            y = np.array([self._results.y(xx) for xx in xval])
+            xplot = xval[:, xdim]
 
-        y = self._results.y(xfloat)
-        upred = self._results.confidence_band(xfloat, k=k, conf=conf)
+        else:
+            if self._results.setup.points.xdate and isinstance(xval, str):
+                xfloat = np.array([parse(x) for x in xval])
+                xplot = mdates.num2date(xfloat)
+            else:
+                xfloat = xplot = xval
+            upred = self._results.confidence_band(xval, k=k, conf=conf)
+            y = np.array([self._results.y(xx) for xx in xfloat])
+
         ax.errorbar(xplot, y, yerr=upred, marker='s', markersize=8,
                     capsize=4, label='Estimated Value', ls='', color='C4')
 
-    def summary_prediction(self, x, k=2, conf=None, ax=None, mode='Syx', **kwargs):
+    def summary_prediction(self, x, k=2, conf=None, ax=None, **kwargs):
         ''' Plot summary of prediction band showing specific x values
 
             Args:
@@ -471,13 +574,13 @@ class PlotCurveFit:
         _, ax = plotting.initplot(ax)
         xx = self._full_xrange(np.nanmin(x), np.nanmax(x))
         self.points(ax=ax, marker='o', ls='')
-        self.fit(ax=ax, x=xx, ls='-', label='Fit')
+        self.fit(ax=ax, x=xx, ls='-')
         self.conf_value(ax=ax, xval=x, k=k, conf=conf)
         ax.set_xlabel(self._results.setup.xname)
         ax.set_ylabel(self._results.setup.yname)
         ax.legend(loc='best')
 
-    def summary(self, ax=None, k=1, conf=None, **kwargs):
+    def summary(self, ax=None, k=1, conf=None, xdim=0, xfixed=None, **kwargs):
         ''' Plot a summary of the curve fit, including original points,
             fit line, and confidence/prediction bands.
 
@@ -485,15 +588,16 @@ class PlotCurveFit:
                 ax (plt.axes): Axis to plot on
                 k (float): Coverage factor for bands
                 conf (float): Level of confidence (0 to 1). Overrides value of k.
+                xdim (int): Index of x axis, for multidimensional fits
+                xfixed (array): List of fixed x-values, off the xdim column
         '''
         _, ax = plotting.initplot(ax)
 
-        self.points(ax=ax, marker='o', ls='')
-        self.fit(ax=ax, ls='-', label='Fit')
-        self.conf(ax=ax, k=k, conf=conf, ls=':')
-        ax.set_xlabel(self._results.setup.xname)
-        ax.set_ylabel(self._results.setup.yname)
-        ax.legend(loc='best')
+        self.points(ax=ax, xdim=xdim, marker='o', ls='')
+        self.fit(ax=ax, xdim=xdim, xfixed=xfixed, ls='-')
+        self.conf(ax=ax, xdim=xdim, xfixed=xfixed, k=k, conf=conf, ls=':')
+        ax.set_xlabel(self._results.xname(xdim))
+        ax.set_ylabel(self._results.yname())
 
     def interval_uncert(self, t1, t2, ax=None, k=2, conf=None, mode='Syx', **kwargs):
         ''' Plot uncertainty valid for given interval (GUM F.2.4.5)
@@ -528,12 +632,13 @@ class PlotCurveFit:
         ax.errorbar((t2+t1)/2, value, yerr=uncert*k, capsize=4, marker='s', color='C4', label='Interval Value')
         ax.legend(loc='best')
 
-    def residuals(self, ax=None, hist=False, **kwargs):
+    def residuals(self, ax=None, hist=False, xdim=0, **kwargs):
         ''' Plot standardized residual values. (in terms of standard deviations)
 
             Args:
                 ax (plt.axes): Axis to plot on. Will be created if None.
                 hist (boolean): Plot as histogram (True) or scatter (False)
+                xdim (int): Index of x axis, for multidimensional fits
                 **kwargs: passed to matplotlib
         '''
         _, ax = plotting.initplot(ax)
@@ -548,6 +653,10 @@ class PlotCurveFit:
             if 'marker' not in kwargs:
                 kwargs['marker'] = 'o'
             x = self._results.setup.points.x
+
+            if self._results.setup.points.ndim == 2:
+                x = x[xdim,:]
+
             if self._results.setup.points.xdate:
                 x = mdates.num2date(x)
             ax.plot(x, self._results.residuals.residuals, **kwargs)
@@ -598,7 +707,7 @@ class PlotCurveFit:
         if showfit and any(np.isfinite(resid)):
             fitargs = kwargs.get('fitargs', {})
             fitargs.setdefault('ls', ':')
-            with suppress(np.linalg.linalg.LinAlgError):
+            with suppress(np.linalg.LinAlgError):
                 p = np.polyfit(resid, Fi, deg=1)
                 x = np.linspace(resid.min(), resid.max(), num=10)
                 ax.plot(x, np.poly1d(p)(x), **fitargs)
@@ -634,7 +743,7 @@ class PlotCurveFit:
                 try:
                     rv = stats.multivariate_normal(
                         np.array([self._results.coeffs[idx1], self._results.coeffs[idx2]]), cov=cov)
-                except (np.linalg.linalg.LinAlgError, ValueError):  # Singular matrix
+                except (np.linalg.LinAlgError, ValueError):  # Singular matrix
                     continue
                 x, y = np.meshgrid(np.linspace(self._results.coeffs[idx1] - 3 * self._results.uncerts[idx1],
                                                self._results.coeffs[idx1] + 3 * self._results.uncerts[idx1]),
@@ -815,4 +924,6 @@ class ReportCurveFitCombined:
                 rpt.div()
                 rpt.hdr('Correlations', level=3)
                 rpt.append(methodreport.correlation())
+                rpt.hdr('Covariance', level=3)
+                rpt.append(methodreport.covariance())
         return rpt

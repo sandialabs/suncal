@@ -152,6 +152,22 @@ class RiskHelp:
         return rpt
 
     @staticmethod
+    def gage():
+        rpt = report.Report()
+        rpt.hdr('Attributes Gage Risk', level=2)
+        rpt.txt('Attributes gages (such as go- or no-go gages) result in a pass/fail '
+                'decision but do not generate a measured value. '
+                'For maximum-tolerance gages, the DUT is accepted when the gage is larger '
+                'the DUT feature (left of the diagonal line). For minimum-tolerance '
+                'gages, the DUT is accepted when the gage is smaller than the DUT feature '
+                '(right of the diagonal line). '
+                'The average risk is found by integrating over the appropriate regions where '
+                'the gage incorrectly accepts the part. '
+                'Any guardbanding must be built-in to the gage distribution by design. '
+                )
+        return rpt
+
+    @staticmethod
     def curves():
         rpt = report.Report()
         rpt.hdr('Risk Curves', level=2)

@@ -86,7 +86,7 @@ class SimpleRiskWidget(QtWidgets.QDialog):
                     conditional='c' in method)
 
             elif method == 'pfr':
-                self.component.model.guardband_pfr(
+                model.guardband_pfr(
                     methodargs.get('pfr', 2)
                 )
 

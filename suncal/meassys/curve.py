@@ -39,7 +39,7 @@ class SystemCurve:
     def set_fitmodel(self, model: str):
         ''' Set the curve fit function '''
         self.fitmodel = model  # "line", "polynomial", etc., or expression of x "a*x + b"
-        _, self.fitexpr = fit_callable(self.fitmodel, self.polyorder)
+        _, self.fitexpr, _ = fit_callable(self.fitmodel, self.polyorder)
 
     @property
     def rows(self) -> int:

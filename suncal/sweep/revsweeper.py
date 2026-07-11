@@ -12,8 +12,7 @@ from .report.revsweep import ReportReverseSweep, ReportReverseSweepGum, ReportRe
 
 def model_copy(model, **reverseparams):
     ''' Make a deep copy of the uncertasinty Model '''
-    exprs = [f'{name}={expr}' for name, expr in zip(model.functionnames, model.exprs)]
-    modelcopy = ModelReverse(*exprs, **reverseparams)
+    modelcopy = ModelReverse(*model.raw_exprs, **reverseparams)
     for varname in modelcopy.model.variables.names:
         var = modelcopy.model.var(varname)
         var.measure(model.variables.expected[varname])
@@ -107,8 +106,8 @@ class UncertSweepReverse(UncertSweep):
         return self.model.constants
 
     @property
-    def basesympys(self):
-        return self.model.basesympys
+    def functions(self):
+        return self.model.functions
 
     @property
     def var(self):

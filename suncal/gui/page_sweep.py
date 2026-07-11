@@ -609,7 +609,11 @@ class UncertReverseSweepWidget(page_uncert.UncertPropWidget):
 
         self.update_proj_config()
 
-        if len(self.component.model.model.exprs) < 1:
+        if any(self.component.model.model.implicit):
+            err_msg('Reverse propagation not implemented for implicit measurement models.')
+            return
+
+        if len(self.component.model.model.H) < 1:
             err_msg('Need at least one measurement function to calculate.')
             return
 

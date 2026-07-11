@@ -6,8 +6,7 @@ from .results.sweep import GumSweepResults, McSweepResults, SweepResults
 
 def model_copy(model):
     ''' Make a deep copy of the uncertainty Model '''
-    exprs = [f'{name}={expr}' for name, expr in zip(model.functionnames, model.exprs)]
-    modelcopy = Model(*exprs)
+    modelcopy = Model(*model.raw_exprs)
     modelcopy.descriptions = model.descriptions
     for varname in modelcopy.variables.names:
         var = modelcopy.var(varname)
@@ -46,8 +45,8 @@ class UncertSweep:
         return self.model.constants
 
     @property
-    def basesympys(self):
-        return self.model.basesympys
+    def functions(self):
+        return self.model.functions
 
     @property
     def var(self):
@@ -127,6 +126,7 @@ class UncertSweep:
                     inptvar = modelcopy.var(inptname)
                     units = str(inptvar.units) if inptvar.units else None
                     inptvar.measure(values[sweepidx], units=units)
+
                 elif param == 'df':
                     inptvar = modelcopy.var(inptname)
                     inptvar.get_typeb(comp).degf = values[sweepidx]

@@ -107,7 +107,7 @@ def test_linefit2():
 def test_linefitgum():
     ''' Test least squares based on GUM example H.3. Calibration of a thermometer example.
         Tests curve fitting and uncertainty.
-        Note GUM uses the GUM formula on y = mx + b to compute uncertainty, where PSLUC
+        Note GUM uses the GUM formula on y = mx + b to compute uncertainty, where suncal
         uses prediction band, but they give the same results.
     '''
     # GUM Table H.6 columns 2 and 3
@@ -456,11 +456,6 @@ def test_symbolic():
     x = 110
     sym = out.fit_expr(subs=True, n=10).subs({'x': x})
     assert np.isclose(float(list(sympy.solveset(sym))[0]), out.y(x))
-
-    with pytest.raises(NotImplementedError):
-        # Can't do symbolic conf/pred on anything except line fits.
-        # If it is implemented eventually, write a test for it here.
-        out.confidence_expr()
 
 
 def test_namedfits():

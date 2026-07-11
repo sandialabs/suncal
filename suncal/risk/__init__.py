@@ -16,7 +16,7 @@ from . import guardband_tur
 
 from .risk_montecarlo import PFAR_MC
 from . import deaver
-from . import risk_quad, risk_simpson
+from . import risk_quad, risk_simpson, risk_tsayke
 
 __all__ = ['specific_risk', 'guardband', 'guardband_tur', 'PFA_norm',
            'PFR_norm', 'PFA', 'PFR', 'PFAR_MC', 'PFA_conditional', 'PFA_norm_conditional',

@@ -17,10 +17,10 @@ def _convert_unit(value, units):
 def _function_rows(model, outunits):
     ''' Bulid function rows of units report '''
     rows = []
-    for funcname in model.functionnames:
+    for funcname, expr in model.functions.items():
         msg = None
         varnames = model.varnames + list(model.constants.keys())
-        funccallable = sympy.lambdify(varnames, model.basesympys[funcname], 'numpy')
+        funccallable = sympy.lambdify(varnames, expr, 'numpy')
 
         try:
             result = funccallable(**model.variables.expected, **model.constants)

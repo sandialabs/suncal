@@ -43,10 +43,10 @@ class ProjectCurveFit(ProjectComponent):
         self.outunits = {}
         self.fitoptions = FitOptions('line')
 
-    def set_fitfunc(self, func, polyorder=2, bounds=None, odr=None, p0=None):
+    def set_fitfunc(self, func, polyorder=2, bounds=None, odr=None, p0=None, predictor_var='x'):
         ''' Set the fit function '''
         self.fitoptions = FitOptions(func, polyorder=polyorder, bounds=bounds, odr=odr, p0=p0)
-        self.model.set_fitfunc(func, polyorder, bounds, odr, p0)
+        self.model.set_fitfunc(func, polyorder, bounds, odr, p0, predictor_var=predictor_var)
 
     def calculate(self, lsq=True, monte=False, markov=False, gum=False):
         ''' Calculate the curve fit '''

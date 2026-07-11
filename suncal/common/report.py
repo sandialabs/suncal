@@ -232,8 +232,10 @@ class Number:
             abbr = kargs.get('abbr', True)
             dimensionless = kargs.get('dimensionless', '')
             unitpad = kargs.get('unitpad', ' ')
-            numstr += unitpad
-            numstr += Unit(unit).string(unitfmt=unitfmt, abbr=abbr, dimensionless=dimensionless, escape=False)
+            unitstr = Unit(unit).string(unitfmt=unitfmt, abbr=abbr, dimensionless=dimensionless, escape=False)
+            if unitstr:
+                numstr += unitpad
+                numstr += unitstr
 
         numstr += postfix
         return numstr

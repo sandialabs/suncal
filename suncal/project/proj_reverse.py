@@ -66,7 +66,8 @@ class ProjectReverse(ProjectComponent):
         if 'unitdefs' in config:
             unitmgr.register_units(config['unitdefs'])
 
-        exprs = [f'{func["name"]}={func["expr"]}' for func in config.get('functions')]
+        exprs = [f'{func['name']}={func['expr']}' if '=' not in func['expr'] else func['expr']  for func in config.get('functions')]
+
         model = Model(*exprs)
 
         self.model.model = model

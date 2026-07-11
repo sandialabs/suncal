@@ -26,10 +26,10 @@ def fit(func, x, y, ux, uy, p0=None, bounds=(-np.inf, np.inf), odr=None, absolut
             pcov (array): Covariance of coefficients. Standard error of coefficients is
                 np.sqrt(np.diag(pcov)).
     '''
-    if odr or not (ux is None or all(ux == 0)):
+    if odr or not (ux is None or np.all(ux == 0)):
         return odrfit(func, x, y, ux, uy, p0=p0, absolute_sigma=absolute_sigma)
 
-    if uy is None or all(uy == 0):
+    if uy is None or np.all(uy == 0):
         return FitCoeff(*scipy.optimize.curve_fit(func, x, y, p0=p0, bounds=bounds))
 
     return FitCoeff(*scipy.optimize.curve_fit(
@@ -232,9 +232,9 @@ def odrfit(func, x, y, ux, uy, p0=None, absolute_sigma=True):
     def odrfunc(B, x):
         return func(x, *B)
 
-    if ux is not None and all(ux == 0):
+    if ux is not None and np.all(ux == 0):
         ux = None
-    if uy is not None and all(uy == 0):
+    if uy is not None and np.all(uy == 0):
         uy = None
 
     model = scipy.odr.Model(odrfunc)
@@ -245,10 +245,9 @@ def odrfit(func, x, y, ux, uy, p0=None, absolute_sigma=True):
         warnings.warn('ODR failed to converge')
 
     if absolute_sigma:
-        # SEE: https://github.com/scipy/scipy/issues/6842.
-        # If this issue is fixed, these options may be swapped!
         cov = mout.cov_beta
     else:
+        # See https://github.com/scipy/scipy/issues/6842
         cov = mout.cov_beta*mout.res_var
     ODR = namedtuple('ODR', ['coeff', 'covariance'])
     return ODR(mout.beta, cov)

@@ -20,7 +20,8 @@ class CurveHelp:
         rpt.hdr('Model Tab', level=3)
         rpt.txt('Use the `Model` tab to set form of the curve to fit. The '
                 '`Custom` model may be selected to enter arbitrary functions of x, '
-                'with the fit parameters given other variable names. Select between '
+                'with the fit parameters given other variable names. For multivariate '
+                'fits, use `x1`, `x2`, etc. Select between '
                 'minimizing Vertical Distances (standard regression) and minimizing '
                 'Orthogonal Distances (works better for some models, and results in '
                 'the same fit whether fitting to y versus x or x versus y.) \n\n')

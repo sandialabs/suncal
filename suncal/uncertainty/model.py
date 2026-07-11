@@ -8,6 +8,7 @@ import logging
 import inspect
 import numpy as np
 import sympy
+from scipy.optimize import fsolve
 from pint import DimensionalityError
 
 from ..common import uparser, matrix, unitmgr
@@ -76,70 +77,89 @@ class Model(ModelBase):
     '''
     def __init__(self, *exprs):
         super().__init__()
-        self.exprs = []
-        self.sympys = []
-        self.functionnames = []
+        self.raw_exprs = exprs
+        self.H = []  # H's - sympy
+        self.Y = []  # Y's - sympy
+        self.implicit = []  # bools, each model is implicit?
         self.constants = {}  # Bracketed quantities in expression
+        self.functions = {}  # Processed and simplified as functions (only if no implicit)
+        self.implicit_guesses = []
+
         for expr in exprs:
             if isinstance(expr, sympy.Basic):
-                name = f'f{len(self.exprs)+1}'
-                self.sympys.append(expr)
-                self.exprs.append(str(expr))
-            else:
-                if '=' in expr:
-                    name, expr = expr.split('=')
-                    name = name.strip()
-                    expr = expr.strip()
-                else:
-                    name = f'f{len(self.exprs)+1}'
+                solvefor = f'f{len(self.H)+1}'
+                self.Y.append(sympy.Symbol(solvefor))
+                self.H.append(expr - self.Y[-1])
+                self.implicit.append(False)
+                self.implicit_guesses.append(1)
 
-                symexprs, consts = uparser.parse_math_with_quantities(expr, name=name, nconsts=len(self.constants))
+            elif ';' in expr:
+                expr, solvefor = expr.split(';')
+                guess = 1
+                if '~' in solvefor:
+                    solvefor, guess = solvefor.split('~')
+                    guess = float(guess)
+                self.Y.append(sympy.Symbol(solvefor.strip()))
+                if '=' not in expr:
+                    raise ValueError(f'Invalid expression {expr}')
+                part1, part2 = expr.split('=')
+                part1, part2 = part1.strip(), part2.strip()
+                expr = part1 if part1 != '0' else part2
+                expr, consts = uparser.parse_math_with_quantities(expr, nconsts=len(self.constants))
                 self.constants.update(consts)
-                self.sympys.append(symexprs)
+                self.H.append(expr)
+                self.implicit.append(True)
+                self.implicit_guesses.append(guess)
 
-                self.exprs.append(expr.strip())
-            self.functionnames.append(name.strip())
+            else:
+                if '=' not in expr:
+                    solvefor = f'f{len(self.Y)+1}'
+                else:
+                    solvefor, expr = expr.split('=')
+                solvefor_symbol = sympy.Symbol(solvefor.strip())
+                self.Y.append(solvefor_symbol)
+                expr, consts = uparser.parse_math_with_quantities(expr, nconsts=len(self.constants))
+                self.constants.update(consts)
+                self.implicit.append(solvefor_symbol in expr.free_symbols)
+                self.H.append(expr - solvefor_symbol)
+                self.implicit_guesses.append(1)
 
-        varnames, self.basesympys = self._build_baseexprs()
+        variables = []
+        for exp in self.H:
+            variables.extend([str(s) for s in exp.free_symbols])
+        variables = set(variables)
+        [variables.discard(str(y)) for y in self.Y]
+        [variables.discard(c) for c in self.constants.keys()]
+        self.varsymbols = list(variables)
+        self.variables = Variables(*[str(v) for v in self.varsymbols])
+        self.functionnames = [str(s) for s in self.Y]
 
-        for constname in self.constants.keys():
-            varnames.remove(constname)
-
-        self.variables = Variables(*varnames)
+        if not any(self.implicit):
+            self.H = self._build_baseexprs()
+            self.functions = {str(y): h+y for y, h in zip(self.Y, self.H)}
+            self.exprs = [str(e) for e in self.functions.values()]  # Expressions as input into the model
 
     def _build_baseexprs(self):
         ''' Parse expressions into base variables only (substitute any chained dependencies
             in fucntion list.)
         '''
         baseexprs = {}
-        varnames = []
-        for name, exp in zip(self.functionnames, self.sympys):
+        funcs = [h+y for h, y in zip(self.H, self.Y)]  # Revert to y = f(x) format
+        for name, exp in zip(self.functionnames, funcs):
             oldfunc = None
             count = 0
             while oldfunc != exp and count < 100:
                 oldfunc = exp
                 for vname in exp.free_symbols:
                     if str(vname) in self.functionnames:
-                        exp = exp.subs(vname, self.sympys[self.functionnames.index(str(vname))])
+                        exp = exp.subs(vname, funcs[self.functionnames.index(str(vname))])
                 count += 1
             if count >= 100:
+                # This shouldn't happen since implicit models are handled separately now.
                 raise RecursionError('Circular reference in function set')
             baseexprs[name] = exp
-            varnames.extend([str(s) for s in exp.free_symbols if str(s) not in self.functionnames])
 
-        # varnames will be alpha sorted for sympy models, but not callables
-        varnames = sorted(list(set(varnames)))
-        return varnames, baseexprs
-
-    def _sensitivity(self):
-        ''' Sensitivity matrix (Cx), See GUM 6.2.1.3 '''
-        Cx = []
-        for exp in self.basesympys.values():
-            Cx_row = []
-            for var in self.varnames:
-                Cx_row.append(sympy.Derivative(exp, sympy.Symbol(var), evaluate=True))
-            Cx.append(Cx_row)
-        return Cx
+        return [exp - sympy.Symbol(name) for name, exp in baseexprs.items()]  # Back to H(y, x) = 0
 
     def _degrees_freedom(self, Cx):
         ''' Get expressions for degrees of freedom. Uses Cx sensitivity matrix,
@@ -147,10 +167,11 @@ class Model(ModelBase):
         '''
         degfsymbols = [sympy.Symbol(f'nu_{x}') for x in self.variables.names]
         uncertsymbols = [sympy.Symbol(f'u_{x}') for x in self.variables.names]
+        N = len(uncertsymbols)
 
         degf = {}
         for i, funcname in enumerate(self.functionnames):
-            denom = [(u*c)**4/v for u, c, v in zip(uncertsymbols, Cx[i], degfsymbols)]
+            denom = [(uncertsymbols[j]*Cx[i][j])**4/degfsymbols[j] for j in range(N)]
             denom = sympy.Add(*denom)
             if denom == 0:
                 degf[f'nu_{funcname}'] = np.inf
@@ -168,7 +189,16 @@ class Model(ModelBase):
         if values is None:
             values = self.variables.expected
         values.update(self.constants)
-        return matrix.eval_dict(self.basesympys, values)
+
+        out = {}
+        for solvefor, expr, implicit, guess in zip(self.Y, self.H, self.implicit, self.implicit_guesses):
+            strname = str(solvefor)
+            if not implicit:
+                expr = expr + solvefor  # Convert back from f(x)-y = 0 to y = f(x)
+                out.update(matrix.eval_dict({strname: expr}, values))  # Uses cached lambidfy
+            else:
+                out[strname] = solve_implicit(expr, solvefor, values, guess=guess)  # Use fsolve
+        return out
 
     def expected(self):
         ''' Calculate expected value of all functions in model '''
@@ -180,17 +210,25 @@ class Model(ModelBase):
             Returns:
                 GumOutputData containing sympy expression for results
         '''
-        Cx = self._sensitivity()
-        CxT = matrix.transpose(Cx)
-        Ux = self.variables.covariance_symbolic()
-        if len(Cx[0]) > 0:
-            Uy = matrix.matmul(matrix.matmul(Cx, Ux), CxT)
-            uncerts = {f'u_{name}': sympy.sqrt(x) for name, x in zip(self.functionnames, matrix.diagonal(Uy))}
-        else:   # No variables in model
-            Uy = Ux
+        cy = sympy.Matrix([[sympy.diff(exp, y) for y in self.Y] for exp in self.H])
+        cx = sympy.Matrix([[sympy.diff(exp, sympy.Symbol(x)) for x in self.varsymbols] for exp in self.H])
+        if cy.is_Identity or (-cy).is_Identity:
+            c = cx
+        else:
+            c = sympy.MatMul(sympy.Inverse(cy), cx).doit()
+
+        ux = sympy.Matrix(self.variables.covariance_symbolic())
+
+        if len(cx) > 0:
+            uy = sympy.MatMul(sympy.MatMul(c, ux), sympy.Transpose(c)).doit()
+            uncerts = {f'u_{name}': sympy.sqrt(x) for name, x in zip(self.functionnames, uy.diagonal())}
+
+        else:
+            uy = ux
             uncerts = {f'u_{name}': 0 for name in self.functionnames}
-        degf = self._degrees_freedom(Cx)
-        return GumOutputData(uncerts, Uy, Ux, Cx, degf, self.basesympys, None, self.sympys)
+        degf = self._degrees_freedom(c.tolist())
+        return GumOutputData(uncerts, uy.tolist(), ux.tolist(), cy.tolist(), cx.tolist(), c.tolist(),
+                             degf, self.Y, None, self.H, self.implicit)
 
     def calculate_gum(self):
         ''' Run the GUM calculation
@@ -198,16 +236,19 @@ class Model(ModelBase):
             Returns:
                 GumResults instance
         '''
+        expected = self.expected()
         symbolic = self.calculate_symbolic()
         subvalues = self.variables.symbol_values()
         subvalues.update(self.constants)
-        expected = matrix.eval_dict(symbolic.expected, subvalues)
+        subvalues.update(expected)
         uncerts = matrix.eval_dict(symbolic.uncertainty, subvalues)
         subvalues.update(expected)
         subvalues.update(uncerts)  # degf needs to sub these too
 
         ux_correlation = self.variables.correlation_matrix() if self.variables.has_correlation() else None
+        Cy = matrix.eval_matrix(symbolic.Cy, subvalues)
         Cx = matrix.eval_matrix(symbolic.Cx, subvalues)
+        C = matrix.eval_matrix(symbolic.C, subvalues)
         Ux = matrix.eval_matrix(symbolic.Ux, subvalues)
         Uy = matrix.eval_matrix(symbolic.Uy, subvalues)
         degf = matrix.eval_dict(symbolic.degf, subvalues)
@@ -220,7 +261,7 @@ class Model(ModelBase):
         if not all(all(np.isfinite(u) for u in k) for k in Uy):
             warns.append('Overflow in GUM uncertainty calculation')
 
-        outnumeric = GumOutputData(uncerts, Uy, Ux, Cx, degf, expected, ux_correlation, self.sympys)
+        outnumeric = GumOutputData(uncerts, Uy, Ux, Cy, Cx, C, degf, expected, ux_correlation, self.H, self.implicit)
         return GumResults(outnumeric, symbolic, self.variables.info, self.constants, self.descriptions, warns, self.tolerances)
 
     def monte_carlo(self, samples=1000000, copula='gaussian'):
@@ -235,7 +276,13 @@ class Model(ModelBase):
         '''
         samplevalues = self.variables.sample(samples, copula=copula)
         samplevalues.update(self.constants)
-        values = matrix.eval_dict(self.basesympys, samplevalues)
+
+        functions = {self.functionnames[i]: self.H[i]+self.Y[i] for i in range(len(self.functionnames)) if not self.implicit[i]}
+        values = matrix.eval_dict(functions, samplevalues)
+
+        implicits = {self.functionnames[i]: self.H[i] for i in range(len(self.functionnames)) if self.implicit[i]}
+        for i, (name, H) in enumerate(implicits.items()):
+            values[name] = solve_implicit(H, sympy.Symbol(name), samplevalues, guess=self.implicit_guesses[i])
 
         # Ensure all values are arrays (in case function itself is a constant)
         values = {name: np.full(samples, v) if np.isscalar(v) else v for name, v in values.items()}
@@ -253,6 +300,76 @@ class Model(ModelBase):
         gumresults = self.calculate_gum()
         mcresults = self.monte_carlo(samples=samples)
         return UncertaintyResults(gumresults, mcresults)
+
+
+def infer_units(expr, solvefor, values):
+    ''' Infer output units of an implicit model '''
+    eqs = sympy.solve(sympy.Eq(expr, 0), solvefor)
+    for eq in eqs:
+        fn = sympy.lambdify(values.keys(), eq)
+        result = fn(**values)
+        if np.isfinite(result):
+            return unitmgr.split_units(result)[1]
+    return None
+
+
+def solve_implicit(expr, solvefor, values, units=None, guess=1):
+    ''' Solve the implicit measurement model for the given variable
+
+        Args:
+            expr: Sympy expression to solve for roots of
+            solvefor: Sympy symbol to solve for
+            values: Dictionary of other variables in the expression
+            units: Units of the solvefor variable, if known. If not known,
+                it tries to automatically figure them out
+            guess: Initial guess for fsolve
+    '''
+    strname = str(solvefor)
+
+    # If we have one solution, no fsolve needed
+    eqs = sympy.solve(sympy.Eq(expr, 0), solvefor)
+    if len(eqs) == 1:
+        return matrix.eval_dict({str(solvefor): eqs[0]}, values)[strname]
+
+    # Can't solve symbolically. Need iterative fsolve solution.
+    varnames = [strname]
+    varnames += [str(e) for e in expr.free_symbols if str(e) != strname]
+    func = matrix._lambdify(tuple(varnames), expr)
+
+    # Attempt to determine units of solvefor variable
+    hasunits = any(unitmgr.has_units(v) for v in values.values())
+    N = 0
+    if hasunits and units is None:
+        infervals = {}
+        for name, val in values.items():
+            try:
+                infervals[name] = val[0]
+                N = len(val)
+            except IndexError:
+                infervals[name] = val
+
+        units = infer_units(expr, solvefor, infervals)
+
+    # Solve for the solvefor variable, stripping units because they don't work with scipy.fsolve
+    magvalues = {name: unitmgr.strip_units(values.get(name)) for name in varnames[1:]}
+    if N > 0:
+        out = np.zeros(N)
+        for i in range(N):
+            singlesample = []
+            for name in varnames[1:]:
+                val = magvalues.get(name)
+                try:
+                    singlesample.append(val[i])
+                except IndexError:
+                    singlesample.append(val)
+            out[i] = fsolve(func, guess, args=tuple(singlesample))[0]
+    else:
+        out = fsolve(func, guess, args=tuple(magvalues.values()))[0]
+
+    # Restore units
+    if hasunits:
+        out = unitmgr.make_quantity(out, units)
+    return out
 
 
 class ModelCallable(Model):
@@ -447,7 +564,7 @@ class ModelCallable(Model):
         if not all(all(np.isfinite(u) for u in k) for k in Uy):
             warns.append('Overflow in GUM uncertainty calculation')
 
-        outnumeric = GumOutputData(uncerts, Uy, Ux, Cx, degf, expected, ux_correlation, None)
+        outnumeric = GumOutputData(uncerts, Uy, Ux, None, Cx, Cx, degf, expected, ux_correlation, None, None)
         return GumResults(outnumeric, None, self.variables.info, None, None, self.tolerances)
 
     def monte_carlo(self, samples=1000000, copula='gaussian'):

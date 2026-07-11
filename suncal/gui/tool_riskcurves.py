@@ -9,6 +9,7 @@ from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as Navigatio
 
 from . import widgets
 from . import gui_common
+from ..common import report
 from ..risk.report.risk import risk_sweeper
 
 
@@ -18,7 +19,7 @@ class RiskSweepSetup(QtWidgets.QGroupBox):
         super().__init__('Sweep Setup', parent=parent)
         items = ['Sweep (x) variable', 'Step (z) variable', 'Constant']
         self.itpvssigma = QtWidgets.QComboBox()
-        self.itpvssigma.addItems(['In-tol probability %', 'SL/Process Std. Dev.'])
+        self.itpvssigma.addItems(['In-tol probability (true) %', 'In-tol probability (observed) %', 'SL/Process Std. Dev.'])
         self.itp = QtWidgets.QComboBox()
         self.tur = QtWidgets.QComboBox()
         self.gbf = QtWidgets.QComboBox()
@@ -50,7 +51,6 @@ class RiskSweepSetup(QtWidgets.QGroupBox):
         self.logy = QtWidgets.QCheckBox('Log Scale')
         self.plottype = QtWidgets.QComboBox()
         self.plottype.addItems(['PFA', 'CPFA', 'PFR', 'Both'])
-        self.btnrefresh = QtWidgets.QPushButton('Replot')
         layout = QtWidgets.QGridLayout()
         layout.addWidget(self.itpvssigma, 0, 0)
         layout.addWidget(self.itp, 0, 1)
@@ -81,7 +81,6 @@ class RiskSweepSetup(QtWidgets.QGroupBox):
         layout.addWidget(self.plottype, 11, 1)
         layout.addWidget(self.plot3d, 12, 1, 1, 2)
         layout.addWidget(self.logy, 13, 1, 1, 2)
-        layout.addWidget(self.btnrefresh, 14, 1)
         toplayout = QtWidgets.QVBoxLayout()
         toplayout.addLayout(layout)
         toplayout.addStretch()
@@ -139,6 +138,7 @@ class RiskSweepSetup(QtWidgets.QGroupBox):
         itpval = float(self.itpval.text()) / 100  # Percent
         if 'SL' in self.itpvssigma.currentText():
             sig0 = float(self.itpval.text())
+        observeditp = 'observed' in self.itpvssigma.currentText()
         turval = float(self.turval.text())
         pbias = float(self.procbiasval.text()) / 100
         tbias = float(self.testbiasval.text()) / 100
@@ -177,7 +177,7 @@ class RiskSweepSetup(QtWidgets.QGroupBox):
         elif 'Sweep' in self.testbias.currentText():
             xvar = 'tbias'
         else:
-            QtWidgets.QMessageBox.warning(self, 'Risk Sweep', 'Please select a variable to sweep.')
+            #QtWidgets.QMessageBox.warning(self, 'Risk Sweep', 'Please select a variable to sweep.')
             return None
 
         # Convert percent to decimal 0-1
@@ -190,8 +190,8 @@ class RiskSweepSetup(QtWidgets.QGroupBox):
         y = self.plottype.currentText()
         logy = self.logy.isChecked()
         SweepSetup = namedtuple('SweepSetup', ['x', 'z', 'xvals', 'zvals', 'itp', 'tur', 'gbf', 'sig0',
-                                               'pbias', 'tbias', 'threed', 'y', 'logy'])
-        return SweepSetup(xvar, zvar, xvals, zvals, itpval, turval, gbfval, sig0, pbias, tbias, threed, y, logy)
+                                               'pbias', 'tbias', 'threed', 'y', 'logy', 'observeditp'])
+        return SweepSetup(xvar, zvar, xvals, zvals, itpval, turval, gbfval, sig0, pbias, tbias, threed, y, logy, observeditp)
 
 
 class RiskSweeper(QtWidgets.QDialog):
@@ -220,7 +220,24 @@ class RiskSweeper(QtWidgets.QDialog):
         layout.addWidget(self.splitter)
         self.setLayout(layout)
 
-        self.setup.btnrefresh.clicked.connect(self.replot_sweep)
+        self.setup.itpvssigma.currentIndexChanged.connect(self.replot_sweep)
+        self.setup.itp.currentIndexChanged.connect(self.replot_sweep)
+        self.setup.tur.currentIndexChanged.connect(self.replot_sweep)
+        self.setup.gbf.currentIndexChanged.connect(self.replot_sweep)
+        self.setup.procbias.currentIndexChanged.connect(self.replot_sweep)
+        self.setup.testbias.currentIndexChanged.connect(self.replot_sweep)
+        self.setup.itpval.editingFinished.connect(self.replot_sweep)
+        self.setup.turval.editingFinished.connect(self.replot_sweep)
+        self.setup.gbfval.editingFinished.connect(self.replot_sweep)
+        self.setup.procbiasval.editingFinished.connect(self.replot_sweep)
+        self.setup.testbiasval.editingFinished.connect(self.replot_sweep)
+        self.setup.xstart.editingFinished.connect(self.replot_sweep)
+        self.setup.xstop.editingFinished.connect(self.replot_sweep)
+        self.setup.xpts.editingFinished.connect(self.replot_sweep)
+        self.setup.zvals.editingFinished.connect(self.replot_sweep)
+        self.setup.plot3d.stateChanged.connect(self.replot_sweep)
+        self.setup.logy.stateChanged.connect(self.replot_sweep)
+        self.setup.plottype.currentIndexChanged.connect(self.replot_sweep)
         self.replot_sweep()
         self.canvas.draw_idle()
 
@@ -229,19 +246,23 @@ class RiskSweeper(QtWidgets.QDialog):
         QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.CursorShape.WaitCursor)
         setup = self.setup.get_sweepvals()
         if setup is None:
-            return  # No sweep variable
-        rpt = risk_sweeper(self.fig,
-                           xvar=setup.x,
-                           zvar=setup.z,
-                           xvals=setup.xvals,
-                           zvals=setup.zvals,
-                           yvar=setup.y,
-                           threed=setup.threed,
-                           logy=setup.logy,
-                           gbmode=setup.gbf,
-                           sig0=setup.sig0,
-                           pbias=setup.pbias,
-                           tbias=setup.tbias)
+            rpt = report.Report()
+            rpt.txt('No sweep (x) variable')
+        else:
+            rpt = risk_sweeper(
+                self.fig,
+                xvar=setup.x,
+                zvar=setup.z,
+                xvals=setup.xvals,
+                zvals=setup.zvals,
+                yvar=setup.y,
+                threed=setup.threed,
+                logy=setup.logy,
+                gbmode=setup.gbf,
+                sig0=setup.sig0,
+                pbias=setup.pbias,
+                tbias=setup.tbias,
+                observeditp=setup.observeditp)
         self.fig.tight_layout()
         self.canvas.draw_idle()
         self.report.setReport(rpt)

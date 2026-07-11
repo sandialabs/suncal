@@ -9,56 +9,6 @@ from suncal.sweep import UncertSweep, UncertSweepReverse
 from suncal.project import ProjectSweep, ProjectReverseSweep
 
 
-def test_reverse():
-    ''' Test reverse uncertainty calculation by running reverse calculation, plugging in and
-        verifying the forward calculation matches.
-    '''
-    # Example of density measurement. What is required uncertainty of weight measurement to achieve
-    # desired density range?
-    expr = 'rho = w / (k*d**2*h)'
-    k = 12.870369  # pi/4*2.54**3, no uncertainty
-    h = .5  # inch
-    d = .25  # inch
-    ud = .001/2
-    uh = .001/2
-
-    # Required values for rho
-    rho = 2.0  # g/cm3
-    urho = .06/2
-
-    np.random.seed(234283742)
-    u = ModelReverse(expr, solvefor='w', targetnom=rho, targetunc=urho)
-    u.var('h').measure(h).typeb(std=uh)
-    u.var('d').measure(d).typeb(std=ud)
-    u.var('k').measure(k)
-    gum = u.calculate_gum()
-    mc = u.monte_carlo()
-
-    # MC and GUM should match for this problem
-    assert np.isclose(gum.solvefor_value, mc.solvefor_value, atol=.0001)
-    assert np.isclose(gum.u_solvefor_value, mc.u_solvefor_value, atol=.0001)
-
-    # Plugging in w to forward calculation should result in the uncertainty value we want
-    u2 = Model(expr)
-    u2.var('h').measure(h).typeb(std=uh)
-    u2.var('d').measure(d).typeb(std=ud)
-    u2.var('k').measure(k)
-    u2.var('w').measure(gum.solvefor_value).typeb(std=gum.u_solvefor_value)  # Using results from reverse calc
-    gum = u2.calculate_gum()
-    assert np.isclose(gum.expected['rho'], rho, atol=.01)     # rho uncertainty matches the requirement
-    assert np.isclose(gum.uncertainty['rho'], urho, atol=.001)
-
-
-def test_reversechain():
-    ''' Reverse should work when chaining functions too. '''
-    u = ModelReverse('f = x+y', 'g = f * 2', funcname='g', solvefor='y', targetnom=10, targetunc=.5)
-    u.var('x').measure(10).typeb(std=2)
-    u.var('y').measure(-10).typeb(std=.5)
-    gum = u.calculate_gum()
-    assert gum.uf_required == 0.5
-    assert str(gum.function) == '2*x + 2*y'    # Should substitute base function for chain
-
-
 def test_sweep():
     ''' Test sweeper. Sweep mean, uncertainty component, degf, and correlation '''
     u = Model('f = a+b')
@@ -124,6 +74,68 @@ def test_sweep():
     cfg = proj.get_config()
     s2 = ProjectSweep.from_config(cfg)
     assert cfg['sweeps'] == s2.get_config()['sweeps']
+
+
+def test_sweep_pct():
+    ''' Test sweeping nominal value with % uncertainty '''
+    u = Model('f = a')
+    u.var('a').measure(10)
+    u.var('a').typeb(name='u(a)', std="10%")
+    s = UncertSweep(u)
+    nomlist = np.array([1, 10, 100])
+    s.add_sweep_nom('a', nomlist)
+    result = s.calculate_gum()
+    assert np.allclose(result.uncertainties()['f'], nomlist/10)
+
+
+def test_reverse():
+    ''' Test reverse uncertainty calculation by running reverse calculation, plugging in and
+        verifying the forward calculation matches.
+    '''
+    # Example of density measurement. What is required uncertainty of weight measurement to achieve
+    # desired density range?
+    expr = 'rho = w / (k*d**2*h)'
+    k = 12.870369  # pi/4*2.54**3, no uncertainty
+    h = .5  # inch
+    d = .25  # inch
+    ud = .001/2
+    uh = .001/2
+
+    # Required values for rho
+    rho = 2.0  # g/cm3
+    urho = .06/2
+
+    np.random.seed(234283742)
+    u = ModelReverse(expr, solvefor='w', targetnom=rho, targetunc=urho)
+    u.var('h').measure(h).typeb(std=uh)
+    u.var('d').measure(d).typeb(std=ud)
+    u.var('k').measure(k)
+    gum = u.calculate_gum()
+    mc = u.monte_carlo()
+
+    # MC and GUM should match for this problem
+    assert np.isclose(gum.solvefor_value, mc.solvefor_value, atol=.0001)
+    assert np.isclose(gum.u_solvefor_value, mc.u_solvefor_value, atol=.0001)
+
+    # Plugging in w to forward calculation should result in the uncertainty value we want
+    u2 = Model(expr)
+    u2.var('h').measure(h).typeb(std=uh)
+    u2.var('d').measure(d).typeb(std=ud)
+    u2.var('k').measure(k)
+    u2.var('w').measure(gum.solvefor_value).typeb(std=gum.u_solvefor_value)  # Using results from reverse calc
+    gum = u2.calculate_gum()
+    assert np.isclose(gum.expected['rho'], rho, atol=.01)     # rho uncertainty matches the requirement
+    assert np.isclose(gum.uncertainty['rho'], urho, atol=.001)
+
+
+def test_reversechain():
+    ''' Reverse should work when chaining functions too. '''
+    u = ModelReverse('f = x+y', 'g = f * 2', funcname='g', solvefor='y', targetnom=10, targetunc=.5)
+    u.var('x').measure(10).typeb(std=2)
+    u.var('y').measure(-10).typeb(std=.5)
+    gum = u.calculate_gum()
+    assert gum.uf_required == 0.5
+    assert str(gum.function) == '2*x + 2*y'    # Should substitute base function for chain
 
 
 def test_sweepreverse():

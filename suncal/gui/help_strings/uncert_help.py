@@ -32,6 +32,11 @@ class UncertHelp:
                 'Use `degC` and `degF` for degrees Celsius and Fahrenheit '
                 '(`C` and `F` stand for Coulombs and Farads.) If units are left '
                 'blank, the values are treated as dimensionless.\n\n')
+        rpt.txt('Implicit models may be entered by setting the expression equal to 0. '
+                'The value after the semicolon indicates the output variable to solve for. '
+                'Because iterative methods are often required for implicit models, an initial guess '
+                'may be entered using a tilde `~` after the output variable. For example, to solve for `p` with '
+                'initial guess of 1000, enter "A/(1+d*p) - p = 0; p~1000".\n\n')
 
         rpt.hdr('Measured Values and Uncertainties', level=3)
         rpt.txt('Each variable found in the model equations will be filled '

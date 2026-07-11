@@ -5,7 +5,7 @@ import pytest
 import numpy as np
 from suncal.intervals import S2Params, s2_binom_interval
 from suncal.intervals import A3Params, a3_testinterval
-from suncal.intervals import VariablesData, variables_reliability_target, variables_uncertainty_target
+from suncal.intervals import VariablesData, VariablesReliabilityTarget, VariablesUncertaintyTarget
 
 
 def testA3():
@@ -77,37 +77,47 @@ def test_s2():
 
 @pytest.mark.filterwarnings('ignore')  # Will generate runtime/optimize warning in minimization loop
 def test_variables():
-    ''' Test variables method using data from NASA-HDBK-8739.19-5 '''
+    ''' Test variables method using data from RP-1 '''
     # Data in Table 7-2.
     dt = np.array([70., 86., 104., 135., 167., 173.])
     deltas = np.array([.1, .11, .251, .299, .403, .615])
-    params = VariablesData(dt, deltas, u0=.28, y0=10.03)
-    result_utarget = variables_uncertainty_target(params, utarget=0.5, order=2)
-    result_rtarget = variables_reliability_target(params, rel_lo=9, rel_high=11, rel_conf=.9, order=2)
 
-    # Compare curve-fit results with Table 7-3
-    assert np.isclose(result_utarget.b[0], 0.00015741)
-    assert np.isclose(result_utarget.b[1], 0.00001674)
-    assert np.isclose(result_utarget.cov[0, 0], 0.00000101)
-    assert np.isclose(result_utarget.cov[1, 1], 4.549E-11)
-    assert np.isclose(result_utarget.cov[0, 1], -6.607E-9)
-    assert np.isclose(result_utarget.syx, 0.0708, atol=.00005)
+    # Reliability Target Method
+    result_rtarget = VariablesReliabilityTarget(
+        dt, deltas, u0=.28, y0=10.03, u0_degf=3).calculate(
+            LL=9, UL=11, target_reliability=.9, order=2)
 
-    # Compare uncertainty target method with Table 7-7
-    assert np.isclose(result_utarget.interval, 327.15, atol=.005)
+    # Compare with Table J.4
+    assert np.isclose(result_rtarget.interval, 168, atol=.5)
 
-    # Compare reliability target method with Table 7-4
-    assert np.isclose(result_rtarget.interval, 140.1, atol=.05)
+    # Compute reliability model with one-sided limits Table J.5
+    result_rtarget = VariablesReliabilityTarget(
+        dt, deltas, u0=.28, y0=10.03, u0_degf=3).calculate(
+            LL=None, UL=11, target_reliability=.9, order=2)
+    assert np.isclose(result_rtarget.interval, 170, atol=.5)
 
-    # Compute reliability model with one-sided limits, compare with Table 7-5 and 7-6
-    result_rtarget = variables_reliability_target(params, rel_lo=None, rel_high=11, rel_conf=.9, order=2)
-    assert np.isclose(result_rtarget.interval, 171.75, atol=.005)
-
-    # Another problem in NASA-8739. They calculate the single-sided interval case
+    # Another problem in RP-1, based on NASA-8739.
+    # They calculate the single-sided interval case
     # with results in Table 7-6, but the initial uncertainty is already less
-    # than the limit at t=0! Assigned interval should be 0 or N/A. Table 7-6
-    # lists 153.04, which is correct in that's when the 95% conf line crosses
+    # than the limit at t=0! Assigned interval should be 0 or N/A. Table J.5
+    # lists 153, which is correct in that's when the 95% conf line crosses
     # the lower limit, but going the wrong direction.
-    params = VariablesData(dt, deltas, u0=.28, y0=9.03)
-    result_rtarget = variables_reliability_target(params, rel_lo=9, rel_high=None, rel_conf=.9, order=2)
-    assert np.isclose(result_rtarget.interval, 0, atol=.005)  # Table 7-6
+    result_rtarget = VariablesReliabilityTarget(
+        dt, deltas, u0=.28, y0=9.03, u0_degf=3).calculate(
+            LL=9, UL=None, target_reliability=.9, order=2)
+    assert np.isclose(result_rtarget.interval, 155, atol=.5)
+
+    # Uncertainty Target Method (J.4.2)
+    result_utarget = VariablesUncertaintyTarget(
+        dt, deltas, u0=.28, y0=10.03, u0_degf=3).calculate(utarget=0.5, order=2)
+
+    # Compare curve-fit results with RP1 Table J.3
+    assert np.isclose(result_utarget.fit.b[0], 0.00015741)
+    assert np.isclose(result_utarget.fit.b[1], 0.00001674)
+    assert np.isclose(result_utarget.fit.cov[0, 0], 0.00000101)
+    assert np.isclose(result_utarget.fit.cov[1, 1], 4.549E-11)
+    assert np.isclose(result_utarget.fit.cov[0, 1], -6.607E-9)
+    assert np.isclose(result_utarget.fit.syx, 0.07083, atol=.00005)
+
+    # Compare uncertainty target method with Table J.7
+    assert np.isclose(result_utarget.interval, 329, atol=.5)

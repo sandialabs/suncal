@@ -177,7 +177,7 @@ def test_readconfig():
     ''' Test read_configfile '''
     u = ProjectUncert.from_configfile(os.path.join('test', 'test1.yaml'))
     assert u.model.functionnames == ['f', 'g', 'h']
-    assert u.model.exprs == ['(a + b) / c', 'a - b', 'b * c']
+    assert u.model.exprs == ['(a + b)/c', 'a - b', 'b*c']
     assert u.nsamples == 1E6
     assert len(u.model.variables.names) == 3
     a = u.model.var('a')
@@ -209,7 +209,7 @@ def test_saveconfig():
     u.save_config(CHECK_FILE)
     u2 = ProjectUncert.from_configfile(CHECK_FILE)
 
-    assert u.model.sympys == u2.model.sympys
+    assert u.model.exprs == u2.model.exprs
     assert u.model.variables.names[0] == u.model.variables.names[0]
     assert u.model.variables.names[1] == u.model.variables.names[1]
     assert u.model.variables.names[2] == u.model.variables.names[2]

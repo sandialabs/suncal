@@ -43,15 +43,36 @@ class Array:
         self.xdate = xdate
 
     def __len__(self):
-        return len(self.x)
+        return len(self.y)
+
+    @property
+    def ndim(self):
+        ''' X dimensions (1 or 2) '''
+        return self.x.ndim
+
+    @property
+    def num_xvars(self):
+        ''' Number of x variables '''
+        return 1 if self.ndim == 1 else self.x.shape[0]
+
+    def get_x(self, xvar: int = 0):
+        ''' Get array of values for one x variable '''
+        if self.ndim == 1:
+            return self.x
+        return self.x[xvar]
+
+    def get_ux(self, xvar: int = 0):
+        if self.ndim == 1:
+            return self.ux
+        return self.ux[xvar]
 
     def has_ux(self):
         ''' Does the array have x-uncertainties? '''
-        return not all(self.ux == 0)
+        return not np.all(self.ux == 0)
 
     def has_uy(self):
         ''' Does the array have y-uncertainties? '''
-        return not all(self.uy == 0)
+        return not np.all(self.uy == 0)
 
     def slice(self, x1: float, x2: float) -> 'Array':
         ''' Return a slice (copy) of the array between x values '''
@@ -90,18 +111,6 @@ class Array:
         ''' Clear the estimate of uy '''
         self.uy_estimate = None
 
-    def save_file(self, fname):
-        ''' Save array to file (x, y, uy, ux) '''
-        arr = np.vstack((self.x, self.y))
-        hdr = 'x y'
-        if self.has_uy():
-            arr = np.vstack((arr, self.uy))
-            hdr = hdr + ' uy'
-        if self.has_ux():
-            arr = np.vstack((arr, self.ux))
-            hdr = hdr + ' ux'
-        np.savetxt(fname, arr.transpose(), header=hdr)
-
     def get_numpy(self):
         ''' Return numpy array of x, y, uy, ux columns '''
         arr = np.vstack((self.x, self.y, self.uy, self.ux)).transpose()
@@ -137,7 +146,6 @@ def _GUM(func, xmeans, ymeans, ux, uy):
     lenx = len(xmeans)
     grad = np.zeros((nvars, lenx*2))
     ui = np.zeros(lenx*2)
-
     for i, x in enumerate(xmeans):
         if ux[i] != 0:
             dx = np.float64(ux[i]) / 1E6

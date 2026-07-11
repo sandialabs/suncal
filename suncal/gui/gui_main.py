@@ -136,7 +136,7 @@ class InsertCalcWidget(QtWidgets.QWidget):
         self.btnUnc = widgets.ToolButton('Uncertainty\nPropagation', 'target')
         self.btnDataset = widgets.ToolButton('R && R\nData', 'boxplot')
         self.btnCurve = widgets.ToolButton('Curve Fit', 'curvefit')
-        self.btnRisk = widgets.ToolButton('Global\nRisk', 'risk')
+        self.btnRisk = widgets.ToolButton('Decision\nRisk', 'risk')
         self.btnInterval = widgets.ToolButton('Calibration\nIntervals', 'interval')
         self.btnMqa = widgets.ToolButton('End-to-end\nMQA', 'map')
         self.btnSystem = widgets.ToolButton('All-in-one\nUncertainty', 'trace')
@@ -156,7 +156,7 @@ class InsertCalcWidget(QtWidgets.QWidget):
         self.btnUnc.setToolTip('Calculate uncertainty of indirect measurements using the GUM and Monte Carlo methods.')
         self.btnDataset.setToolTip('Calculate Type A uncertainty, repeatability, reproducibility, and analysis of variance.')
         self.btnCurve.setToolTip('Calculate uncertainty in curve fitting problems.')
-        self.btnRisk.setToolTip('Calculate global and specific false accept and reject risks.')
+        self.btnRisk.setToolTip('Calculate average and specific false accept and reject risks.')
         self.btnInterval.setToolTip('Find optimal calibration intervals using methods from NCSLI RP-1.')
         self.btnMqa.setToolTip('Calculate overall reliabilities, intervals, and costs using end-to-end measurement quality assurances methods from NCSLI RP-19.')
         self.btnSystem.setToolTip('Combines direct, indirect, and curve fit uncertainty calculations in a single tool.')
@@ -286,7 +286,7 @@ class MainGUI(QtWidgets.QMainWindow):
         self.actWizard = QtGui.QAction('Uncertainty &Wizard', self)
         self.actSweep = QtGui.QAction('Uncertainty &Sweep', self)
         self.actRevSweep = QtGui.QAction('Reverse Uncertainty S&weep', self)
-        self.actRisk = QtGui.QAction('&Global Risk', self)
+        self.actRisk = QtGui.QAction('&Decision Risk', self)
         self.actInterval = QtGui.QAction('Calibration &Intervals', self)
         self.actMqa = QtGui.QAction('&End-to-end Measurement &Quality Assurance', self)
         self.actSystem = QtGui.QAction('&All-in-one Measurement Uncertainty', self)
@@ -644,20 +644,24 @@ class MainGUI(QtWidgets.QMainWindow):
             caption='Select file to open', directory=self.openconfigfolder,
             filter='Suncal YAML (*.yaml);;All files (*.*)')
         if fname:
-            self.newproject()
-            oldproject = self.project  # just in case things go wrong...
-            self.project = Project.from_configfile(fname)
-            if self.project is not None:
-                for i, item in enumerate(self.project.items):
-                    mode = self.project.get_mode(i)
-                    self._add_widget(mode, item)
+            self._load_project(fname)
 
-                self.dockwidget.projectlist.setCurrentRow(0)
-                self.projdock.setVisible(True)
-                self.topstack.setCurrentIndex(self.PG_TOP_PROJECT)
-            else:
-                QtWidgets.QMessageBox.warning(self, 'Suncal', 'Error loading file!')
-                self.project = oldproject
+    def _load_project(self, fname):
+        ''' Load the project from the filename '''
+        self.newproject()
+        oldproject = self.project  # just in case things go wrong...
+        self.project = Project.from_configfile(fname)
+        if self.project is not None:
+            for i, item in enumerate(self.project.items):
+                mode = self.project.get_mode(i)
+                self._add_widget(mode, item)
+
+            self.dockwidget.projectlist.setCurrentRow(0)
+            self.projdock.setVisible(True)
+            self.topstack.setCurrentIndex(self.PG_TOP_PROJECT)
+        else:
+            QtWidgets.QMessageBox.warning(self, 'Suncal', 'Error loading file!')
+            self.project = oldproject
 
     def newproject(self):
         ''' Clear/new project '''

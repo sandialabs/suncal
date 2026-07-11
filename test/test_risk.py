@@ -199,3 +199,40 @@ def test_riskdist():
     assert np.isclose(risk.deaver.PFR_deaver(SL=3, TUR=3),
                       risk.PFR(stats.norm(loc=0, scale=1), stats.norm(loc=0, scale=.333), LL=-3, UL=3),
                       rtol=.01)
+
+
+def test_tsayke():
+    ''' Test risk using Tsay-Ke bivariate normal integral '''
+
+    def dopfa(sigmap, sigmam, mup, TL, TU, AL, AU, testbias):
+        pfa1 = risk.PFA(stats.norm(mup, sigmap), stats.norm(0, sigmam), TL, TU, AL-TL, TU-AU, testbias)
+        pfa2 = risk.risk_tsayke.PFA(sigmap, sigmam, mup, TL, TU, AL, AU, testbias)
+        assert np.isclose(pfa1, pfa2, atol=.001)
+
+    dopfa(.51, .3, 0, -1, 1, -.9, .9, 0)
+    dopfa(.51, .3, .1, -1, 1, -.9, .9, 0)
+    dopfa(.51, .3, 0, -1, 2, -1, 1, 0)
+    dopfa(.6, .1, 0, -1, 2, -1, 1, 0)
+    dopfa(.6, .1, 0, -1, 2, -1, 1, .15)
+
+    def dopfr(sigmap, sigmam, mup, TL, TU, AL, AU, testbias):
+        pfa1 = risk.PFR(stats.norm(mup, sigmap), stats.norm(0, sigmam), TL, TU, AL-TL, TU-AU, testbias)
+        pfa2 = risk.risk_tsayke.PFR(sigmap, sigmam, mup, TL, TU, AL, AU, testbias)
+        assert np.isclose(pfa1, pfa2, atol=.001)
+
+    dopfr(.51, .3, 0, -1, 1, -.9, .9, 0)
+    dopfr(.51, .3, .1, -1, 1, -.9, .9, 0)
+    dopfr(.51, .3, 0, -1, 2, -1, 1, 0)
+    dopfr(.6, .1, 0, -1, 2, -1, 1, 0)
+    dopfr(.6, .1, 0, -1, 2, -1, 1, .15)
+
+    def dopfacond(sigmap, sigmam, mup, TL, TU, AL, AU, testbias):
+        pfa1 = risk.PFA_conditional(stats.norm(mup, sigmap), stats.norm(0, sigmam), TL, TU, AL-TL, TU-AU, testbias)
+        pfa2 = risk.risk_tsayke.PFA_conditional(sigmap, sigmam, mup, TL, TU, AL, AU, testbias)
+        assert np.isclose(pfa1, pfa2, atol=.001)
+
+    dopfacond(.51, .3, 0, -1, 1, -.9, .9, 0)
+    dopfacond(.51, .3, .1, -1, 1, -.9, .9, 0)
+    dopfacond(.51, .3, 0, -1, 2, -1, 1, 0)
+    dopfacond(.6, .1, 0, -1, 2, -1, 1, 0)
+    dopfacond(.6, .1, 0, -1, 2, -1, 1, .15)

@@ -21,12 +21,21 @@ from suncal.reverse import ModelReverse
 from suncal import curvefit
 
 
+def write_report(rpt, outfile):
+    ''' Write data to stdout or a file '''
+    if outfile == '-':
+        sys.stdout.write(rpt)
+    else:
+        with open(outfile, 'w') as f:
+            f.write(rpt)
+
+
 def main_setup(args=None):
     ''' Run calculations defined in YAML setup file '''
     parser = argparse.ArgumentParser(prog='suncalf', description='Run uncertainty calculation from setup file.')
     parser.add_argument('filename', help='Setup parameter file.', type=str)
     parser.add_argument('-o', help='Output filename. Extension determines file format.',
-                        type=argparse.FileType('w', encoding='UTF-8'), default='-')
+                        type=str, default='-')
     parser.add_argument('-f', help="Output format for when output filename not provided ['txt', 'html', 'md']",
                         type=str, choices=['html', 'txt', 'md'])
     parser.add_argument('--verbose', '-v', help='Verbose mode. Include plots with one v, full report with two.',
@@ -37,8 +46,8 @@ def main_setup(args=None):
     u.calculate()
 
     fmt = args.f
-    if args.o and hasattr(args, 'name') and args.o.name != '<stdout>':
-        _, fmt = os.path.splitext(str(args.o.name))
+    if args.o and args.o != '-':
+        _, fmt = os.path.splitext(args.o)
         fmt = fmt[1:]  # remove '.'
 
     if args.verbose > 1:
@@ -49,20 +58,20 @@ def main_setup(args=None):
         r = u.report_short()
 
     if fmt == 'docx':
-        r.save_docx(args.o.name)
+        r.save_docx(args.o)
     elif fmt == 'odt':
-        r.save_odt(args.o.name)
+        r.save_odt(args.o)
     elif fmt == 'pdf':
-        r.save_pdf(args.o.name)
+        r.save_pdf(args.o)
     elif fmt == 'html':
         strreport = r.get_html(mathfmt='latex', figfmt='svg')
-        args.o.write(strreport)
+        write_report(strreport, args.o)
     elif fmt == 'md':
         strreport = r.get_md(mathfmt='latex', figfmt='svg')
-        args.o.write(strreport)
+        write_report(strreport, args.o)
     else:
         strreport = r.get_md(mathfmt='text', figfmt='text')
-        args.o.write(strreport)
+        write_report(strreport, args.o)
 
 
 def main_unc(args=None):
@@ -80,7 +89,7 @@ def main_unc(args=None):
     parser.add_argument('--correlate', nargs='+', type=str,
                         help='List of correlation coefficients between pairs of variables. (e.g. "x; y; .8")')
     parser.add_argument('-o', help='Output filename. Extension determines file format.',
-                        type=argparse.FileType('w', encoding='UTF-8'), default=sys.stdout)
+                        type=str, default='-')
     parser.add_argument('-f', help="Output format for when output filename not provided ['txt', 'html', 'md']",
                         type=str, choices=['html', 'txt', 'md'])
     parser.add_argument('--samples', help='Number of Monte Carlo samples', type=int, default=1000000)
@@ -129,13 +138,12 @@ def main_unc(args=None):
             vals = [result.gum.expected[func], result.gum.uncertainty[func], gumexp, gumk,
                     result.montecarlo.expected[func], result.montecarlo.uncertainty[func],
                     mcmin, mcmax, mck]
-            args.o.write(', '.join(f'{v:.9g}' if isinstance(v, float) else f'{v:.9g}' for v in vals))
-            args.o.write('\n')
+            write_report(', '.join(f'{v:.9g}' if isinstance(v, float) else f'{v:.9g}' for v in vals)+'\n', args.o)
 
     else:    # Print a formatted report
         fmt = args.f
-        if args.o and hasattr(args.o, 'name') and args.o.name != '<stdout>':
-            _, fmt = os.path.splitext(str(args.o.name))
+        if args.o and args.o != '-':
+            _, fmt = os.path.splitext(args.o)
             fmt = fmt[1:]  # remove '.'
 
         if args.verbose > 1:
@@ -146,20 +154,20 @@ def main_unc(args=None):
             r = result.report.summary()
 
         if fmt == 'docx':
-            r.save_docx(args.o.name)
+            r.save_docx(args.o)
         elif fmt == 'odt':
-            r.save_odt(args.o.name)
+            r.save_odt(args.o)
         elif fmt == 'pdf':
-            r.save_pdf(args.o.name)
+            r.save_pdf(args.o)
         elif fmt == 'html':
             strreport = r.get_html(mathfmt='latex', figfmt='svg')
-            args.o.write(strreport)
+            write_report(strreport, args.o)
         elif fmt == 'md':
             strreport = r.get_md(mathfmt='latex', figfmt='svg')
-            args.o.write(strreport)
+            write_report(strreport, args.o)
         else:
             strreport = r.get_md(mathfmt='text', figfmt='text')
-            args.o.write(strreport)
+            write_report(strreport, args.o)
 
 
 def main_reverse(args=None):
@@ -179,7 +187,7 @@ def main_reverse(args=None):
     parser.add_argument('--correlate', nargs='+',
                         help='List of correlation coefficients between pairs of variables. (e.g. "x; y; .8")', type=str)
     parser.add_argument('-o', help='Output filename. Extension determines file format.',
-                        type=argparse.FileType('w', encoding='UTF-8'), default='-')
+                        type=str, default='-')
     parser.add_argument('-f', help="Output format for when output filename not provided ['txt', 'html', 'md']",
                         type=str, choices=['html', 'txt', 'md'])
     parser.add_argument('--samples', help='Number of Monte Carlo samples', type=int, default=1000000)
@@ -216,13 +224,12 @@ def main_reverse(args=None):
     if args.s:   # Print out short-format results
         vals = [result.gum.solvefor_value, result.gum.u_solvefor_value,
                 result.montecarlosolvefor_value, result.montecarlo.u_solvefor_value]
-        args.o.write(', '.join(f'{v:.9g}' for v in vals))
-        args.o.write('\n')
+        write_report(', '.join(f'{v:.9g}' for v in vals) + '\n', args.o)
 
     else:    # Print a formatted report
         fmt = args.f
-        if args.o and hasattr(args, 'name') and args.o.name != '<stdout>':
-            _, fmt = os.path.splitext(str(args.o.name))
+        if args.o and args.o != '-':
+            _, fmt = os.path.splitext(args.o)
             fmt = fmt[1:]  # remove '.'
 
         if args.verbose > 1:
@@ -233,20 +240,20 @@ def main_reverse(args=None):
             r = result.report.summary()
 
         if fmt == 'docx':
-            r.save_docx(args.o.name)
+            r.save_docx(args.o)
         elif fmt == 'odt':
-            r.save_odt(args.o.name)
+            r.save_odt(args.o)
         elif fmt == 'pdf':
-            r.save_pdf(args.o.name)
+            r.save_pdf(args.o)
         elif fmt == 'html':
             strreport = r.get_html(mathfmt='latex', figfmt='svg')
-            args.o.write(strreport)
+            write_report(strreport, args.o)
         elif fmt == 'md':
             strreport = r.get_md(mathfmt='latex', figfmt='svg')
-            args.o.write(strreport)
+            write_report(strreport, args.o)
         else:
             strreport = r.get_md(mathfmt='text', figfmt='text')
-            args.o.write(strreport)
+            write_report(strreport, args.o)
 
 
 def main_risk(args=None):
@@ -262,7 +269,7 @@ def main_risk(args=None):
     parser.add_argument('--testdist', type=str,
                         help='Test distribution parameters, semicolon-separated. (e.g. "median=10; std=.75")')
     parser.add_argument('-o', help='Output filename. Extension determines file format.',
-                        type=argparse.FileType('w', encoding='UTF-8'), default='-')
+                        type=str, default='-')
     parser.add_argument('-f', help="Output format for when output filename not provided ['txt', 'html', 'md']",
                         type=str, choices=['html', 'txt', 'md'])
     parser.add_argument('-s', help='Short output format, prints values only (Process Risk, PFA, PFR)',
@@ -304,14 +311,14 @@ def main_risk(args=None):
         except ValueError:
             pfa = np.nan
             pfr = np.nan
-        args.o.write(f'{procrisk:.5f}, {pfa:.5f}, {pfr:.5f}\n')
+        write_report(f'{procrisk:.5f}, {pfa:.5f}, {pfr:.5f}\n', args.o)
 
     else:
         result = rsk.calculate()
 
         fmt = args.f
-        if args.o and hasattr(args, 'name') and args.o.name != '<stdout>':
-            _, fmt = os.path.splitext(str(args.o.name))
+        if args.o and args.o != '-':
+            _, fmt = os.path.splitext(args.o)
             fmt = fmt[1:]  # remove '.'
 
         if args.verbose > 0:
@@ -319,26 +326,21 @@ def main_risk(args=None):
         else:
             r = result.report.summary()
 
-        fmt = str(args.f)
-        if args.o and hasattr(args.o, 'name') and args.o.name != '<stdout>':
-            _, fmt = os.path.splitext(str(args.o.name))
-            fmt = fmt[1:]  # remove '.'
-
         if fmt == 'docx':
-            r.save_docx(args.o.name)
+            r.save_docx(args.o)
         elif fmt == 'odt':
-            r.save_odt(args.o.name)
+            r.save_odt(args.o)
         elif fmt == 'pdf':
-            r.save_pdf(args.o.name)
+            r.save_pdf(args.o)
         elif fmt == 'html':
             strreport = r.get_html(mathfmt='latex', figfmt='svg')
-            args.o.write(strreport)
+            write_report(strreport, args.o)
         elif fmt == 'md':
             strreport = r.get_md(mathfmt='latex', figfmt='svg')
-            args.o.write(strreport)
+            write_report(strreport, args.o)
         else:
             strreport = r.get_md(mathfmt='text', figfmt='text')
-            args.o.write(strreport)
+            write_report(strreport, args.o)
 
 
 def main_curvefit(args=None):
@@ -352,7 +354,7 @@ def main_curvefit(args=None):
     parser.add_argument('--ux', help='X uncertainty value(s)', nargs='+', type=float)
     parser.add_argument('--order', help='Order of polynomial fit', type=int, default=2)
     parser.add_argument('-o', help='Output filename. Extension determines file format.',
-                        type=argparse.FileType('w', encoding='UTF-8'), default='-')
+                        type=str, default='-')
     parser.add_argument('-f', help="Output format for when output filename not provided ['txt', 'html', 'md']",
                         type=str, choices=['html', 'txt', 'md'])
     parser.add_argument('-s', help='Short output format, prints values only. First line is fit parameter values '
@@ -373,13 +375,16 @@ def main_curvefit(args=None):
     result = proj.calculate()
 
     if args.s:
-        args.o.write(', '.join(f'{m:.9g}' for m in result.lsq.coeffs) + '\n')
-        args.o.write(', '.join(f'{m:.9g}' for m in result.lsq.uncerts) + '\n')
+        write_report(
+            ', '.join(f'{m:.9g}' for m in result.lsq.coeffs) + '\n' +
+            ', '.join(f'{m:.9g}' for m in result.lsq.uncerts) + '\n',
+            args.o
+        )
 
     else:
         fmt = args.f
-        if args.o and hasattr(args, 'name') and args.o.name != '<stdout>':
-            _, fmt = os.path.splitext(str(args.o.name))
+        if args.o and args.o != '-':
+            _, fmt = os.path.splitext(args.o)
             fmt = fmt[1:]  # remove '.'
 
         if args.verbose > 0:
@@ -388,20 +393,20 @@ def main_curvefit(args=None):
             r = result.report.summary()
 
         if fmt == 'docx':
-            r.save_docx(args.o.name)
+            r.save_docx(args.o)
         elif fmt == 'odt':
-            r.save_odt(args.o.name)
+            r.save_odt(args.o)
         elif fmt == 'pdf':
-            r.save_pdf(args.o.name)
+            r.save_pdf(args.o)
         elif fmt == 'html':
             strreport = r.get_html(mathfmt='latex', figfmt='svg')
-            args.o.write(strreport)
+            write_report(strreport, args.o)
         elif fmt == 'md':
             strreport = r.get_md(mathfmt='latex', figfmt='svg')
-            args.o.write(strreport)
+            write_report(strreport, args.o)
         else:
             strreport = r.get_md(mathfmt='text', figfmt='text')
-            args.o.write(strreport)
+            write_report(strreport, args.o)
 
 
 if __name__ == '__main__':

@@ -1,6 +1,6 @@
 ---
 title: Suncal User's Guide
-date: June 6, 2025
+date: July 10, 2026
 author:
 - Sandia National Laboratories^[Sandia National Laboratories is a multimission laboratory managed and operated by National Technology and Engineering Solutions of Sandia, LLC., a wholly owned subsidiary of Honeywell International, Inc., for the U.S. Department of Energy’s National Nuclear Security Administration under contract DE-NA-0003525.]
 - uncertainty@sandia.gov
@@ -20,6 +20,7 @@ The software provides a user interface and Python API for performing various sta
 The available calculation types are:
 
 - Uncertainty propagation by the GUM and Monte Carlo methods
+- Function and Implicit measurement models
 - Reverse uncertainty propagation to determine measurement uncertainty required to meet a target combined uncertainty
 - Uncertainty sweep to calculate multiple uncertainty propagations over a range of inputs
 - Reverse uncertainty sweep to calculate multiple reverse uncertainty propagations
@@ -35,6 +36,7 @@ The available calculation types are:
 Suncal has a number of features that differentiate it from other uncertainty software solutions:
 
 - The GUM method is solved symbolically, providing the user with the actual formulas used, not just numerical results.
+- Uncertainty in implicit measurement models
 - Automatic conversion of measurement units and dimensional analysis.
 - Expanded uncertainties can be calculated automatically based on degrees of freedom and the t-distribution.
 - The number of input variables is unlimited, and input variables can have multiple (e.g. Type A and Type B) uncertainty components.
@@ -137,6 +139,15 @@ For more information on what the parameters for each distribution are, right-cli
 The most common distributions are shown in the drop-down list box, but many others can be enabled in the **Preferences** menu.
 The distribution is converted to a standard uncertainty for use in the GUM formula, while the Monte Carlo method directly samples each distribution.
 The right-click menu also has an option to import distribution settings from a CSV file of sampled data or from another calculation in the project.
+
+#### Implicit Measurement Models
+
+Implicit measurement models, taking the form $H(Y, X) = 0$ where $Y$ is the variable to solve for, and $X$ are the input variables, may be entered by setting the measurement equation equal to zero, followed by a semicolon and the variable name to solve for.
+Because implicit models often require iterative methods to find a solution, an expected value to use as the initial guess may be entered in the formula using a `~`.
+For example, to solve for `p` with an initial guess of 1000, enter "A/(1+d*p) - p = 0; p~1000".
+
+Implicit models are solved using the method in JCGM 102:2011, Section 6.3.
+
 
 #### Relative Uncertainties
 

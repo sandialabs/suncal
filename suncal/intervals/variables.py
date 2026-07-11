@@ -1,9 +1,8 @@
 ''' Interval analysis using variables data
 
-    Based on Castrup "Calibration Intervals from Variables Data" which determines
-    how much a device drifts over a certain amount of time. Two methods are calculated:
+    Based NCSLI RP-1 Variables Method V1. Two methods are available:
     1) Uncertainty Target Method: stop the interval when measurement uncertainty exceeds limit
-    2) Reliability Target Method: stop the interval when predicted value+uncertainty exceeds fixed tolerance
+    2) Reliability Target Method: stop the interval when reliability falls below target
 '''
 from typing import Sequence
 from itertools import combinations
@@ -13,16 +12,17 @@ import logging
 import warnings
 import numpy as np
 from scipy.optimize import fsolve, OptimizeWarning
+from scipy import stats
 
-from ..common import ttable, reporter
-from .report.variables import (ReportIntervalVariables,
-                               ReportIntervalVariablesUncertainty,
-                               ReportIntervalVariablesReliability)
+from ..common import reporter
+from .report.variables import ReportIntervalVariablesUncertainty, ReportIntervalVariablesReliability
 from .binoms2 import datearray
 from . import fit
 
 warnings.filterwarnings('ignore', category=RuntimeWarning)
 warnings.filterwarnings('ignore', category=OptimizeWarning)
+
+FitResults = namedtuple('FitResults', ['b', 'cov', 'syx', 'order', 'degf'])
 
 
 @reporter.reporter(ReportIntervalVariablesUncertainty)
@@ -31,29 +31,15 @@ class ResultsUncertaintyTargetInterval:
     ''' Results from Uncertainty Target interval calculation
 
         Attributes:
-            interval: Calculated interval
-            target: Target uncertainty
-            u0: Uncertainty at start of interval
-            k: Coverage factor of u0 and target uncertainty
-            dt: Array of delta-time values between calibrations
-            deltas: Array of delta values between calibrations
-            m: Polynomial order for fit curve
-            y0: Initial value
-            b: Polynomial fit parameters
-            cov: Covariance between polynomial fit parameters
-            Syx: Standard Error in Fit
+           interval: Calculated interval
+           target: Target uncertainty
+           fit: Curve fit results
+            data: Input data with attribute history
     '''
     interval: float
     target: float
-    u0: float
-    k: float
-    dt: np.ndarray
-    deltas: np.ndarray
-    m: int
-    y0: float
-    b: np.ndarray
-    cov: np.ndarray
-    syx: float
+    fit: FitResults
+    data: 'VariablesData'
 
 
 @reporter.reporter(ReportIntervalVariablesReliability)
@@ -62,51 +48,44 @@ class ResultsReliabilityTargetInterval:
     ''' Results from Reliability Target interval calculation
 
         Attributes:
-            interval: Calculated optimal interval
-            u0: initial uncertainty
-            k_u0: Coverage factor associated with u0
-            LL: Lower reliability limit
-            UL: Upper reliability limit
-            dt: array of delta-time values between calibrations
-            deltas: array of deltas between calibrations
-            y0: Initial value
-            m: Polynomial order for fit curve
-            conf: Confidence
-            k: Coverage factor for projected reliability
-            b: Polynomial fit parameters
-            cov: Covariance between polynomial fit parameters
-            Syx: Standard Error in Fit
+            interval: Calculated interval
+            target: Reliability target
+            LL: Lower tolerance of attribute
+            UL: Upper tolerance of attribute
+            final_value: Predicted attribte value at end of interval
+            projected_uncert: Predicted total uncertainty at end of interval
+            projected_degf: Degrees of freedom of projected_uncert
+            forecast_uncert: Predicted uncertainty due to curve fit
+            fit: Curve fit results
+            data: Input data with attribute history
     '''
     interval: float
-    u0: float
-    k_u0: float
+    target: float
     LL: float
     UL: float
-    dt: np.ndarray
-    deltas: np.ndarray
-    y0: float
-    m: int
-    conf: float
-    k: float
-    b: np.ndarray
-    cov: np.ndarray
-    syx: float
+    final_value: float
+    projected_uncert: float
+    projected_degf: float
+    forecast_uncert: float
+    fit: FitResults
+    data: 'VariablesData'
 
 
-@reporter.reporter(ReportIntervalVariables)
-@dataclass
-class ResultsVariablesInterval:
-    ''' Results from both reliability and uncertainty target interval calculations
-
-        Attributes:
-            uncertaintytarget: Results of Uncertainty Target method
-            reliabilitytarget: Results of Reliability Target method
+def _select_order(t: Sequence[float], delta: Sequence[float], maxorder: int = 1) -> int:
+    ''' Select polynomial order m for best fit of x, y.
+        Limit to maximum order of maxorder.
     '''
-    uncertaintytarget: ResultsUncertaintyTargetInterval
-    reliabilitytarget: ResultsReliabilityTargetInterval
+    # (Castrup section 6)
+    smin = np.inf
+    m = 1
+    for k in range(1, maxorder+1):
+        _, _, syx = fit.fitpoly(t, delta, m=k)
+        if syx < smin:
+            smin = syx
+            m = k
+    return m
 
 
-@dataclass
 class VariablesData:
     ''' Data for Variables interval method
 
@@ -115,20 +94,21 @@ class VariablesData:
             deltas: Array of deviation from prior calibration for each x value
             u0: Time-of-test uncertainty of measurement
             y0: Initial value at 0 time since calibration
-            kvalue: Coverage factor associated with u0 and uncertainty target value
+            u0_degf: Degrees of freedom associated with u0
     '''
-    dt: Sequence[float]
-    deltas: Sequence[float]
-    u0: float = 0
-    y0: float = 0
-    kvalue: float = 1
+    def __init__(self, dt: Sequence[float], deltas: Sequence[float],
+                 u0: float = 0, y0: float = 0, u0_degf: float = np.inf):
+        self.dt = np.asarray(dt)
+        self.deltas = np.asarray(deltas)
+        self.u0 = u0
+        self.y0 = y0
+        self.u0_degf = u0_degf
 
     @classmethod
     def from_assets(cls,
                     assets: list[dict[str, float]],
                     u0: float = 0,
                     y0: float = 0,
-                    kvalue: float = 1,
                     use_alldeltas: bool = False) -> 'VariablesData':
         ''' Generate the VariablesData from list of assets '''
         dt_all = np.array([])
@@ -185,166 +165,132 @@ class VariablesData:
             dt_all = np.concatenate((dt_all, dt))
             deltas_all = np.concatenate((deltas_all, deltas))
 
-        return cls(dt=dt_all, deltas=deltas_all, u0=u0, y0=y0, kvalue=kvalue)
+        return cls(dt=dt_all, deltas=deltas_all, u0=u0, y0=y0)
+
+    def uncertainty(self, t, fitresult: FitResults):
+        ''' Predict total uncertainty at time t '''
+        uconf = fit.u_conf(t, fitresult.b, fitresult.cov)
+        sigb = np.sqrt(uconf**2 + self.u0**2)
+        degf = sigb**4 / (uconf**4/fitresult.degf + self.u0**4/self.u0_degf)
+        return sigb, degf
+
+    def _fitcurve(self, order: int = None, maxorder: int = 1) -> FitResults:
+        ''' Fit curve to the t vs delta data
+
+            Args:
+                order: Order of polynomial fit, or None to auto-select
+                maxorder: Maximum order of polynomial fit when auto-selecting
+        '''
+        t = np.asarray(self.dt).astype(float)
+        delta = np.asarray(self.deltas).astype(float)
+        if len(t) == 0 or len(delta) == 0 or len(t) != len(delta):
+            raise ValueError
+
+        if order is None:
+            order = _select_order(t, delta, maxorder)
+
+        b, cov, syx = fit.fitpoly(t, delta, m=order)
+        return FitResults(b, cov, syx, order, len(t)-order)
 
 
-FitResults = namedtuple('FitResults', ['b', 'cov', 'syx'])
+class VariablesReliabilityTarget(VariablesData):
+    ''' Reliability Target '''
 
+    def reliability(self, t, LL, UL, fitresult: FitResults):
+        ''' Predict reliability at time t as the probabiliy the predicted
+            uncertainty falls between the tolerance limits
+        '''
+        conf = fit.u_conf(t, fitresult.b, fitresult.cov)
+        sigb = np.sqrt(conf**2 + self.u0**2)
+        degf = sigb**4 / ((conf**4/fitresult.degf + self.u0**4/self.u0_degf))
+        mu = fit.y_pred(t, fitresult.b, y0=self.y0)
+        if UL is not None and LL is not None:
+            return stats.t.cdf(x=(UL-mu)/sigb, df=degf) - stats.t.cdf(x=(LL-mu)/sigb, df=degf)
+        if UL is not None:
+            return stats.t.cdf(x=(UL-mu)/sigb, df=degf)
+        return 1 - stats.t.cdf(x=(LL-mu)/sigb, df=degf)
 
-def _fitcurve(t: Sequence[float], delta: Sequence[float],
-              order: int = 1, maxorder: int = 1) -> FitResults:
-    ''' Fit curve to the t vs delta data
+    def calculate(
+            self,
+            LL: float = 0,
+            UL: float = 1,
+            target_reliability: float = 0.95,
+            order: int = None,
+            maxorder: int = 3
+            ) -> ResultsUncertaintyTargetInterval:
+        ''' Calculate interval using reliability target method
 
-        Args:
-            t: Time values
-            delta: Deviation from prior value at each time value
-            order: Order of polynomial fit, or None to auto-select
-            maxorder: Maximum order of polynomial fit when auto-selecting
-    '''
-    t = np.asarray(t).astype(float)
-    delta = np.asarray(delta).astype(float)
-    if len(t) == 0 or len(delta) == 0 or len(t) != len(delta):
-        raise ValueError
+            Args:
+                LL: Lower tolerance limit
+                UL: Upper tolerance limit
+                target_reliability: Reliability at which to end the interval
+                order: Polynomial order for fit curve, or none to auto-choose
+                maxorder: Maximum polynomial order for automatic order selection
+        '''
+        fitresult = self._fitcurve(order, maxorder=maxorder)
 
-    if order is None:
-        order = _select_order(t, delta, maxorder)
-
-    b, cov, syx = fit.fitpoly(t, delta, m=order)
-    return FitResults(b, cov, syx)
-
-
-def _select_order(t: Sequence[float], delta: Sequence[float], maxorder: int = 1) -> int:
-    ''' Select polynomial order m for best fit of x, y.
-        Limit to maximum order of maxorder.
-    '''
-    # (Castrup section 6)
-    smin = np.inf
-    m = 1
-    for k in range(1, maxorder+1):
-        _, _, syx = fit.fitpoly(t, delta, m=k)
-        if syx < smin:
-            smin = syx
-            m = k
-    return m
-
-
-def variables_uncertainty_target(data: VariablesData,
-                                 utarget: float = 0.5,
-                                 order: int = 1,
-                                 maxorder: int = 1,
-                                 ) -> ResultsUncertaintyTargetInterval:
-    ''' Calculate interval using uncertainty target method
-
-        Args:
-            data: The historical calibration data
-            utarget: Target uncertainty at which to end the interval
-            order: Polynomial order for fit curve, or none to auto-choose
-            maxorder: Maximum polynomial order for automatic order selection
-    '''
-    dt = np.asarray(data.dt)
-    deltas = np.asarray(data.deltas)
-    b, cov, syx = _fitcurve(dt, deltas, order, maxorder)
-
-    def target(t):
-        uk1 = data.u0 / data.kvalue
-        target = utarget / data.kvalue
-        return data.kvalue * (uk1**2 + fit.u_pred(t, b, cov, syx)**2 - target**2)
-
-    intv, _, ier, mesg = fsolve(target, x0=dt.max(), full_output=True)
-    if ier != 1:
-        interval = 0
-        logging.info('No solution found: %s', mesg)
-    else:
-        interval = intv[0]
-
-    results = {'interval': interval,
-               'target': utarget,
-               'u0': data.u0,
-               'k': data.kvalue,
-               'dt': dt,
-               'deltas': deltas,
-               'm': order,
-               'y0': data.y0,
-               'b': b,
-               'cov': cov,
-               'syx': syx}
-    return ResultsUncertaintyTargetInterval(**results)
-
-
-def variables_reliability_target(data: VariablesData,
-                                 rel_lo: float = -1,
-                                 rel_high: float = 1,
-                                 rel_conf: float = 0.95,
-                                 order: int = 1,
-                                 maxorder: int = 1
-                                 ) -> ResultsUncertaintyTargetInterval:
-    ''' Calculate interval using reliability target method
-
-        Args:
-            data: The historical calibration data
-            rel_lo: Lower reliability limit
-            rel_high: Upper reliability limit
-            rel_conf: Level of confidence for reliability
-            order: Polynomial order for fit curve, or none to auto-choose
-            maxorder: Maximum polynomial order for automatic order selection
-    '''
-    dt = np.asarray(data.dt)
-    deltas = np.asarray(data.deltas)
-
-    LL, UL = rel_lo, rel_high
-    if UL is None or LL is None:
-        k = ttable.t_onetail(rel_conf, len(dt)-order)
-    else:
-        k = ttable.k_factor(rel_conf, len(dt)-order)
-
-    b, cov, syx = _fitcurve(dt, deltas, order, maxorder=maxorder)
-
-    if all(b == 0):
-        # NO slope. Interval is infinite
-        interval = np.inf
-    else:
-        def upper_lim(t):
-            return (fit.y_pred(t, b, y0=data.y0) +
-                    k * np.sqrt(data.u0**2 + fit.u_pred(t, b, cov, syx)**2))
-
-        def lower_lim(t):
-            return (fit.y_pred(t, b, y0=data.y0) -
-                    k * np.sqrt(data.u0**2 + fit.u_pred(t, b, cov, syx)**2))
-
-        t = []
-        if (UL is not None and upper_lim(0) > UL) or (LL is not None and lower_lim(0) < LL):
-            # Already outside the limits at t=0! Set interval to 0.
-            t = [0]
-
+        if all(fitresult.b == 0):
+            # NO slope. Interval is infinite
+            interval = np.inf
+            mu = upred = degf = uprojected = np.nan
         else:
-            if UL is not None:
-                intv, _, ier, _ = fsolve(lambda x: upper_lim(x) - UL, x0=dt.mean(), full_output=True)
-                if ier == 1:  # Solution found
-                    t.append(intv)
+            intv, _, ier, mesg = fsolve(lambda x: self.reliability(x, LL, UL, fitresult)-target_reliability,
+                                        x0=self.dt.max(), full_output=True)
+            if ier == 1:  # Solution found
+                interval = intv[0]
+                mu = fit.y_pred(interval, fitresult.b, y0=self.y0)
+                upred = fit.u_pred(interval, fitresult.b, fitresult.cov, self.u0)
+                uprojected, degf = self.uncertainty(interval, fitresult)
+            else:
+                logging.warning(mesg)
+                interval = mu = uprojected = upred = degf = np.nan
 
-            if LL is not None:
-                intv, _, ier, _ = fsolve(lambda x: lower_lim(x) - LL, x0=dt.mean(), full_output=True)
-                if ier == 1:  # Solution found
-                    t.append(intv)
+        params = {
+            'interval': interval,
+            'target': target_reliability,
+            'LL': LL,
+            'UL': UL,
+            'final_value': mu,
+            'projected_uncert': uprojected,
+            'projected_degf': degf,
+            'forecast_uncert': upred,
+            'fit': fitresult,
+            'data': self
+            }
+        return ResultsReliabilityTargetInterval(**params)
 
-        t = np.array(t)
-        try:
-            interval = t[t > 0].min()
-        except ValueError:  # All intervals are negative
+
+class VariablesUncertaintyTarget(VariablesData):
+    ''' Uncertainty Target '''
+    def calculate(
+            self,
+            utarget: float = 0.5,
+            order: int = 1,
+            maxorder: int = 1,
+            ) -> ResultsUncertaintyTargetInterval:
+        ''' Calculate interval using uncertainty target method
+
+            Args:
+                utarget: Target uncertainty at which to end the interval
+                order: Polynomial order for fit curve, or none to auto-choose
+                maxorder: Maximum polynomial order for automatic order selection
+        '''
+        fitresult = self._fitcurve(order, maxorder=maxorder)
+
+        def target(t):
+            return fit.u_pred(t, fitresult.b, fitresult.cov, self.u0)**2 - utarget**2
+
+        intv, _, ier, mesg = fsolve(target, x0=self.dt.max(), full_output=True)
+        if ier != 1:
             interval = 0
+            logging.info('No solution found: %s', mesg)
+        else:
+            interval = intv[0]
 
-    params = {'interval': interval,
-              'u0': data.u0,
-              'k_u0': data.kvalue,
-              'LL': LL,
-              'UL': UL,
-              'dt': dt,
-              'deltas': deltas,
-              'y0': data.y0,
-              'm': order,
-              'conf': rel_conf,
-              'k': k,
-              'b': b,
-              'cov': cov,
-              'syx': syx}
-    return ResultsReliabilityTargetInterval(**params)
+        results = {
+            'interval': interval,
+            'target': utarget,
+            'fit': fitresult,
+            'data': self
+            }
+        return ResultsUncertaintyTargetInterval(**results)

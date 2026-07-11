@@ -62,6 +62,9 @@ class ModelReverse:
     '''
     def __init__(self, *exprs, solvefor, targetnom=None, targetunc=None, funcname=None, targetunits=None):
         self.model = Model(*exprs)
+        if any(self.model.implicit):
+            raise ValueError('Reverse uncertainty not implemented for implicit models.')
+
         if funcname is None:
             funcname = self.model.functionnames[-1]
         self.reverseparams = {'solvefor': solvefor,
@@ -102,7 +105,7 @@ class ModelReverse:
         u_forward_expr = u_forward_expr.subs(corrvals).simplify()  # Remove 0 correlation values from expression
 
         # Solve function for variable of interest
-        func_reversed = sympy.solve(sympy.Eq(sympy.Symbol(funcname), self.model.basesympys[funcname]),
+        func_reversed = sympy.solve(sympy.Eq(sympy.Symbol(funcname), self.model.functions[funcname]),
                                     sympy.Symbol(solvefor))[0]
 
         u_solvefor = sympy.Symbol('u_'+solvefor)  # Symbol for unknown uncertainty we're solving for
@@ -140,7 +143,7 @@ class ModelReverse:
             u_solvefor_value,
             u_solvefor_expr,
             u_forward_expr,
-            self.model.basesympys[funcname],
+            self.model.functions[funcname],
             sympy.Symbol(funcname),
             sympy.Symbol(f'u_{funcname}'),
             targetnom,
@@ -159,7 +162,7 @@ class ModelReverse:
         targetnom = unitmgr.make_quantity(targetnom, targetunits)
         targetunc = unitmgr.make_quantity(targetunc, targetunits)
 
-        solvefor_expr = sympy.solve(sympy.Eq(sympy.Symbol(funcname), self.model.basesympys[funcname]),
+        solvefor_expr = sympy.solve(sympy.Eq(sympy.Symbol(funcname), self.model.functions[funcname]),
                                     sympy.Symbol(solvefor))[0]
         revmodel = Model(f'{solvefor} = {solvefor_expr}')
 
@@ -175,7 +178,6 @@ class ModelReverse:
 
         # Correlate variables: see GUM C.3.6 NOTE 3 - Estimate correlation from partials
         gumsensitivity = self.model.calculate_gum().sensitivity(symbolic=True)[funcname]
-
         inpts = {}
         for vname in self.model.variables.names:
             if str(vname) == solvefor:
@@ -213,7 +215,7 @@ class ModelReverse:
             solvefor,
             solvefor_value,
             u_solvefor_value,
-            self.model.basesympys[funcname],
+            self.model.functions[funcname],
             sympy.Symbol(funcname),
             targetnom,
             targetunc,

@@ -25,11 +25,12 @@ class ProjectMqa(ProjectComponent):
             self.model = MqaSystem()
         else:
             self.model = model
-        self._result = self.model
+        self._result = None
 
     def calculate(self) -> 'MqaQuantityResult':
         ''' Calculate values '''
-        return self.model.calculate()
+        self._result = self.model.calculate()
+        return self._result
 
     def get_config(self):
         ''' Get System Config '''

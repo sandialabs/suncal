@@ -9,8 +9,10 @@ from scipy import stats
 from ..common import distributions, reporter
 from . import risk, guardband, guardband_tur
 from .risk_montecarlo import PFAR_MC
+from .risk_gage import PFA_gage, PFR_gage
 from .report.risk import (RiskReport,
                           RiskReportMonteCarlo,
+                          RiskReportGage,
                           RiskReportGuardbandSweep,
                           RiskReportProbConform)
 
@@ -93,6 +95,28 @@ class RiskMonteCarloResults:
     measure_samples: Sequence[float] = None
 
 
+@reporter.reporter(RiskReportGage)
+@dataclass
+class RiskGageResults:
+    ''' Attributes Gage Risk calculation results
+
+        Attributes:
+            pfa: Global probability of false acceptance
+            pfr: Global probability of false reject
+            product_dist: Distribution of the products
+            gage_dist: Distribution of the measurement
+            tolerance: The tolerance being tested to
+            maximum: If the tolerance is a maximum or minimum limit
+    '''
+    pfa: float
+    pfr: float
+    product_dist: distributions.Distribution
+    gage_dist: distributions.Distribution
+    process_risk: float
+    tolerance: float
+    maximum: bool
+
+
 @reporter.reporter(RiskReportGuardbandSweep)
 @dataclass
 class RiskGuardbandSweepResult:
@@ -118,11 +142,15 @@ class RiskConformanceResult:
             probconform: Probability of conformance at each measured value
             tolerance: The tolerance being tested to
             gbofsts: Guardband offsets as difference from the tolerance
+            nominal: The nominal measured value, as entered in GUI slider
+            poc_nominal: Probability of conformance of nominal value
     '''
     measured: Sequence[float]
     probconform: Sequence[float]
     tolerance: tuple[float, float]
     gbofsts: tuple[float, float]
+    nominal: float
+    poc_nominal: float
 
 
 class RiskModel:
@@ -328,29 +356,73 @@ class RiskModel:
             pfa=pfa,
             pfr=pfr)
 
-    def calc_probability_conformance(self, num=500) -> RiskConformanceResult:
+    def calc_probability_conformance(self, num=250) -> RiskConformanceResult:
         ''' Calculate probability of conformance curve across
             range of measurement values
         '''
         kwds = distributions.get_distargs(self.measure_dist)
         LL, UL = self.speclimits
+        LL, UL = min(LL, UL), max(LL, UL)  # make sure LL < UL
         w = (UL-LL)
+
+        # Results for the nominal measured value (slider in GUI)
+        nom = self.measure_dist.mean() + self.testbias
+        pc_nom = (self.measure_dist.cdf(UL) - self.measure_dist.cdf(LL))
+
         xx = np.linspace(LL-w/2, UL+w/2, num=num)
         if not np.isfinite(w):
             w = self.measure_dist.std() * 4
             xx = np.linspace(self.measure_dist.mean()-w if not np.isfinite(LL) else LL-w/2,
                              self.measure_dist.mean()+w if not np.isfinite(UL) else UL+w/2,
                              num=num)
-        fa_lower = np.empty(len(xx))
-        fa_upper = np.empty(len(xx))
-        for i, loc in enumerate(xx):
-            self.measure_dist.set_median(loc-self.testbias)
+        probconform = np.empty(len(xx))
+
+        if self.measure_dist.name == 'normal':
+            # Faster calculation for normal distributions
+            sigma = self.measure_dist.std()
+            xx -= self.testbias
+            probconform = stats.norm.cdf(UL, loc=xx, scale=sigma) - stats.norm.cdf(LL, loc=xx, scale=sigma)
+
+        else:
+            # Shift xx based on loc/median, similar to (but faster than iterating) Distribution.set_median().
+            zeroargs = self.measure_dist.distargs.copy()
+            zeroargs['loc'] = 0
+            median = self.measure_dist.dist(**zeroargs).median()
             kwds = distributions.get_distargs(self.measure_dist)
-            dtestswp = self.measure_dist.dist(**kwds)
-            fa_lower[i] = risk.specific_risk(dtestswp, LL=LL, UL=np.inf).total
-            fa_upper[i] = risk.specific_risk(dtestswp, LL=-np.inf, UL=UL).total
-        probconform = 1-(fa_lower + fa_upper)
-        return RiskConformanceResult(xx, probconform, self.speclimits, self.gbofsts)
+            if 'median' in kwds:
+                kwds['median'] = xx - self.testbias
+            elif 'loc' in kwds:
+                kwds['loc'] = xx - median - self.testbias
+            probconform = self.measure_dist.dist.cdf(UL, **kwds) - self.measure_dist.dist.cdf(LL, **kwds)
+
+        return RiskConformanceResult(
+            xx, probconform, self.speclimits,
+            self.gbofsts, nom, pc_nom)
+
+    def calculate_gage(self):
+        ''' Interpret measurement distribution as an attributes gage distribution
+            and calculate risk.
+        '''
+        tl, tu = self.speclimits
+        if tl is not None and np.isfinite(tl):
+            tolerance = tl
+            maximum = False
+        else:
+            tolerance = tu
+            maximum = True
+
+        pfa = PFA_gage(self.process_dist, self.measure_dist, tolerance, maximum)
+        pfr = PFR_gage(self.process_dist, self.measure_dist, tolerance, maximum)
+        process_risk = risk.specific_risk(self.process_dist, *self.speclimits).total
+        return RiskGageResults(
+            pfa,
+            pfr,
+            self.process_dist,
+            self.measure_dist,
+            process_risk,
+            tolerance,
+            maximum
+        )
 
     def guardband_tur(self, method: str):
         ''' Apply TUR-based guardband
@@ -523,6 +595,19 @@ class RiskModelSimple:
                                               self.dist_measure(),
                                               -1, 1,
                                               target_PFA=pfa)
+        self.gbf = 1 - gb
+        return self.gbf
+
+    def guardband_pfr(self, pfr=2):
+        ''' Guardband FACTOR to hit the desired PFR.
+
+            Args:
+                pfr: Target PFR
+        '''
+        gb = guardband.target_pfr(self.dist_process(),
+                                  self.dist_measure(),
+                                  -1, 1,
+                                  target_pfr=pfr)
         self.gbf = 1 - gb
         return self.gbf
 

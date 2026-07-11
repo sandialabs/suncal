@@ -9,7 +9,6 @@ import os
 import sys
 import subprocess
 import json
-import pkg_resources
 
 
 # For pulling version numbers
@@ -33,15 +32,6 @@ def get_python_license():
     # Don't know of a way to get this at runtime
     version = sys.version.split()[0]
     return 'Python', formathtml(PSF_LICENSE), version
-
-
-def get_scipy_licensetext():
-    ''' Get license for Scipy from file. Doesn't work in pip-licenses for some reason. '''
-    pkg = pkg_resources.require('scipy')[0]
-    licfile = os.path.join(pkg.location, pkg.project_name, 'LICENSE.txt')
-    with open(licfile, 'r', encoding='utf-8') as f:
-        lictext = f.read()
-    return lictext
 
 
 def build_license_html():
@@ -68,11 +58,7 @@ def build_license_html():
     for lic in jout:
         lictext = lic['LicenseText']
         if lic['LicenseText'] == 'UNKNOWN':
-            if lic['Name'].lower() == 'scipy':
-                # scipy has a LICENSE.txt, but pip-licenses doesn't pick it up?
-                lictext = get_scipy_licensetext()
-            else:
-                print('WARNING - UNKNOWN LICENSE FOR', lic['Name'])
+            print('WARNING - UNKNOWN LICENSE FOR', lic['Name'])
 
         header = template.format(lic['Name'], lic['Version'], lic['License'])
         text = header + formathtml(lictext)

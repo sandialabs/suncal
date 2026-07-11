@@ -44,7 +44,7 @@ def test_curvtrap():
     # PDF should integrate to ~1
     u = distributions.get_distribution('curvtrap', a=2, d=.5)
     x = np.linspace(-3, 3, 1000)
-    integ = np.trapz(u.pdf(x), x)
+    integ = np.trapezoid(u.pdf(x), x)
     assert np.isclose(integ, 1)
 
     # Check PDF at a few points - see GUM-S1 6.4.3.2

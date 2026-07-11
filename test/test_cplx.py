@@ -50,7 +50,7 @@ def test_parse():
     u.var('a').measure(1+1j, uncertainty=0)
     u.var('b').measure(1+1j, uncertainty=0)
     u._build_model_sympy()
-    re, im = u.model.sympys
+    re, im = u.model.functions.values()
 
     ar, br = sympy.symbols('a_real b_real')
     assert (re - ar - br) == 0

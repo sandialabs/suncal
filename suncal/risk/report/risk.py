@@ -56,7 +56,7 @@ class RiskReport:
                     ])
 
         if self.result.measure_dist is not None and self.result.process_dist is not None:
-            hdr.extend(['Global Risk'])
+            hdr.extend(['Average Risk'])
             pfa = self.result.cpfa if conditional else self.result.pfa
             pfr = self.result.pfr
             cols.append([
@@ -339,7 +339,7 @@ class RiskReportGuardbandSweep:
             plt.close(fig)
 
             rpt = report.Report(**kwargs)
-            rpt.hdr('Global Risk vs Guardband', level=2)
+            rpt.hdr('Average Risk vs Guardband', level=2)
             hdr = ['Guardband', 'False Accept %', 'False Reject %']
             gbrange = [report.Number(g) for g in self.result.guardband]
             pfa = [report.Number(p*100) for p in self.result.pfa]
@@ -366,9 +366,10 @@ class RiskReportProbConform:
                     self.result.probconform*100,
                     color='C1')
             ax.set_ylabel('Probability of Conformance %')
-            ax.set_xlabel('Measurement Result')
+            ax.set_xlabel('Measured Value')
             ax.axvline(LL, ls='--', label='Specification Limits', color='C3')
             ax.axvline(UL, ls='--', color='C3')
+            ax.axvline(self.result.nominal, ls=':', color='C5')
             GBL, GBU = self.result.gbofsts
             if GBL != 0 or GBU != 0:
                 ax.axvline(LL+GBL, ls='--', label='Guardband', color='C0')
@@ -377,7 +378,13 @@ class RiskReportProbConform:
 
             rpt = report.Report(**kwargs)
             rpt.hdr('Probability of Conformance', level=2)
-            hdr = ['Measurement Result', 'Probability of Conformance %']
+            rpt.txt('At the measured value of ')
+            rpt.num(self.result.nominal)
+            rpt.txt(' the probability of conformance is ')
+            rpt.num(self.result.poc_nominal*100, fmin=0, postfix='%.')
+            rpt.txt('\n\n')
+
+            hdr = ['Measured Value', 'Probability of Conformance %']
             xx = report.Number.number_array(self.result.measured[::10])
             pc = [report.Number(p) for p in self.result.probconform[::10]*100]
             rows = list(map(list, zip(xx, pc)))
@@ -398,6 +405,7 @@ def risk_sweeper(fig=None, **kwargs):
     sig0 = kwargs.get('sig0', None)
     tbias = kwargs.get('tbias', 0)
     pbias = kwargs.get('pbias', 0)
+    observeditp = kwargs.get('observeditp', False)
 
     # Default values
     gbf_dflt = 1 if gbmode is None else gbmode
@@ -424,7 +432,8 @@ def risk_sweeper(fig=None, **kwargs):
                 GBFdflt=gbf_dflt, itpdflt=itp_dflt,
                 TURdflt=tur_dflt, risk=yvar,
                 sig0=sig0,
-                tbias=tbias, pbias=pbias) * 100
+                tbias=tbias, pbias=pbias,
+                observeditp=observeditp) * 100
 
             xlabel = labels.get(xvar, 'x')
             zlabel = labels.get(zvar, 'z')
@@ -466,3 +475,62 @@ def risk_sweeper(fig=None, **kwargs):
         fig.tight_layout()
         plt.close(fig)
     return rpt
+
+
+class RiskReportGage:
+    ''' Generate risk calculation reports for attributes gages '''
+    def __init__(self, result):
+        self.result = result
+
+    def summary(self, fig=None, **kwargs):
+        ''' Plot PFA/PFR of attributes gage '''
+        part_dist = self.result.product_dist
+        gage_dist = self.result.gage_dist
+        tolerance = self.result.tolerance
+        maximum = self.result.maximum
+
+        with plt.style.context(plotting.plotstyle):
+            fig, _ = plotting.initplot(fig)
+            fig.clf()
+            ax = fig.add_subplot(1, 1, 1)
+
+            xmin = min(part_dist.mean()-part_dist.std()*4, gage_dist.mean()-gage_dist.std()*4)
+            xmax = max(part_dist.mean()+part_dist.std()*4, gage_dist.mean()+gage_dist.std()*4)
+            ymin, ymax = xmin, xmax
+            x = y = np.linspace(xmin, xmax, 300)
+            xx, yy = np.meshgrid(x, y)
+            pdf1 = part_dist.pdf(xx)
+            pdf2 = gage_dist.pdf(yy)
+
+            cmap = mpl.colors.LinearSegmentedColormap.from_list('suncalblues', ['#007a8611', '#007a86FF'])
+            ax.contourf(xx, yy, (pdf1*pdf2)**.5, levels=8, cmap=cmap)
+            ax.axhline(tolerance, color='black', ls=':', lw=1)
+            ax.axvline(tolerance, color='black', ls=':', lw=1)
+            ax.plot(x, x, ls='--', color='black', label='Part = Gage')
+            ax.set_xlabel('Product Value')
+            ax.set_ylabel('Gage Value')
+            ax.set_ylim(ymin, ymax)
+            ax.set_xlim(xmin, xmax)
+
+            upperinf = xmax + 1
+            lowerinf = xmin - 1
+            if maximum:
+                # Parts left of diagonal line are accepted by the gage
+                ax.fill_between(x, y1=upperinf, y2=x, where=(x > tolerance), color='C1', alpha=.15, label='False Accept')
+                ax.fill_between(x, y1=x, y2=lowerinf, where=(x < tolerance), color='C3', alpha=.15, label='False Reject')
+            else:
+                # Parts right of diagonal line are accepted by the gage
+                ax.fill_between(x, y1=x, y2=lowerinf, where=(x < tolerance), color='C1', alpha=.15, label='False Accept')
+                ax.fill_between(x, y1=upperinf, y2=x, where=(x > tolerance), color='C3', alpha=.15, label='False Reject')
+
+            ax.legend(loc='upper left', fontsize=10)
+
+            rpt = report.Report(**kwargs)
+            hdr = ['Parameter', 'Value']
+            rows = [
+                ['Average PFA:', report.Number(self.result.pfa*100, fmt='auto', fmin=1, postfix='%')],
+                ['Average PFR:', report.Number(self.result.pfr*100, fmt='auto', fmin=1, postfix='%')],
+                ['True Nonconformance Rate:', report.Number(self.result.process_risk*100, fmt='auto', fmin=1, postfix='%')]
+            ]
+            rpt.table(rows=rows, hdr=hdr)
+        return rpt

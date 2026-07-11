@@ -1,0 +1,102 @@
+- functions:
+  - desc: 'Piston pressure gage'
+    expr: -p + g_l*m_w*(-rho_a/rho_w + 1)/(A_0*(alpha*dT + 1)*(lamda*p + 1)) = 0; p~41000.0
+    name: p
+    tolerance: null
+    units: null
+  inputs:
+  - autocorrelate: true
+    desc: 'Temperature coefficient'
+    mean: 2.0e-05
+    name: alpha
+    numnewmeas: null
+    uncerts: []
+    units: 1 / kelvin
+  - autocorrelate: true
+    desc: 'Density of air'
+    mean: 7.844e-08
+    name: rho_a
+    numnewmeas: null
+    uncerts:
+    - degf: .inf
+      desc: ''
+      dist: normal
+      name: Type B
+      std: 6.42e-08
+      units: kilogram / meter ** 3
+    units: kilogram / meter ** 3
+  - autocorrelate: true
+    desc: 'Area of piston'
+    mean: 0.000335
+    name: A_0
+    numnewmeas: null
+    uncerts:
+    - degf: .inf
+      desc: ''
+      dist: normal
+      name: Type B
+      std: 1.0e-05
+      units: meter ** 2
+    units: meter ** 2
+  - autocorrelate: true
+    desc: 'Local gravity'
+    mean: 9.792
+    name: g_l
+    numnewmeas: null
+    uncerts:
+    - degf: .inf
+      desc: ''
+      dist: normal
+      name: Type B
+      std: 2.5e-09
+      units: meter / second ** 2
+    units: meter / second ** 2
+  - autocorrelate: true
+    desc: 'Applied mass'
+    mean: 1.4
+    name: m_w
+    numnewmeas: null
+    uncerts:
+    - degf: .inf
+      desc: ''
+      dist: normal
+      name: Type B
+      std: 1.5e-06
+      units: kilogram
+    units: kilogram
+  - autocorrelate: true
+    desc: 'Density of applied mass'
+    mean: 7800.0
+    name: rho_w
+    numnewmeas: null
+    uncerts:
+    - degf: .inf
+      desc: ''
+      dist: normal
+      name: Type B
+      std: 45.033
+      units: kilogram / meter ** 3
+    units: kilogram / meter ** 3
+  - autocorrelate: true
+    desc: 'Temperature difference from nominal 20C'
+    mean: 2.2
+    name: dT
+    numnewmeas: null
+    uncerts:
+    - degf: .inf
+      desc: ''
+      dist: normal
+      name: Type B
+      std: 0.05
+      units: delta_degree_Celsius
+    units: delta_degree_Celsius
+  - autocorrelate: true
+    desc: 'Distortion coefficient of cylinder assembly'
+    mean: 4.0e-06
+    name: lamda
+    numnewmeas: null
+    uncerts: []
+    units: 1 / pascal
+  mode: uncertainty
+  name: uncertainty
+  samples: 5000

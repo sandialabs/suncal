@@ -144,11 +144,7 @@ class UncertPropWidget(QtWidgets.QWidget):
             err_msg('No functions to compute!')
             return
 
-        try:
-            self.component.load_config(config)
-        except RecursionError:
-            err_msg('Circular reference in function definitions')
-            return
+        self.component.load_config(config)
 
         if not self.pginput.symbolicmode:
             # Check units/dimensionality
@@ -163,6 +159,19 @@ class UncertPropWidget(QtWidgets.QWidget):
                 return
             except RecursionError:
                 err_msg('Error - possible circular reference in function definitions')
+                return
+
+        if (not self.pginput.symbolicmode and
+            hasattr(self.component.model, 'implicit') and
+            any(self.component.model.implicit) and
+            self.component.nsamples > 100000
+        ):
+            msgbox = QtWidgets.QMessageBox()
+            msgbox.setWindowTitle('Suncal')
+            msgbox.setText(f'Implicit measurement model with {self.component.nsamples:,d} Monte Carlo samples could take a long time. Continue?')
+            msgbox.setStandardButtons(QtWidgets.QMessageBox.StandardButton.Yes |
+                                      QtWidgets.QMessageBox.StandardButton.No)
+            if msgbox.exec() == QtWidgets.QMessageBox.StandardButton.No:
                 return
 
         try:

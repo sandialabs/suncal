@@ -7,6 +7,7 @@ import numpy as np
 from scipy import stats
 import matplotlib as mpl
 import matplotlib.pyplot as plt
+import matplotlib.backends.backend_svg  # For nuitka to identify dependency
 
 from ..common import distributions
 
@@ -163,7 +164,10 @@ def fitdist(y, distname='norm', fig=None, qqplot=False, bins='sqrt', points=None
     ax = fig.add_subplot(1, qqplot+1, 1)
     y = y[np.isfinite(y)]
 
-    ax.hist(y, density=True, bins=bins)
+    rng = (y.min(), y.max())
+    if np.isclose(rng[0], rng[1]):
+        rng = (rng[0]*.9, rng[1]*1.1)  # MPL problems if rng is too small
+    ax.hist(y, density=True, range=rng, bins=bins)
 
     if tolerance:
         if np.isfinite(tolerance.flow):

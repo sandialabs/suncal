@@ -1,5 +1,4 @@
 ''' Results of curve fit calculation '''
-
 from dataclasses import dataclass
 import numpy as np
 import sympy
@@ -37,9 +36,23 @@ class CurveFitResults:
             idx = self.setup.coeffnames.index(name)
             self.poc[name] = tol.probability_conformance(self.coeffs[idx], self.uncerts[idx], self.degf)
 
+    @property
+    def num_xvar(self):
+        return self.setup.arr.num_xvars
+
     def y(self, x):
         ''' Predict Y value at X '''
         return self.setup.function(x, *self.coeffs)
+
+    def xname(self, xdim=0):
+        ''' Get name of x variable '''
+        if isinstance(self.setup.xname, str):
+            return f'{self.setup.xname}{xdim+1}'
+        return self.setup.xname[xdim]
+
+    def yname(self):
+        ''' Get name of y variable '''
+        return self.setup.yname
 
     def confidence_band(self, x, k=1, conf=None):
         ''' Get confidence band uncertainty at x values
@@ -52,13 +65,20 @@ class CurveFitResults:
         if conf is not None:
             k = k_factor(conf, self.degf)
 
+        if self.setup.points.ndim == 2:
+            xvals = np.atleast_2d(x)
+            squeeze = xvals.shape[0] == 1
+        else:
+            xvals = np.atleast_1d(x)
+            squeeze = np.isscalar(x)
+
         dp = self.uncerts / 1E6
         band = []
-        for xval in np.atleast_1d(x):
+        for xval in xvals:
             grad = optimize.approx_fprime(self.coeffs, lambda p, xx=xval: self.setup.function(xx, *p), epsilon=dp)
             band.append(grad.T @ np.atleast_2d(self.covariance) @ grad)
         band = k * np.sqrt(np.array(band))
-        return band[0] if np.isscalar(x) else band
+        return band[0] if squeeze else band
 
     def prediction_band(self, x, k=1, conf=None, mode='Syx'):
         ''' Get prediction band uncertainty at x values
@@ -147,7 +167,7 @@ class CurveFitResults:
             expr = sympy.Eq(sympy.Symbol('y'), expr)
         return expr
 
-    def confidence_expr(self, subs=True, n=4, full=True):
+    def confidence_expr(self, subs=True, n=4, full=True, variance=False):
         ''' Return sympy expression for confidence interval as function of x
 
             Args:
@@ -161,17 +181,47 @@ class CurveFitResults:
                 Syx to determine y-uncertainty.
         '''
         if self.setup.modelname == 'line':
-            expr = sympy.sympify('S_yx * sqrt(1 / n + (x-xbar)**2 * (sigma_b/S_yx)^2)')
+            if variance:
+                # Sympy not great at simplifying sqrt(x^2)
+                expr = sympy.sympify('S_yx**2 * (1 / n + (x-xbar)**2 * (sigma_b/S_yx)^2)')
+            else:
+                expr = sympy.sympify('S_yx * sqrt(1 / n + (x-xbar)**2 * (sigma_b/S_yx)^2)')
             if subs:
-                expr = expr.subs({'S_yx': self.residuals.Syx,
-                                  'n': len(self.setup.points),
-                                  'xbar': self.setup.points.x.mean(),
-                                  'sigma_b': self.uncerts[0]}).evalf(n=n)
+                expr = expr.evalf(
+                    subs={'S_yx': self.residuals.Syx,
+                          'n': len(self.setup.points),
+                          'xbar': self.setup.points.x.mean(),
+                          'sigma_b': self.uncerts[0]},
+                    n=n)
 
-            if full:
-                expr = sympy.Eq(sympy.Symbol('u_{conf}'), expr)
         else:
-            raise NotImplementedError('uconf expression only implemented for line fits.')
+            func = self.setup.expression
+            coeff_names = self.setup.coeffnames
+            values = dict(zip(coeff_names, self.coeffs))
+            cov = []
+            for name1 in coeff_names:
+                cov_row = []
+                for name2 in coeff_names:
+                    if name1 == name2:
+                        cov_row.append(sympy.symbols(f'u_{name1}')**2)
+                    else:
+                        cov_row.append(sympy.symbols(f'u_{name1}{name2}'))
+                cov.append(cov_row)
+
+            delf = sympy.Matrix([
+                sympy.Derivative(func, name).doit() for name in coeff_names
+            ])
+            if not subs:
+                expr = ((sympy.transpose(delf) * sympy.Matrix(cov) * delf)[0]).simplify()
+            else:
+                expr = ((sympy.transpose(delf) * sympy.Matrix(self.covariance) * delf)[0])
+                expr = expr.expand().evalf(subs=values, n=n)
+
+            if not variance:
+                expr = sympy.sqrt(expr)
+
+        if full:
+            expr = sympy.Eq(sympy.Symbol('u_{conf}'), expr)
         return expr
 
     def prediction_expr(self, subs=True, n=4, full=True, mode='Syx'):
@@ -209,11 +259,23 @@ class CurveFitResults:
                     subsdict.update({'u_y': sigy[-1]})
 
             if subs:
-                expr = expr.subs(subsdict).evalf(n=n)
-            if full:
-                expr = sympy.Eq(sympy.Symbol('u_{pred}'), expr)
+                expr = expr.simplify().evalf(subs=subsdict, n=n)
+
         else:
-            raise NotImplementedError('upred expression only implemented for line fits.')
+            expr = self.confidence_expr(subs=subs, full=False, variance=True)
+            if mode == 'Syx':
+                uy = sympy.Symbol('S_yx')
+                subsdict = {uy: self.residuals.Syx}
+            else:
+                uy = sympy.Symbol('u_y')
+                subsdict = {uy: sigy[-1] if mode == 'sigylast' else sigy[0]}
+
+            expr = sympy.sqrt(uy**2 + expr).simplify()
+            if subs:
+                expr = expr.evalf(subs=subsdict, n=n)
+
+        if full:
+            expr = sympy.Eq(sympy.Symbol('u_{pred}'), expr)
         return expr
 
     def interval_expression(self):
@@ -279,7 +341,7 @@ class CurveFitResults:
         if ub is None:
             # Need to numerically integrate uconf
             xx = np.linspace(t1, t2, num=200)
-            ub = 1/(t2-t1) * np.trapz(self.confidence_band(xx)**2, xx)
+            ub = 1/(t2-t1) * np.trapezoid(self.confidence_band(xx)**2, xx)
         else:
             ub = ub.subs(subs).evalf()
         uncert = np.sqrt(float(ubbar + ub + uy**2))
@@ -330,7 +392,6 @@ class CurveFitResults:
         if verbose:
             print(f'[{b1 - ta*sb} < {paramname} < {b1 + ta*sb}] \u2285 {nominal} --> {ok}')
         return ok
-
 
 
 @dataclass

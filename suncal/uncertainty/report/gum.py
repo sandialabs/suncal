@@ -16,7 +16,7 @@ class ReportGum:
     ''' Reports and plots of GUM calculation results
 
         Args:
-            gumresults: McResults instance
+            gumresults: GumResults instance
             units: dictionary of functionname: Pint units to convert
     '''
     def __init__(self, gumresults):
@@ -77,7 +77,8 @@ class ReportGum:
                 report.Number(poc*100, fmin=1, suffix=' %')
             ))
         rpt = report.Report(**kwargs)
-        rpt.table(rows, hdr=hdr)
+        if rows:
+            rpt.table(rows, hdr=hdr)
         return rpt
 
     def sensitivity(self, **kwargs):
@@ -125,8 +126,12 @@ class ReportGum:
     def model(self, **kwargs):
         ''' Report the measurement model functions '''
         rpt = report.Report(**kwargs)
-        for funcname, expr in zip(self._results.functionnames, self._results.symbolic.functions):
-            expr = sympy.Eq(sympy.Symbol(funcname), expr)
+        for funcname, expr, implicit in zip(self._results.functionnames, self._results.symbolic.functions, self._results.symbolic.implicit):
+            if not implicit:
+                f = sympy.Symbol(funcname)
+                expr = sympy.Eq(f, -expr+f)
+            else:
+                expr = sympy.Eq(expr, 0)
             rpt.mathtex(self._results.latexify(expr), end='\n\n')
         return rpt
 
@@ -172,48 +177,129 @@ class ReportGum:
         rpt.table(rows, hdr=['Variable', 'Std. Uncertainty', 'Deg. Freedom'])
         return rpt
 
-    def input_sensitivity(self, solve=False, as_partials=False, **kwargs):
-        ''' Report sensitivity coefficients/matrix Cx
-
-            Args:
-                solve (bool): Show numeric values instead of symbols
-                as_partials (bool): Show as partial derivatives
-        '''
-        # as_partials only applies to multi-output, matrix form of report.
+    def sensitivity_single(self, solve=False, **kwargs):
+        ''' Report single-output sensitivity coefficients (no matrix) '''
+        assert self._noutputs == 1
         rpt = report.Report(**kwargs)
-        Cx_symbolic = self._results.sensitivity(True)
-        Cx_numeric = self._results.sensitivity(False)
+        fname = self._results.functionnames[0]
 
-        # Single output, report list of coefficients
-        if self._noutputs <= 1:
-            Cx_numeric = self._results.sensitivity()
-            fname = self._results.functionnames[0]
+        if self._results.symbolic.implicit[0]:
+            Cy_symbolic = self._results.sensitivity(True, 'Cy')[fname]
+            Cx_symbolic = self._results.sensitivity(True, 'Cx')[fname]
+            C_symbolic = self._results.sensitivity(True, 'C')[fname]
+
+            rpt.hdr('Partial Derivatives:', level=4)
+            # Cy
+            expr = sympy.Eq(sympy.Derivative(self._results.symbolic.functions[0], sympy.Symbol(fname)), Cy_symbolic[fname])
+            latex = self._results.latexify(expr)
+            if solve:
+                Cy_numeric = self._results.sensitivity(False, 'Cy')[fname]
+                latex += ' = ' + report.Number(Cy_numeric[fname], **kwargs).string()
+            rpt.mathtex(latex, end='\n\n')
+            # Cx
             for varname in self._results.variablenames:
-                expr = sympy.Eq(sympy.Derivative(sympy.Symbol(fname), sympy.Symbol(varname)), Cx_symbolic[fname][varname])
+                expr = sympy.Eq(sympy.Derivative(self._results.symbolic.functions[0], sympy.Symbol(varname)), Cx_symbolic[varname])
                 latex = self._results.latexify(expr)
                 if solve:
+                    Cx_numeric = self._results.sensitivity(False, 'Cx')[fname]
+                    latex += ' = ' + report.Number(Cx_numeric[varname], **kwargs).string()
+                rpt.mathtex(latex, end='\n\n')
+                
+            # C
+            rpt.hdr('Sensitivity Coefficients:', level=4)
+            for varname in self._results.variablenames:
+                latex = varname + ' \\mapsto ' + self._results.latexify(C_symbolic[varname])
+                if solve:
+                    C_numeric = self._results.sensitivity(False, 'C')[fname]
+                    latex += ' = ' + report.Number(C_numeric[varname], **kwargs).string()
+                rpt.mathtex(latex, end='\n\n')
+
+        else:
+            Cx_symbolic = self._results.sensitivity(True, 'Cx')[fname]
+            for varname in self._results.variablenames:
+                expr = sympy.Eq(sympy.Derivative(sympy.Symbol(fname), sympy.Symbol(varname)), Cx_symbolic[varname])
+                latex = self._results.latexify(expr)
+                if solve:
+                    Cx_numeric = self._results.sensitivity()[fname]
                     latex += ' = '
                     kwargs.update({'unitfmt': 'latex'})
-                    latex += report.Number(Cx_numeric[fname][varname], **kwargs).string()
+                    latex += report.Number(Cx_numeric[varname], **kwargs).string()
                 rpt.mathtex(latex, end='\n\n')
-            return rpt
+        return rpt
 
-        # Multiple outputs, return matrix
-        # Three choices: matrix of d/dx[y];  matrix of solved derivatives;  matrix of numeric values
-        rows = []
-        hdr = ['&nbsp;'] + self._results.variablenames
-        for funcname in self._results.functionnames:
-            row = [report.Math(funcname)]
-            for varname in self._results.variablenames:
-                if as_partials:
-                    row.append(report.Math.from_sympy(sympy.Derivative(sympy.Symbol(funcname), sympy.Symbol(varname))))
-                elif not solve:
-                    tex = self._results.latexify(Cx_symbolic[funcname][varname])
-                    row.append(report.Math.from_latex(tex))
-                else:
-                    row.append(report.Number(Cx_numeric[funcname][varname]))
-            rows.append(row)
-        rpt.table(rows, hdr)
+    def sensitivity_matrix(self, solve=False, **kwargs):
+        ''' Report sensitivity coefficients for multi-output models '''
+        assert self._noutputs > 1
+        rpt = report.Report(**kwargs)
+
+        def report_matrix_Cx():
+            Cx_symbolic = self._results.sensitivity(True, 'Cx')
+            Cx_numeric = self._results.sensitivity(False, 'Cx')
+            rows = []
+            hdr = ['&nbsp;'] + self._results.variablenames
+            for funcname in self._results.functionnames:
+                row = [report.Math(funcname)]
+                for varname in self._results.variablenames:
+                    if not solve:
+                        tex = self._results.latexify(
+                            sympy.Eq(
+                                sympy.Derivative(sympy.Symbol(funcname), sympy.Symbol(varname)),
+                                Cx_symbolic[funcname][varname]
+                            )
+                        )
+                        row.append(report.Math.from_latex(tex))
+                    else:
+                        row.append(report.Number(Cx_numeric[funcname][varname]))
+                rows.append(row)
+            rpt.table(rows, hdr)
+
+        def report_matrix_cy():
+            Cy_symbolic = self._results.sensitivity(True, 'Cy')
+            Cy_numeric = self._results.sensitivity(False, 'Cy')
+            rows = []
+            hdr = ['&nbsp;'] + self._results.functionnames
+            for funcname in self._results.functionnames:
+                row = [report.Math(funcname)]
+                for fname2 in self._results.functionnames:
+                    if not solve:
+                        tex = r'\frac{\partial}{\partial ' + fname2 + '} = '
+                        tex += self._results.latexify(Cy_symbolic[funcname][fname2]).strip('$')
+                        row.append(report.Math.from_latex(tex))
+                    else:
+                        row.append(report.Number(Cy_numeric[funcname][fname2]))
+                rows.append(row)
+            rpt.table(rows, hdr)
+
+        def report_matrix_c():
+            Cx_symbolic = self._results.sensitivity(True, 'C')
+            Cx_numeric = self._results.sensitivity(False, 'C')
+            rows = []
+            hdr = ['&nbsp;'] + self._results.variablenames
+            for funcname in self._results.functionnames:
+                row = [report.Math(funcname)]
+                for varname in self._results.variablenames:
+                    if not solve:
+                        tex = self._results.latexify(
+                            Cx_symbolic[funcname][varname]
+                        )
+                        row.append(report.Math.from_latex(tex))
+                    else:
+                        row.append(report.Number(Cx_numeric[funcname][varname]))
+                rows.append(row)
+            rpt.table(rows, hdr)
+
+        if any(self._results.symbolic.implicit):
+            rpt.hdr('Input Sensitivity Matrix [Cx]:', level=4)
+            report_matrix_Cx()
+
+            rpt.hdr('Output Sensitivity Matrix [Cy]:', level=4)
+            report_matrix_cy()
+
+            rpt.hdr('Sensitivity Matrix [C]:', level=4)
+            report_matrix_c()
+        else:
+            rpt.hdr('Sensitivity Matrix [Cx]:', level=4)
+            report_matrix_Cx()
         return rpt
 
     def model_uncert_equations(self, solve=False, **kwargs):
@@ -224,7 +310,11 @@ class ReportGum:
         '''
         rpt = report.Report(**kwargs)
         if self._noutputs > 1:
-            rpt.mathtex(r'U_y = C_x \cdot U_x \cdot C_x^T', end='\n\n')
+            if any(self._results.symbolic.implicit):
+                rpt.mathtex(r'C = C_y^{-1} \cdot C_x', end='\n\n')
+                rpt.mathtex(r'U_y = C \cdot U_x \cdot C^T', end='\n\n')
+            else:
+                rpt.mathtex(r'U_y = C_x \cdot U_x \cdot C_x^T', end='\n\n')
             rpt.txt('Uncertainties')
             rpt.mathtex(r'\left(\sqrt{\mathrm{diag}(U_y)}\right):', end='\n\n')
         for funcname in self._results.functionnames:
@@ -279,31 +369,21 @@ class ReportGum:
         rpt.append(self.model(**kwargs))
 
         if multiout or self._results.has_correlated_inputs():
-            rpt.hdr('Input Covariance Matrix [Ux]:', level=3)
-            rpt.append(self.input_covariance(solve=False, **kwargs))
-            if solve:  # Include both tables
-                rpt.append(self.input_covariance(solve=True, **kwargs))
+            rpt.hdr('Input Covariance Matrix [Ux]:', level=4)
+            rpt.append(self.input_covariance(solve=solve, **kwargs))
         else:
-            rpt.hdr('Measured Values:', level=3)
+            rpt.hdr('Measured Values:', level=4)
             rpt.append(self.measured_values(solve=solve, **kwargs))
 
         if multiout:
-            rpt.hdr('Sensitivity Matrix [Cx]:', level=3)
-            rpt.hdr('Partial Derivatives:', level=5)
-            rpt.append(self.input_sensitivity(as_partials=True))
-            rpt.hdr('Computed Partial Derivatives:', level=5)
-            rpt.append(self.input_sensitivity(solve=False))
-            if solve:
-                rpt.hdr('Values:', level=5)
-                rpt.append(self.input_sensitivity(solve=True))
+            rpt.append(self.sensitivity_matrix(solve=solve, **kwargs))
         else:
-            rpt.hdr('Sensitivity Coefficients', level=3)
-            rpt.append(self.input_sensitivity(solve=solve))
+            rpt.append(self.sensitivity_single(solve=solve, **kwargs))
 
         if multiout:
-            rpt.hdr('Combined Covariance [Uy]:', level=3)
+            rpt.hdr('Combined Covariance [Uy]:', level=4)
         else:
-            rpt.hdr('Combined Uncertainty:', level=3)
+            rpt.hdr('Combined Uncertainty:', level=4)
         rpt.append(self.model_uncert_equations(solve=solve, **kwargs))
 
         rpt.hdr('Effective degrees of freedom:', level=3)
@@ -436,7 +516,7 @@ class GumAxisPlot:
 
         if z is not None:
             contours = np.linspace(z.min(), z.max(), 11)[1:]
-            ax.contour(x, y, z, contours, cmap=cmap, **kwargs)
+            ax.contour(x, y, z, contours, cmap=cmap)
             ax.locator_params(nbins=5)
 
             if labeldesc:

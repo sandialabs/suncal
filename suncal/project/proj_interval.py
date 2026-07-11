@@ -4,8 +4,9 @@ from dataclasses import asdict
 from .component import ProjectComponent
 from ..intervals import (A3Params, a3_testinterval,
                          S2Params, s2_binom_interval,
-                         VariablesData, variables_reliability_target,
-                         variables_uncertainty_target, ResultsVariablesInterval)
+                         VariablesData,
+                         VariablesReliabilityTarget,
+                         VariablesUncertaintyTarget)
 from ..intervals.binoms2 import get_passfails
 
 
@@ -187,43 +188,42 @@ class ProjectIntervalBinomAssets(ProjectComponent):
 
 
 class ProjectIntervalVariables(ProjectComponent):
-    ''' Variables interval project component '''
+    ''' Variables interval pro:ject component '''
     def __init__(self, name='intervalvariables'):
         super().__init__(name=name)
         self.data: VariablesData = VariablesData([], [])
+        self._mode_reliability: bool = True  # Calculate reliability target or uncertainty target?
         self.utarget = 0.5
-        self.rel_lo = -1
-        self.rel_hi = 1
-        self.rel_conf = 0.95
+        self.tol_lo = -1
+        self.tol_hi = 1
+        self.reliability_target = 0.95
         self.order = 1
         self.maxorder = 1
-        self._result_uncertainty = None
-        self._result_reliability = None
+        self._result = None
 
     @property
-    def result_reliability(self):
-        if self._result_reliability is None:
-            self.calculate_reliability_target()
-        return self._result_reliability
-
-    @property
-    def result_uncertainty(self):
-        if self._result_uncertainty is None:
-            self.calculate_uncertainty_target()
-        return self._result_uncertainty
+    def result(self):
+        if self._result is None:
+            if self._mode_reliability:
+                return self._calculate_reliability_target()
+            return self._calculate_uncertainty_target()
+        return self._result
 
     def get_config(self):
         config = super().get_config()
         config['mode'] = 'intervalvariables'
-        config['deltas'] = self.data.deltas
-        config['dt'] = self.data.dt
+        config['deltas'] = self.data.deltas.tolist()
+        config['dt'] = self.data.dt.tolist()
         config['u0'] = self.data.u0
+        config['u0_degf'] = self.data.u0_degf
         config['y0'] = self.data.y0
-        config['utarget'] = self.utarget
         config['m'] = self.order
         config['maxm'] = self.maxorder
-        config['rlimits'] = [self.rel_lo, self.rel_hi]
-        config['rconf'] = self.rel_conf
+        if self._mode_reliability:
+            config['tolerance'] = [self.tol_lo, self.tol_hi]
+            config['reliability_target'] = self.reliability_target
+        else:
+            config['utarget'] = self.utarget
         return config
 
     def load_config(self, config):
@@ -233,11 +233,14 @@ class ProjectIntervalVariables(ProjectComponent):
             dt=config.get('dt', []),
             deltas=config.get('deltas', []),
             u0=config.get('u0', 0),
+            u0_degf=config.get('u0_degf', float('inf')),
             y0=config.get('y0', 0))
+
+        self._mode_reliability = 'utarget' not in config
         self.utarget = config.get('utarget')
-        self.rel_lo = config.get('rlimits', (0, 0))[0]
-        self.rel_hi = config.get('rlimits', (0, 0))[1]
-        self.rel_conf = config.get('rconf')
+        self.tol_lo = config.get('tolerance', config.get('rlimits', (0, 0)))[0]
+        self.tol_hi = config.get('tolerance', config.get('rlimits', (0, 0)))[1]
+        self.reliability_target = config.get('reliability_target', config.get('rconf', .95))
         self.order = config.get('m')
         self.maxorder = config.get('maxm')
 
@@ -247,26 +250,35 @@ class ProjectIntervalVariables(ProjectComponent):
         new.load_config(config)
         return new
 
-    def calculate_reliability_target(self):
+    def _calculate_reliability_target(self):
         ''' Calculate the interval '''
-        self._result_reliability = variables_reliability_target(
-            self.data, self.rel_lo, self.rel_hi, self.rel_conf,
+        calc = VariablesReliabilityTarget(
+            self.data.dt,
+            self.data.deltas,
+            self.data.u0,
+            self.data.y0,
+            self.data.u0_degf)
+        self._result = calc.calculate(
+            self.tol_lo, self.tol_hi, self.reliability_target,
             self.order, self.maxorder)
-        return self._result_reliability
+        return self._result
 
-    def calculate_uncertainty_target(self):
+    def _calculate_uncertainty_target(self):
         ''' Calculate the interval '''
-        self._result_uncertainty = variables_uncertainty_target(
-            self.data, self.utarget, self.order, self.maxorder)
-        return self._result_uncertainty
+        calc = VariablesUncertaintyTarget(
+            self.data.dt,
+            self.data.deltas,
+            self.data.u0,
+            self.data.y0,
+            self.data.u0_degf)
+        self._result = calc.calculate(self.utarget, self.order, self.maxorder)
+        return self._result
 
     def calculate(self):
-        ''' Calculate both '''
-        self.calculate_reliability_target()
-        self.calculate_uncertainty_target()
-        self._result = ResultsVariablesInterval(self._result_uncertainty,
-                                                self._result_reliability)
-        return self._result
+        ''' Calculate '''
+        if self._mode_reliability:
+            return self._calculate_reliability_target()
+        return self._calculate_uncertainty_target()
 
 
 class ProjectIntervalVariablesAssets(ProjectComponent):
@@ -277,53 +289,52 @@ class ProjectIntervalVariablesAssets(ProjectComponent):
                                                           'enddates': [],
                                                           'passfail': []}}
         self.data = VariablesData(dt=[], deltas=[])
+        self._mode_reliability: bool = True  # Calculate reliability target or uncertainty target?
         self.utarget = 0.5
-        self.rel_lo = -1
-        self.rel_hi = 1
-        self.rel_conf = 0.95
+        self.tol_lo = -1
+        self.tol_hi = 1
+        self.reliability_target = 0.95
         self.order = 1
         self.maxorder = 1
         self._result = None
-        self._result_uncertainty = None
-        self._result_reliability = None
 
     @property
-    def result_reliability(self):
-        if self._result_reliability is None:
-            self.calculate_reliability_target()
-        return self._result_reliability
-
-    @property
-    def result_uncertainty(self):
-        if self._result_uncertainty is None:
-            self.calculate_uncertainty_target()
-        return self._result_uncertainty
+    def result(self):
+        if self._result is None:
+            if self._mode_reliability:
+                return self._calculate_reliability_target()
+            return self._calculate_uncertainty_target()
+        return self._result
 
     def get_config(self):
         config = super().get_config()
         config['mode'] = 'intervalvariablesasset'
         config['assets'] = self.assets
-        config['utarget'] = self.utarget
         config['m'] = self.order
         config['maxm'] = self.maxorder
-        config['rlimits'] = self.rel_lo, self.rel_hi
-        config['rconf'] = self.rel_conf
+        if self._mode_reliability:
+            config['tolerance'] = [self.tol_lo, self.tol_hi]
+            config['reliability_target'] = self.reliability_target
+        else:
+            config['utarget'] = self.utarget
         return config
 
     def load_config(self, config):
         ''' Load configration into Component '''
         self.description = config.get('description', config.get('desc'))
         self.assets = config.get('assets', {})
+        self._mode_reliability = 'utarget' not in config
         self.utarget = config.get('utarget')
-        self.rel_lo = config.get('rlimits', (0, 0))[0]
-        self.rel_hi = config.get('rlimits', (0, 0))[1]
-        self.rel_conf = config.get('rconf')
+        self.tol_lo = config.get('tolerance', config.get('rlimits', (0, 0)))[0]
+        self.tol_hi = config.get('tolerance', config.get('rlimits', (0, 0)))[1]
+        self.reliability_target = config.get('reliability_target', config.get('rconf', .95))
         self.order = config.get('m')
         self.maxorder = config.get('maxm')
-        self.data = VariablesData.from_assets(self.assets.values(),
-                                              u0=config.get('u0', 0),
-                                              y0=config.get('y0', 0),
-                                              kvalue=config.get('kvalue', 1))
+        self.data = VariablesData.from_assets(
+            self.assets.values(),
+            u0=config.get('u0', 0),
+            y0=config.get('y0', 0),
+        )
 
     @classmethod
     def from_config(cls, config):
@@ -331,23 +342,32 @@ class ProjectIntervalVariablesAssets(ProjectComponent):
         new.load_config(config)
         return new
 
-    def calculate_reliability_target(self):
+    def _calculate_reliability_target(self):
         ''' Calculate the interval '''
-        self._result_reliability = variables_reliability_target(
-            self.data, self.rel_lo, self.rel_hi, self.rel_conf,
+        calc = VariablesReliabilityTarget(
+            self.data.dt,
+            self.data.deltas,
+            self.data.u0,
+            self.data.y0,
+            self.data.u0_degf)
+        self._result = calc.calculate(
+            self.tol_lo, self.tol_hi, self.reliability_target,
             self.order, self.maxorder)
-        return self._result_reliability
+        return self._result
 
-    def calculate_uncertainty_target(self):
+    def _calculate_uncertainty_target(self):
         ''' Calculate the interval '''
-        self._result_uncertainty = variables_uncertainty_target(
-            self.data, self.utarget, self.order, self.maxorder)
-        return self._result_uncertainty
+        calc = VariablesUncertaintyTarget(
+            self.data.dt,
+            self.data.deltas,
+            self.data.u0,
+            self.data.y0,
+            self.data.u0_degf)
+        self._result = calc.calculate(self.utarget, self.order, self.maxorder)
+        return self._result
 
     def calculate(self):
-        ''' Calculate both '''
-        self.calculate_reliability_target()
-        self.calculate_uncertainty_target()
-        self._result = ResultsVariablesInterval(self._result_uncertainty,
-                                                self._result_reliability)
-        return self._result
+        ''' Calculate '''
+        if self._mode_reliability:
+            return self._calculate_reliability_target()
+        return self._calculate_uncertainty_target()

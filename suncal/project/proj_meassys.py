@@ -15,11 +15,12 @@ class ProjectMeasSys(ProjectComponent):
     def __init__(self, name: str = 'system'):
         super().__init__(name=name)
         self.model = MeasureSystem()
-        self._result = self.model
+        self._result = None
 
     def calculate(self) -> 'SystemResult':
         ''' Calculate values '''
-        return self.model.calculate()
+        self._result = self.model.calculate()
+        return self._result
 
     def units_report(self, **kwargs):
         ''' Create report showing units of all parameters '''

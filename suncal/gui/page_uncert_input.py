@@ -9,7 +9,7 @@ from matplotlib.figure import Figure
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from pint import PintError
 
-from ..common import report, uparser, ttable, unitmgr
+from ..common import uparser, ttable, unitmgr, report
 from ..common.limit import Limit
 from ..uncertainty.variables import Typeb, RandomVariable
 from ..uncertainty import Model
@@ -168,8 +168,12 @@ class FunctionTableWidget(QtWidgets.QTableWidget):
                 expr = self.item(row, self.COL_EXPR).text()
 
             # Check Expression
+            if '=' in expr:
+                part1, part2 = expr.split('=')
+                expr = part1 if part1.strip() != '0' else part2
+
             try:
-                fn = uparser.parse_math_with_quantities(expr, name=name)
+                fn = uparser.parse_math_with_quantities(expr)[0]
             except (ValueError, PintError):
                 fn = None
             else:
@@ -293,7 +297,6 @@ class FunctionTableWidget(QtWidgets.QTableWidget):
             rem = menu.addAction('Remove measurement function')
             add.triggered.connect(self.addRow)
             rem.triggered.connect(self.remRow)
-
             solve = menu.addMenu('Solve for')
             for symbol in fn.free_symbols:
                 act = solve.addAction(str(symbol))
@@ -1339,7 +1342,9 @@ class PageInput(QtWidgets.QWidget):
         # config is just function list
         exprs = []
         for f in config:
-            if f['expr'] and f['name']:
+            if '=' in f['expr'] and ';' in f['expr']:
+                exprs.append(f['expr'])
+            elif f['expr'] and f['name']:
                 exprs.append(f"{f['name']}={f['expr']}")
         model = Model(*exprs)
         varnames = model.varnames

@@ -187,13 +187,21 @@ class ProjectUncert(ProjectComponent):
             d['unitdefs'] = customunits
 
         if self.model.functionnames:  # Callable models won't have this
-            for i, funcname in enumerate(self.model.functionnames):
+            for i, y in enumerate(self.model.Y):
+                name = str(y)
+                if self.model.implicit[i]:
+                    expr = f'{self.model.H[i]} = 0; {name}'
+                    if (guess := self.model.implicit_guesses[i]) != 1:
+                        expr += f'~{guess}'
+                else:
+                    expr = str(self.model.H[i]+self.model.Y[i])
+
                 funcsetup = {
-                    'name': funcname,
-                    'expr': str(self.model.exprs[i]),
-                    'desc': self.model.descriptions.get(funcname, ''),
-                    'tolerance': self.model.tolerances.get(funcname).config() if self.model.tolerances.get(funcname) else None,
-                    'units': str(self.outunits.get(funcname)) if self.outunits.get(funcname) else None}
+                    'name': name,
+                    'expr': expr,
+                    'desc': self.model.descriptions.get(name, ''),
+                    'tolerance': self.model.tolerances.get(name).config() if self.model.tolerances.get(name) else None,
+                    'units': str(self.outunits.get(name)) if self.outunits.get(name) else None}
                 d['functions'].append(funcsetup)
 
         for varname in self.model.varnames:
@@ -251,9 +259,10 @@ class ProjectUncert(ProjectComponent):
             unitmgr.register_units(config['unitdefs'])
 
         if len(config.get('functions', [])) > 0 and config.get('functions')[0]['expr'] != '':  # Callable functions will have none
-            names = [func.get('name') for i, func in enumerate(config.get('functions'))]
+            names = [func.get('name') for func in config.get('functions')]
             names = [name if name else f'f_{i}' for i, name in enumerate(names)]
-            exprs = [f'{names[i]}={func["expr"]}' for i, func in enumerate(config.get('functions'))]
+            exprs = [func.get('expr') for func in config.get('functions')]
+            exprs = [f'{name}={expr}' if '=' not in expr else expr for name, expr in zip(names, exprs)]
             self.model = Model(*exprs)
 
         self.name = config.get('name', 'uncertainty')

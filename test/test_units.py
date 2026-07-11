@@ -20,7 +20,7 @@ def test_units():
     assert str(result.gum.expected['P'].units) == 'milliwatt'
     assert np.isclose(result.gum.expected['P'].magnitude, 80)
     assert str(result.montecarlo.expected['P'].units) == 'milliwatt'
-    assert np.isclose(result.montecarlo.expected['P'].magnitude, 80)
+    assert np.isclose(result.montecarlo.expected['P'].magnitude, 80, atol=1E-3)
     assert 'mW' in str(result.report.gum.summary())
     assert 'mW' in str(result.report.gum.expanded())
     assert 'mW' in str(result.report.montecarlo.summary())

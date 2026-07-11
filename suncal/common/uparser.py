@@ -151,11 +151,17 @@ def parse_math_with_quantities_to_tex(expr):
         For display only - result is returned regardless of validity of expression.
      '''
     expr, constants = _replace_constants(expr)
+    post = ''
+    if '=' in expr:
+        expr, post = expr.split('=')
     try:
         symexpr = sympy.sympify(expr, locals=_locals)
         tex = sympy.latex(symexpr)
     except (TypeError, sympy.SympifyError):
         tex = expr
+
+    if post:
+        tex += ' = ' + post
 
     for name, value in constants.items():
         base, num, _ = re.split('([0-9].*)', name, maxsplit=1)

@@ -109,6 +109,8 @@ class DistributionEditTable(QtWidgets.QTableWidget):
         self.showlocslider = locslider
         self.range = (-2.0, 2.0)
         self.showmedian = showmedian
+        self.measname = 'measured value'
+
         self.setMinimumWidth(200)
         self.setMaximumHeight(200)
         self.verticalHeader().setVisible(False)
@@ -187,7 +189,7 @@ class DistributionEditTable(QtWidgets.QTableWidget):
                 self.setRowCount(1)
                 if self.showlocslider:
                     self.setRowCount(3)
-                    self.setItem(1, 0, ReadOnlyTableItem('measurement'))
+                    self.setItem(1, 0, ReadOnlyTableItem(self.measname))
                     self.setItem(1, 1, QtWidgets.QTableWidgetItem(str(initargs.get('median', 0))))
                     self.setItem(2, 0, ReadOnlyTableItem('bias'))
                     self.setItem(2, 1, QtWidgets.QTableWidgetItem(str(initargs.get('bias', 0))))
@@ -206,8 +208,9 @@ class DistributionEditTable(QtWidgets.QTableWidget):
                 self.locslide = QtWidgets.QSlider(orientation=QtCore.Qt.Orientation.Horizontal)
                 self.locslide.setRange(0, 200)  # Sliders always use ints.
                 self.locslide.setValue(100)
+                self.locslide_name = QtWidgets.QLabel(self.measname)
                 layout = QtWidgets.QHBoxLayout()
-                layout.addWidget(QtWidgets.QLabel('measurement'))
+                layout.addWidget(self.locslide_name)
                 layout.addWidget(self.locslide)
                 self.locslidewidget.setLayout(layout)
                 self.setCellWidget(1, 0, self.locslidewidget)
@@ -218,6 +221,13 @@ class DistributionEditTable(QtWidgets.QTableWidget):
                 self.setRowHeight(row, 40)
 
             self.cmbdist.currentIndexChanged.connect(self.distchanged)
+
+    def set_measname(self, name: str):
+        ''' Change label next to measurement slider '''
+        self.measname = name
+        if self.showlocslider:
+            with gui_common.BlockedSignals(self):
+                self.locslide_name.setText(self.measname)
 
     def distchanged(self):
         ''' Distribution combobox change '''

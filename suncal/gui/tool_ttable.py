@@ -24,7 +24,7 @@ class TTableDialog(QtWidgets.QDialog):
         self.cmbSolveFor = QtWidgets.QComboBox()
         self.cmbSolveFor.addItems(['Coverage Factor', 'Confidence', 'Degrees of Freedom'])
         self.degf = widgets.LineEditLabelWidget('Degrees of Freedom', '30')
-        self.degf.setValidator(QtGui.QIntValidator(1, 10000000))
+        self.degf.setValidator(QtGui.QDoubleValidator(1, 10000000, 3))
         self.conf = widgets.LineEditLabelWidget('Confidence Percent', '95.45')
         self.conf.setValidator(QtGui.QDoubleValidator(0, 100, 6))
         self.k = widgets.LineEditLabelWidget('Coverage Factor', '2.00')

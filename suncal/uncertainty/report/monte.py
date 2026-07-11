@@ -403,7 +403,10 @@ class McAxisPlot:
         samples, units = unitmgr.split_units(self._results.samples[funcname])
         line = None
         if np.isfinite(samples).any():
-            _, _, line = ax.hist(samples, bins=bins, density=True, **kwargs)
+            rng = (samples.min(), samples.max())
+            if np.isclose(rng[0], rng[1], atol=0, rtol=1E-8):
+                rng = (rng[0]*.9, rng[1]*1.1)  # MPL problems if rng is too small
+            _, _, line = ax.hist(samples, bins=bins, range=rng, density=True, **kwargs)
 
         if k is not None or interval is not None:
             if k is not None:

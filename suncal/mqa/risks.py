@@ -36,7 +36,7 @@ def pfa(uncert_pdf: Pdf,
             test2d[i, :] = np.interp(test_region, uncert_pdf._x+prod_region[i], uncert_pdf._y)
 
         prod2d = np.tile(pdf_prod, (N, 1)).T
-        pfa_upper = np.trapz(np.trapz(test2d*prod2d, dx=dx, axis=0), dx=dy)
+        pfa_upper = np.trapezoid(np.trapezoid(test2d*prod2d, dx=dx, axis=0), dx=dy)
 
     # Below
     if np.isfinite(tolerance.flow):
@@ -49,7 +49,7 @@ def pfa(uncert_pdf: Pdf,
             test2d[i, :] = np.interp(test_region, uncert_pdf._x+prod_region[i], uncert_pdf._y)
 
         prod2d = np.tile(pdf_prod, (N, 1)).T
-        pfa_lower = np.trapz(np.trapz(test2d*prod2d, dx=dx, axis=0), dx=dy)
+        pfa_lower = np.trapezoid(np.trapezoid(test2d*prod2d, dx=dx, axis=0), dx=dy)
 
     return pfa_upper + pfa_lower
 
@@ -80,7 +80,7 @@ def pfr(uncert_pdf: Pdf,
             test2d[i, :] = np.interp(test_region, uncert_pdf._x+prod_region[i], uncert_pdf._y)
 
         prod2d = np.tile(pdf_prod, (N, 1)).T
-        pfr_upper = np.trapz(np.trapz(test2d*prod2d, dx=dx, axis=0), dx=dy)
+        pfr_upper = np.trapezoid(np.trapezoid(test2d*prod2d, dx=dx, axis=0), dx=dy)
 
     # Below
     if np.isfinite(tolerance.flow):
@@ -91,7 +91,7 @@ def pfr(uncert_pdf: Pdf,
             test2d[i, :] = np.interp(test_region, uncert_pdf._x+prod_region[i], uncert_pdf._y, left=0, right=0)
 
         prod2d = np.tile(pdf_prod, (N, 1)).T
-        pfr_lower = np.trapz(np.trapz(test2d*prod2d, dx=dx, axis=0), dx=dy)
+        pfr_lower = np.trapezoid(np.trapezoid(test2d*prod2d, dx=dx, axis=0), dx=dy)
 
     return pfr_upper + pfr_lower
 
@@ -123,7 +123,7 @@ def cpfa(uncert_pdf: Pdf,
         test2d[i, :] = np.interp(test_region, uncert_pdf._x+prod_region[i], uncert_pdf._y)
 
     prod2d = np.tile(pdf_prod, (N, 1)).T
-    intol_and_accepted = np.trapz(np.trapz(test2d*prod2d, dx=dx, axis=0), dx=dy)
+    intol_and_accepted = np.trapezoid(np.trapezoid(test2d*prod2d, dx=dx, axis=0), dx=dy)
 
     # P(Accepted)
     prod_region = np.linspace(bot, top, N)
@@ -136,7 +136,7 @@ def cpfa(uncert_pdf: Pdf,
         test2d[i, :] = np.interp(test_region, uncert_pdf._x+prod_region[i], uncert_pdf._y)
 
     prod2d = np.tile(pdf_prod, (N, 1)).T
-    accepted = np.trapz(np.trapz(test2d*prod2d, dx=dx, axis=0), dx=dy)
+    accepted = np.trapezoid(np.trapezoid(test2d*prod2d, dx=dx, axis=0), dx=dy)
 
     return 1 - intol_and_accepted / accepted
 

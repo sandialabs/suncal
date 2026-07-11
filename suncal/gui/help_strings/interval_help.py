@@ -104,13 +104,13 @@ class IntervalHelp:
     @staticmethod
     def variables():
         rpt = report.Report()
-        rpt.hdr('Variables Method')
+        rpt.hdr('Variables Method (V1)')
         rpt.txt('The Variabls Interval method may be used when calibration values (not simply pass/fail) '
                 'data was recorded. Historical calibration intervals of varied length are needed.\n')
 
         rpt.hdr('Options', level=2)
         rpt.txt('- **Measurement Uncertainty**: The time-of-test uncertainty in new measurements\n'
-                '- **Uncertainty k**: Coverage factor for the entered measurement uncertainty\n'
+                '- **Degrees of Freedom**: Degrees of freedom associated with the uncertainty of a new measurement\n'
                 '- **Next interval as-left value**: The measured value at the beginning of the upcoming interval\n'
                 '- **Fit polynomial order**: Polynomial order for the curve fit to asset deviation over time\n\n')
 
@@ -120,7 +120,7 @@ class IntervalHelp:
         rpt.hdr('Reliability Target Options', level=3)
         rpt.txt('- **Lower and Upper Tolerance Limits**: Stop the interval when the predicted deviation '
                 'plus uncertainty exceeds these limits.\n'
-                '- **Confidence**: Level of confidence for the uncertainty used to stop the interval\n\n')
+                '- **Reliability Target**: Desired reliability at which to end the interval\n\n')
 
         rpt.append(dataentry())
         rpt.hdr('Summarized Values Data Entry', level=3)

@@ -70,6 +70,9 @@ class RandomVariable:
             self.num_new_meas = self.value.size
         if description is not None:
             self.description = description
+
+        for typeb in self._typeb:
+            typeb.set_nominal(self.value.mean())
         return self   # for chaining
 
     def clear_typeb(self):

@@ -723,7 +723,7 @@ class CurveTree(QtWidgets.QTreeWidget):
         for name in qty.coeff_names():
             self.add_coefficient(name, qty, item)
 
-        for name, (value, tolerance) in qty.predictions.values():
+        for name, (value, tolerance) in qty.predictions.items():
             self.add_prediction_item(name, value, tolerance, qty, item)
 
         item.setExpanded(True)
@@ -756,7 +756,7 @@ class CurveTree(QtWidgets.QTreeWidget):
             qty.polyorder = order
             qty.set_fitmodel(fit)
         except (TypeError, ValueError) as exc:
-            QtWidgets.QMessageBox.warning(self, 'Suncal', exc)
+            QtWidgets.QMessageBox.warning(self, 'Suncal', str(exc))
         else:
             item.takeChildren()
             self.add_child_items(qty, item)

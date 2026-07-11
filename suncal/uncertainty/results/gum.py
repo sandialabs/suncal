@@ -11,7 +11,8 @@ from ..report.cplx import ReportComplexGum
 
 
 Expanded = namedtuple('Expanded', ['uncertainty', 'k', 'confidence'])
-GumOutputData = namedtuple('GumOutput', ['uncertainty', 'Uy', 'Ux', 'Cx', 'degf', 'expected', 'correlation', 'functions'])
+GumOutputData = namedtuple('GumOutput', ['uncertainty', 'Uy', 'Ux', 'Cy', 'Cx', 'C', 'degf',
+                                         'expected', 'correlation', 'functions', 'implicit'])
 
 
 @reporter.reporter(ReportGum)
@@ -23,7 +24,9 @@ class GumResults:
             expected (dict): Computed expected/mean values for each model function
             Uy (list): Covariance matrix of model functions
             Ux (list): Covariance matrix of model input variables
-            Cx (list): Sensitivity matrix
+            Cx (list): Sensitivity matrix (inputs)
+            Cy (list): Sensitivity matrix (outputs)
+            C (list): Sensitivity matrix
             degf (dict): Effective degrees of freedom for each model function
             functions (list): The model functions as Sympy expressions
             symbolic (tuple): Symbolic expressions for uncertainty, Uy, Ux, Cx, and degf
@@ -52,6 +55,8 @@ class GumResults:
         self.Uy = numeric.Uy
         self.Ux = numeric.Ux
         self.Cx = numeric.Cx
+        self.Cy = numeric.Cy
+        self.C = numeric.C
         self.degf = numeric.degf
         self.functions = numeric.functions
         self.input_correlation = numeric.correlation
@@ -73,15 +78,15 @@ class GumResults:
                     model function result to
         '''
         self._units.update(units)
-        
+
         # Store old expected values to compute conversion factors
         old_expected = self.expected.copy()
-        
+
         # Convert expected and uncertainty
         self.expected = unitmgr.convert_dict(self.expected, self._units)
         delta_units = {name: unitmgr.to_delta_units(u) for name, u in self._units.items()}
         self.uncertainty = unitmgr.convert_dict(self.uncertainty, delta_units)
-        
+
         # Convert sensitivity coefficients (Cx matrix)
         # Cx[i][j] is dF_i/dx_j, where F_i is function i and x_j is variable j
         # When F_i is converted, scale sensitivity by conversion_factor
@@ -94,7 +99,7 @@ class GumResults:
                     conversion_factor = new_val / old_val
                     # Scale all sensitivities for this function
                     self.Cx[i] = [c * conversion_factor for c in self.Cx[i]]
-        
+
         return self
 
     def getunits(self):
@@ -106,8 +111,8 @@ class GumResults:
         poc = {}
         for fname, tol in self.tolerances.items():
             poc[fname] = tol.probability_conformance(
-                self.expected.get(fname),
-                self.uncertainty.get(fname),
+                self.expected.get(fname).magnitude,
+                self.uncertainty.get(fname).magnitude,
                 self.degf.get(fname))
         return poc
 
@@ -195,7 +200,7 @@ class GumResults:
             props = {}
             for j, varname in enumerate(self.variablenames):
                 varuncert = self.variables.uncertainty[varname]
-                props[varname] = ((self.Cx[i][j]*varuncert)**2 / funcuncert2)
+                props[varname] = ((self.C[i][j]*varuncert)**2 / funcuncert2)
                 props[varname] = unitmgr.strip_units(props[varname], reduce=True)  # unitless
 
             resid = 1 - sum(props.values())
@@ -205,7 +210,7 @@ class GumResults:
             funcprops[funcname] = props
         return funcprops
 
-    def sensitivity(self, symbolic=False):
+    def sensitivity(self, symbolic=False, which='C'):
         ''' Get sensitivity. This is Cx, but in a dictionary.
 
             Args:
@@ -214,10 +219,15 @@ class GumResults:
             Returns:
                 dictionary of {functionname: {variablename: sensitivity}}
         '''
-        Cx = self.symbolic.Cx if symbolic else self.Cx
+        if which == 'Cx':
+            Cx = self.symbolic.Cx if symbolic else self.Cx
+        elif which == 'Cy':
+            Cx = self.symbolic.Cy if symbolic else self.Cy
+        else:
+            Cx = self.symbolic.C if symbolic else self.C
         funcs = {}
         for i, funcname in enumerate(self.functionnames):
-            sens = dict(zip(self.variablenames, Cx[i]))
+            sens = dict(zip(self.functionnames, Cx[i])) if which == 'Cy' else dict(zip(self.variablenames, Cx[i]))
             
             # Fix sensitivity units to be output_units / input_units
             # This ensures units are in simplified form rather than unreduced from derivatives

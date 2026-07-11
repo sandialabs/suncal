@@ -6,7 +6,6 @@
 import pint
 
 ureg = pint.UnitRegistry(autoconvert_offset_to_baseunit=True)
-ureg.define('inch_H2O = inch * water * g_0 = inH2O = inch_water')
 pint.set_application_registry(ureg)  # Allows loading pickles containing pint units
 _uregcustom = []  # List of custom unit definitions
 

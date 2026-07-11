@@ -1,5 +1,4 @@
 ''' Markdown Text Viewer Widget and Save Report Dialog '''
-
 from collections import ChainMap
 from PyQt6 import QtCore, QtGui, QtWidgets
 import markdown
@@ -92,11 +91,19 @@ class MarkdownTextEdit(QtWidgets.QTextEdit):
         args = ChainMap({'n': self.sigfigs, 'fmt': self.numformat}, gui_settings.report_args)
         ratio = QtWidgets.QApplication.instance().primaryScreen().devicePixelRatio()
 
+        # Replace Number and Unit instances.
+        # Much faster doing string replace than doing this later in the Qt Document.
+        rptstr = self.rpt._s
+        for i, value in enumerate(self.rpt._values):
+            rptstr = rptstr.replace(f'[[VAL{i}]]', value.string(**args))
+        for i, unit in enumerate(self.rpt._units):
+            rptstr = rptstr.replace(f'[[UNT{i}]]', unit.html(**args))
+
         # Convert markdown to HTML, but leave [[xxx]] image tags
-        html = markdown.markdown(self.rpt._s, extensions=['markdown.extensions.tables'])
+        html = markdown.markdown(rptstr, extensions=['markdown.extensions.tables'])
         self.insertHtml(html)
 
-        regex = QtCore.QRegularExpression(r'(\[\[(?:EQN|VAL|PLT|UNT)[0-9].*?\]\])')
+        regex = QtCore.QRegularExpression(r'(\[\[(?:EQN|PLT)[0-9].*?\]\])')
         cursor = document.find(regex)
         while cursor is not None and cursor.selectedText():
             tag = cursor.selectedText()
@@ -107,12 +114,6 @@ class MarkdownTextEdit(QtWidgets.QTextEdit):
                 im = QtGui.QImage(px)
                 cursor.removeSelectedText()
                 cursor.insertImage(im)
-            elif 'VAL' in tag:
-                cursor.removeSelectedText()
-                cursor.insertText(self.rpt._values[tagindex].string(**args))
-            elif 'UNT' in tag:
-                cursor.removeSelectedText()
-                cursor.insertHtml(self.rpt._units[tagindex].html(**args))
             elif 'PLT' in tag:
                 plt = self.rpt._plots[tagindex]
                 svg = plt.svg_buf(scale=ratio).getvalue()
@@ -125,6 +126,7 @@ class MarkdownTextEdit(QtWidgets.QTextEdit):
             else:
                 raise ValueError
             cursor = document.find(regex, cursor)
+        self.moveCursor(QtGui.QTextCursor.MoveOperation.Start)
 
     def setHtml(self, html):
         ''' Override setHtml to save off raw html as QTextEdit reformats it, strips css, etc. '''

@@ -2,12 +2,16 @@
 
 import numpy as np
 
-from .risk import PFA, PFR, PFR_norm, PFA_norm, PFA_norm_conditional
+from .risk import PFA, PFR, get_sigmaproc_from_itp
+from . import risk_tsayke
 from . import guardband_tur
 
 
 def PFA_sweep_simple(xvar='itp', zvar='TUR', xvals=None, zvals=None,
-                     GBFdflt=1, itpdflt=.95, TURdflt=4, sig0=None, tbias=0, pbias=0, risk='PFA'):
+                     GBFdflt=1, itpdflt=.95, TURdflt=4, sig0=None,
+                     tbias=0, pbias=0, risk='PFA',
+                     observeditp=False,
+                     ):
     ''' Sweep PFA vs. itp, tur, or gbf for producing risk curves in simple mode
 
         Args:
@@ -22,6 +26,7 @@ def PFA_sweep_simple(xvar='itp', zvar='TUR', xvals=None, zvals=None,
             tbias (float): Default test measurement bias
             pbias (float): Default process distribution bias
             risk (string): Calculate 'PFA', 'CPFA', or 'PFR'
+            observeditp (bool): If 'itp' is an observed value not true value
 
         Returns:
             risk (array): 2D array (shape len(xvals) x len(zvals)) of risk values
@@ -37,9 +42,9 @@ def PFA_sweep_simple(xvar='itp', zvar='TUR', xvals=None, zvals=None,
     else:
         xx, zz = np.meshgrid(xvals, zvals)
 
-    riskfunc = {'pfa': PFA_norm,
-                'cpfa': PFA_norm_conditional,
-                'pfr': PFR_norm}.get(risk.lower())
+    riskfunc = {'pfa': risk_tsayke.PFA,
+                'cpfa': risk_tsayke.PFA_conditional,
+                'pfr': risk_tsayke.PFR}.get(risk.lower())
 
     if xvar.lower() == 'itp':
         itp = xx
@@ -93,9 +98,13 @@ def PFA_sweep_simple(xvar='itp', zvar='TUR', xvals=None, zvals=None,
     curves = np.empty_like(xx)
     for zidx in range(len(zvals)):
         for xidx in range(len(xvals)):
-            curves[zidx, xidx] = riskfunc(itp[zidx, xidx], TUR[zidx, xidx], GBF[zidx, xidx],
-                                          sig0=sig0[zidx, xidx],
-                                          biastest=tbias[zidx, xidx], biasproc=pbias[zidx, xidx])
+            sigmap = get_sigmaproc_from_itp(itp[zidx, xidx], pbias[zidx, xidx])
+            sigmat = 0.5/TUR[zidx, xidx]
+            mup = pbias[zidx, xidx]
+            gbf = GBF[zidx, xidx]
+            if observeditp:
+                sigmap = np.sqrt(sigmap**2 - sigmat**2)
+            curves[zidx, xidx] = riskfunc(sigmap, sigmat, mup, -1, 1, -gbf, gbf, tbias[zidx, xidx])
     return curves
 
 

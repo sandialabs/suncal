@@ -179,6 +179,11 @@ class UncertReverseWidget(page_uncert.UncertPropWidget):
             self.mnuSaveSamples.setEnabled(False)
             return
         self.update_proj_config()
+        if any(self.component.model.model.implicit):
+            QtWidgets.QMessageBox.warning(self, 'Suncal', 'Reverse propagation not implemented for implicit measurement models.')
+            self.actSaveReport.setEnabled(False)
+            self.mnuSaveSamples.setEnabled(False)
+            return
         super().calculate()
 
     def get_config(self):

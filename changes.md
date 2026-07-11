@@ -1,5 +1,20 @@
 # Change History
 
+## Version 1.7.1
+
+- Enabled multivariate curve fitting
+- Added implicit measurement models in the form "H(Y, X) = 0"
+- Added Bayesian Information Criteria output to curve fit results
+- Added confidence and prediction band equations for nonlinear curve fits
+- Added decision risk calculation for attributes gages
+- Implement Tsay-Ke approximation to bivariate normal integral for faster risk curve calculation
+- Add option for True vs Observed ITP in risk curve tool
+- Updated Variables Interval method for consistency with new RP-1 appendix
+- Prevent overriding matplotlib style when imported as a Python library
+- App takes a command line argument specifying a filename to load
+- Fixed uncertainty sweeps with relative (percent) uncertainties
+
+
 ## Version 1.7
 
 

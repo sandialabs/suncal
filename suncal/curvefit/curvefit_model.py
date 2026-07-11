@@ -14,8 +14,7 @@ from .results.curvefit import CurveFitResults, CurveFitResultsCombined, Waveform
 from . import waveform
 
 
-
-FitResids = namedtuple('FitResiduals', ['residuals', 'Syx', 'r', 'F', 'SSres', 'SSreg'])
+FitResids = namedtuple('FitResiduals', ['residuals', 'Syx', 'r', 'F', 'SSres', 'SSreg', 'bic'])
 FitResults = namedtuple('FitResults', ['coeff', 'uncert', 'covariance',
                                        'degf', 'residuals', 'samples', 'acceptance'], defaults=(None,)*7)
 FitSetup = namedtuple('FitSetup', ['points', 'expression', 'function', 'modelname', 'coeffnames', 'xname', 'yname'])
@@ -78,6 +77,9 @@ class CurveFit:
     def _initial_guess(self):
         ''' Make a reasonable initial guess based on the model and data '''
         x, y = self.arr.x, self.arr.y
+        if len(x) == 0 or len(x) != len(y):
+            return np.ones(self.numparams)
+
         if self.modelname == 'decay':
             b, a = np.polyfit(x, np.log(abs(y)), deg=1)   # Fit line to (x, log(y))
             p0 = [np.exp(a), -1/b]
@@ -107,6 +109,8 @@ class CurveFit:
         self.odr = odr
         self.bounds = bounds
         self.predictor_var = predictor_var
+        if self.arr.num_xvars > 1 and isinstance(self.predictor_var, str):
+            self.predictor_var = [f'x{i+1}' for i in range(self.arr.num_xvars)]
 
         if callable(func):
             self.modelname = 'callable'
@@ -114,13 +118,7 @@ class CurveFit:
             self.pnames = list(inspect.signature(self.func).parameters.keys())[1:]
             self.expr = sympy.sympify('f(x, ' + ', '.join(self.pnames) + ')')
         else:
-            self.func, self.expr = fit_callable(self.modelname, self.polyorder, self.predictor_var)
-
-            if self.modelname == 'poly' and self.polyorder > 3:
-                # poly def above doesn't have named arguments, so the inspect won't find them. Name them here.
-                self.pnames = [chr(ord('a')+i) for i in range(self.polyorder+1)]
-            else:
-                self.pnames = list(inspect.signature(self.func).parameters.keys())[1:]
+            self.func, self.expr, self.pnames = fit_callable(self.modelname, self.polyorder, self.predictor_var)
 
         self.numparams = len(self.pnames)
 
@@ -162,22 +160,25 @@ class CurveFit:
             Returns:
                 CurveFitResults instance
         '''
-        uy = np.zeros(len(self.arr.x)) if not self.arr.has_uy() else self.arr.uy
+        uy = np.zeros(len(self.arr)) if not self.arr.has_uy() else self.arr.uy
         coeff, cov = self.fitcalc(self.arr.x, self.arr.y, self.arr.ux, uy)
 
         resids = self.arr.y - self.func(self.arr.x, *coeff)  # All residuals (NOT squared)
         sigmas = np.sqrt(np.diag(cov))
-        degf = len(self.arr.x) - len(coeff)
+        N = len(self.arr)
+        k = len(coeff)
+        degf = N - k
         if self.absolute_sigma or not self.arr.has_uy():
-            w = np.full(len(self.arr.x), 1)  # Unweighted residuals in Syx
+            w = np.full(len(self.arr), 1)  # Unweighted residuals in Syx
         else:
             w = 1/uy**2  # Determine weighted Syx
-            w = w/sum(w) * len(self.arr.y)      # Normalize weights so sum(wi) = N
+            w = w/sum(w) * N      # Normalize weights so sum(wi) = N
         SSres = sum(w*resids**2)   # Sum-of-squares of residuals
         Syx = np.sqrt(SSres/degf)  # Standard error of the estimate (based on residuals)
         SSreg = sum(w*(self.func(self.arr.x, *coeff) - sum(w*self.arr.y)/sum(w))**2)
+        bic = N * np.log(SSres/N) + k*np.log(N)  # Baysian Information Criterion
         r = np.sqrt(1-SSres/(SSres+SSreg))
-        resids = FitResids(resids, Syx, r, SSreg*degf/SSres, SSres, SSreg)
+        resids = FitResids(resids, Syx, r, SSreg*degf/SSres, SSres, SSreg, bic)
         out = FitResults(coeff, sigmas, cov, degf, resids)
         return CurveFitResults(out, self.fitsetup(), self.tolerances, self.predictions)
 
@@ -192,8 +193,8 @@ class CurveFit:
             same behavior for GUM and Monte Carlo.
         '''
         pcoeff, _ = self.fitcalc(self.arr.x, self.arr.y, ux=None, uy=None)
-        uy = np.sqrt(np.sum((self.func(self.arr.x, *pcoeff) - self.arr.y)**2)/(len(self.arr.x) - len(pcoeff)))
-        uy = np.full(len(self.arr.x), uy)
+        uy = np.sqrt(np.sum((self.func(self.arr.x, *pcoeff) - self.arr.y)**2)/(len(self.arr) - len(pcoeff)))
+        uy = np.full(len(self.arr), uy)
         return uy
 
     def monte_carlo(self, samples=1000):
@@ -206,6 +207,9 @@ class CurveFit:
             -------
             CurveFitOutput object
         '''
+        if self.arr.ndim > 1:
+            raise NotImplementedError  # Not implemented for multidimensional fits. Try Markov Chain MC.
+
         self.run_uyestimate()
         uy = self.arr.uy if self.arr.uy_estimate is None else self.arr.uy_estimate
         if self.arr.xsamples is None or self.arr.ysamples is None or self.arr.xsamples.shape[1] != samples:
@@ -219,19 +223,22 @@ class CurveFit:
         sigma = self.samplecoeffs.std(axis=0, ddof=1)
 
         resids = self.arr.y - self.func(self.arr.x, *coeff)
-        degf = len(self.arr.x) - len(coeff)
+        N = len(self.arr)
+        k = len(coeff)
+        degf = N - k
         if self.absolute_sigma or not self.arr.has_uy():
-            w = np.full(len(self.arr.x), 1)  # Unweighted residuals in Syx
+            w = np.full(len(self.arr), 1)  # Unweighted residuals in Syx
         else:
             w = 1/uy**2  # Determine weighted Syx
-            w = w/sum(w) * len(self.arr.y)   # Normalize weights so sum(wi) = N
+            w = w/sum(w) * N   # Normalize weights so sum(wi) = N
         cov = np.cov(self.samplecoeffs.T)
         SSres = sum(w*resids**2)   # Sum-of-squares of residuals
         Syx = np.sqrt(SSres/degf)  # Standard error of the estimate (based on residuals)
         SSreg = sum(w*(self.func(self.arr.x, *coeff) - sum(w*self.arr.y)/sum(w))**2)
         r = np.sqrt(1-SSres/(SSres+SSreg))
+        bic = N * np.log(SSres/N) + k*np.log(N)  # Baysian Information Criterion
 
-        resids = FitResids(resids, Syx, r, SSreg*degf/SSres, SSres, SSreg)
+        resids = FitResids(resids, Syx, r, SSreg*degf/SSres, SSres, SSreg, bic)
         out = FitResults(coeff, sigma, cov, degf, resids, self.samplecoeffs)
         return CurveFitResults(out, self.fitsetup(), self.tolerances, self.predictions)
 
@@ -326,18 +333,22 @@ class CurveFit:
         coeff = self.mcmccoeffs.mean(axis=0)
         sigma = self.mcmccoeffs.std(axis=0, ddof=1)
         resids = (self.arr.y - self.func(self.arr.x, *coeff))
-        degf = len(self.arr.x) - len(coeff)
+        N = len(self.arr)
+        k = len(coeff)
+        degf = N - k
         if self.absolute_sigma or not self.arr.has_uy():
-            w = np.full(len(self.arr.x), 1)  # Unweighted residuals in Syx
+            w = np.full(len(self.arr), 1)  # Unweighted residuals in Syx
         else:
             w = 1/uy**2  # Determine weighted Syx
-            w = w/sum(w) * len(self.arr.y)   # Normalize weights so sum(wi) = N
+            w = w/sum(w) * N  # Normalize weights so sum(wi) = N
         cov = np.cov(self.mcmccoeffs.T)
         SSres = sum(w*resids**2)   # Sum-of-squares of residuals
         Syx = np.sqrt(SSres/degf)  # Standard error of the estimate (based on residuals)
         SSreg = sum(w*(self.func(self.arr.x, *coeff) - sum(w*self.arr.y)/sum(w))**2)
         r = np.sqrt(1-SSres/(SSres+SSreg))
-        resids = FitResids(resids, Syx, r, SSreg*degf/SSres, SSres, SSreg)
+        bic = N * np.log(SSres/N) + k*np.log(N)  # Baysian Information Criterion
+
+        resids = FitResids(resids, Syx, r, SSreg*degf/SSres, SSres, SSreg, bic)
         out = FitResults(coeff, sigma, cov, degf, resids, self.mcmccoeffs, accepts/samples)
         return CurveFitResults(out, self.fitsetup(), self.tolerances, self.predictions)
 
@@ -362,6 +373,9 @@ class CurveFit:
             Returns:
                 CurveFitResults instance
         '''
+        if self.arr.ndim > 1:
+            raise NotImplementedError  # Not implemented for multidimensional fits
+
         self.run_uyestimate()
         uy = self.arr.uy if self.arr.uy_estimate is None else self.arr.uy_estimate
 
@@ -369,18 +383,21 @@ class CurveFit:
                                          self.arr.x, self.arr.y, self.arr.ux, uy)
         sigmas = np.sqrt(np.diag(cov))
         resids = self.arr.y - self.func(self.arr.x, *coeff)
-        degf = len(self.arr.x) - len(coeff)
+        N = len(self.arr)
+        k = len(coeff)
+        degf = N - k
         if self.absolute_sigma or not self.arr.has_uy():
             w = 1  # Unweighted residuals in Syx
         else:
             w = 1/uy**2  # Determine weighted Syx
-            w = w/sum(w) * len(self.arr.y)   # Normalize weights so sum(wi) = N
+            w = w/sum(w) * len(self.arr)   # Normalize weights so sum(wi) = N
         SSres = sum(w*resids**2)
         Syx = np.sqrt(SSres/degf)  # Standard error of the estimate (based on residuals)
         SSreg = sum(w*(self.func(self.arr.x, *coeff) - self.arr.y.mean())**2)
         r = np.sqrt(1-SSres/(SSres+SSreg))
+        bic = N * np.log(SSres/N) + k*np.log(N)  # Baysian Information Criterion
 
-        resids = FitResids(resids, Syx, r, SSreg*degf/SSres, SSres, SSreg)
+        resids = FitResids(resids, Syx, r, SSreg*degf/SSres, SSres, SSreg, bic)
         out = FitResults(coeff, sigmas, cov, degf, resids)
         return CurveFitResults(out, self.fitsetup(), self.tolerances, self.predictions)
 

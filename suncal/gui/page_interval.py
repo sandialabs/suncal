@@ -252,82 +252,100 @@ class VarsParamsWidget(QtWidgets.QGroupBox):
         super().__init__('Variables Method Options', parent=parent)
         self.u0 = widgets.FloatLineEdit()
         self.u0.setValue(0)
-        self.kvalue = widgets.FloatLineEdit()
-        self.kvalue.setValue(2)
+        self.u0degf = widgets.FloatLineEdit()
+        self.u0degf.setValue('inf')
         self.y0 = widgets.FloatLineEdit()
         self.y0.setValue(0)
         self.m = QtWidgets.QSpinBox()
         self.m.setRange(1, 3)
-        self.utargetbox = QtWidgets.QGroupBox('Uncertainty Target')
-        self.utargetbox.setCheckable(True)
+
+        self.calcmode = QtWidgets.QComboBox()
+        self.calcmode.addItems(['Reliability Target', 'Uncertainty Target'])
+
+        self.utargetbox = QtWidgets.QGroupBox()
         self.utarget = widgets.FloatLineEdit()
         self.utarget.setValue(1)
-        self.rtargetbox = QtWidgets.QGroupBox('Reliability Target')
-        self.rtargetbox.setCheckable(True)
-        self.rlimL = widgets.FloatLineEdit()
-        self.rlimU = widgets.FloatLineEdit()
-        self.rlimL.setValue(-1)
-        self.rlimU.setValue(1)
+        self.rtargetbox = QtWidgets.QGroupBox()
+        self.tolL = widgets.FloatLineEdit()
+        self.tolU = widgets.FloatLineEdit()
+        self.tolL.setValue(-1)
+        self.tolU.setValue(1)
         self.conf = widgets.FloatLineEdit(low=0, high=99.999)
         self.conf.setValue(95)
+
         flayout = QtWidgets.QFormLayout()
         flayout.addRow('Measurement Uncertainty', self.u0)
-        flayout.addRow('Uncertainty k', self.kvalue)
+        flayout.addRow('Degrees of Freedom', self.u0degf)
         flayout.addRow('Next interval as-left value', self.y0)
         flayout.addRow('Fit Polynomial Order', self.m)
+        flayout.addRow('Calculation', self.calcmode)
         layout = QtWidgets.QVBoxLayout()
         layout.addLayout(flayout)
         ulayout = QtWidgets.QFormLayout()
         ulayout.addRow('Maximum Allowed Uncertainty', self.utarget)
         self.utargetbox.setLayout(ulayout)
         rlayout = QtWidgets.QFormLayout()
-        rlayout.addRow('Lower Tolerance Limit', self.rlimL)
-        rlayout.addRow('Upper Tolerance Limit', self.rlimU)
-        rlayout.addRow('Confidence %', self.conf)
+        rlayout.addRow('Lower Tolerance Limit', self.tolL)
+        rlayout.addRow('Upper Tolerance Limit', self.tolU)
+        rlayout.addRow('Reliability Target %', self.conf)
         self.rtargetbox.setLayout(rlayout)
         layout.addWidget(self.utargetbox)
         layout.addWidget(self.rtargetbox)
         self.setLayout(layout)
 
         self.u0.setToolTip('Measurement uncertainty in new measurements')
+        self.u0degf.setToolTip('Effective degrees of freedom associated with the measurement uncertainty')
         self.y0.setToolTip('Measured/As-Left value at beginning of upcoming interval')
-        self.m.setToolTip('Order of polynomial fit to deviation vs time curve')
+        self.m.setToolTip('Order of polynomial fit to deviation vs. time curve')
         self.utarget.setToolTip('Maximum allowed projected uncertainty before ending interval')
-        self.rlimL.setToolTip('Lower deviation limit. Interval ends when fit polynomial minus uncertainty '
-                              '(at below confidence level) falls below this limit.')
-        self.rlimU.setToolTip('Upper deviation limit. Interval ends when fit polynomial plus uncertainty '
-                              '(at below confidence level) exceeds this limit.')
-        self.conf.setToolTip('Confidence level in predicted uncertainty')
+        self.tolL.setToolTip('Lower tolerance limit.')
+        self.tolU.setToolTip('Upper tolerance limit.')
+        self.conf.setToolTip('Target reliability. Interval ends when projected reliability falls below this value.')
+
+        self.calcmode.currentIndexChanged.connect(self.change_mode)
+        self.change_mode()
+
+    def change_mode(self):
+        ''' Calculation mode dropdown was changed '''
+        if self.calcmode.currentText() == 'Reliability Target':
+            self.rtargetbox.setVisible(True)
+            self.utargetbox.setVisible(False)
+        else:
+            self.rtargetbox.setVisible(False)
+            self.utargetbox.setVisible(True)
 
     def params(self):
         ''' Get parameters for variables method '''
         p = {'u0': self.u0.value(),
-             'kvalue': self.kvalue.value(),
+             'u0_degf': self.u0degf.value(),
              'y0': self.y0.value(),
-             'm': self.m.value(),
-             'utarget': self.utarget.value(),
-             'rlimits': (self.rlimL.value(), self.rlimU.value()),
-             'rconf': self.conf.value()/100,
-             'calcrel': self.rtargetbox.isChecked(),
-             'calcunc': self.utargetbox.isChecked()}
+             'm': self.m.value()}
+        if self.calcmode.currentText() == 'Reliability Target':
+            p['tolerance'] = (self.tolL.value(), self.tolU.value())
+            p['reliability_target'] = self.conf.value()/100
+        else:
+            p['utarget'] = self.utarget.value()
         return p
 
     def fill(self, params):
         ''' Fill widgets with parameters '''
         self.u0.setValue(params.get('u0', 0))
-        self.kvalue.setValue(params.get('kvalue', 2))
+        self.u0degf.setValue(params.get('u0_degf', 'inf'))
         self.y0.setValue(params.get('y0', 0))
         self.m.setValue(params.get('m', 1))
         self.utarget.setValue(params.get('utarget', 1))
-        limits = params.get('rlimits', (-1, 1))
-        self.rlimL.setValue(limits[0])
-        self.rlimU.setValue(limits[1])
-        self.conf.setValue(params.get('rconf', .95)*100)
-        self.rtargetbox.setChecked(params.get('calcrel', True))
-        self.utargetbox.setChecked(params.get('calcunc', True))
+        limits = params.get('tolerance', (-1, 1))
+        self.tolL.setValue(limits[0])
+        self.tolU.setValue(limits[1])
+        self.conf.setValue(params.get('reliability_target', .95)*100)
+        if 'reliability_target' in params:
+            self.calcmode.setCurrentIndex(0)
+        else:
+            self.calcmode.setCurrentIndex(1)
 
 
 class IntervalWidget(QtWidgets.QWidget):
+    ''' Widget for editing Interval calculations '''
     def __init__(self, component, parent=None):
         super().__init__(parent)
         self.component = component
@@ -551,8 +569,6 @@ class IntervalVariablesWidget(IntervalWidget):
 
     def __init__(self, component, parent=None):
         super().__init__(component=component, parent=parent)
-        self._calc_reliability = True
-        self._calc_uncertainty = True
 
     def _setup_history_table(self):
         self.column_names = ['Interval Length', 'Deviation from Prior']
@@ -576,8 +592,6 @@ class IntervalVariablesWidget(IntervalWidget):
         ''' Save inputs back to model '''
         config = self.component.get_config()
         params = self.paramswidget.params()
-        self._calc_reliability = params.pop('calcrel', True)
-        self._calc_uncertainty = params.pop('calcunc', True)
         config['dt'] = self.table.get_column(self.COL_LENGTH, remove_nan=True)
         config['deltas'] = self.table.get_column(self.COL_DEVIATION, remove_nan=True)
         config.update(params)
@@ -597,21 +611,13 @@ class IntervalVariablesWidget(IntervalWidget):
         self.update_proj_config()
         rpt = report.Report()
 
-        if self._calc_reliability:
-            try:
-                self.component.calculate_reliability_target()
-            except (TypeError, ValueError, RuntimeError):
-                rpt.txt('Error computing reliability target\n\n')
-            else:
-                rpt.append(self.component.result_reliability.report.summary())
-
-        if self._calc_uncertainty:
-            try:
-                self.component.calculate_uncertainty_target()
-            except (TypeError, ValueError, RuntimeError):
-                rpt.txt('Error computing uncertainty target\n\n')
-            else:
-                rpt.append(self.component.result_uncertainty.report.summary())
+        self.component.calculate()
+        try:
+            self.component.calculate()
+        except (TypeError, ValueError, RuntimeError):
+            rpt.txt('Error computing reliability target\n\n')
+        else:
+            rpt.append(self.component.result.report.summary())
 
         self.output_report.setReport(rpt)
         self.actSaveReport.setEnabled(True)
@@ -954,7 +960,7 @@ class IntervalVariablesWidgetAssets(IntervalWidget):
 
     def _setup_params(self):
         params = VarsParamsWidget()
-        params.fill(self.component.get_config().get('params', {}))
+        params.fill(self.component.get_config())
         return params
 
     def update_proj_config(self):
@@ -964,8 +970,6 @@ class IntervalVariablesWidgetAssets(IntervalWidget):
         params = self.paramswidget.params()
         config.update(params)
         self.component.load_config(config)
-        self._calc_reliability = params.get('calcrel', True)
-        self._calc_uncertainty = params.get('calcunc', True)
 
     def insert_csvdata(self, data):
         ''' Load data from CSV into table '''
@@ -995,23 +999,14 @@ class IntervalVariablesWidgetAssets(IntervalWidget):
             self.update_proj_config()
         except ValueError:
             # Possibly no data in table
-            rpt.txt('Error computing reliability target\n\n')
+            rpt.txt('Error computing interval\n\n')
         else:
-            if self._calc_reliability:
-                try:
-                    self.component.calculate_reliability_target()
-                except (TypeError, ValueError, RuntimeError):
-                    rpt.txt('Error computing reliability target\n\n')
-                else:
-                    rpt.append(self.component.result_reliability.report.summary())
-
-            if self._calc_uncertainty:
-                try:
-                    self.component.calculate_uncertainty_target()
-                except (TypeError, ValueError, RuntimeError):
-                    rpt.txt('Error computing uncertainty target\n\n')
-                else:
-                    rpt.append(self.component.result_uncertainty.report.summary())
+            try:
+                self.component.calculate()
+            except (TypeError, ValueError, RuntimeError):
+                rpt.txt('Error computing interval\n\n')
+            else:
+                rpt.append(self.component.result.report.summary())
 
         self.output_report.setReport(rpt)
         self.actSaveReport.setEnabled(True)
