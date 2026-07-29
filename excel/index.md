@@ -11,3 +11,6 @@ No VBA macros are used, but because they make use of LAMBDA functions, they requ
 - [Calibration Interval Calculator (A3, S2, V1)](<PSL Calibration Interval Calculator v0.1.xlsx>)
 - [RP19 Measurement Quality Assurance Calculator](<PSL End to End MQA RP19 Calculator v0.1.xlsx>)
 - [Measurement Assurance Plan](<PSL Smart Measurement Assurance Plan v0.2.xlsx>)
+
+
+- [A simple and efficient algorithm to compute average Probability of False Accept for measurement decision rules](<Delker - Efficient PFA Algorithm NCSLI 2026 - Paper.pdf>). NCSLI Workshop & Symposium 2026, Kansas City, MO.
