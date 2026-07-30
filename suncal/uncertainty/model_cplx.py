@@ -176,8 +176,12 @@ class RandomVariableCplx:
             mag.measure(np.real(self.value[0]))
             mag.typeb(std=np.real(self.uncertainty[0]))
             deg = RandomVariable()
-            deg.measure(np.deg2rad(np.real(self.value[1])))
-            deg.typeb(std=np.deg2rad(np.real(self.uncertainty[1])))
+            # Keep degree values as degrees. The degree-to-radian conversion is
+            # applied by the consuming model (the sympy pi/180*deg substitution in
+            # ModelComplex, and the pi/180 factor in _wrap_callable). Converting
+            # here as well double-counts it and corrupts the propagated uncertainty.
+            deg.measure(np.real(self.value[1]))
+            deg.typeb(std=np.real(self.uncertainty[1]))
             randvars = {f'{self.name}_mag': mag, f'{self.name}_deg': deg}
 
         return randvars

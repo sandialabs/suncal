@@ -34,6 +34,60 @@ def test_E15():
     assert np.isclose(mc.correlation()['Gamma_real']['Gamma_imag'], 0.0323, atol=.005)
 
 
+def test_magphase_degrees():
+    ''' Phase entered in degrees must give the same result as the equivalent
+        phase entered in radians (regression for double degree->radian conversion). '''
+    # Passthrough model: output uncertainty should equal the input uncertainty
+    deg = ModelComplex('Z11=S11', magphase=True)
+    deg.var('S11').measure_magphase(magnitude=50, phase=10, umagnitude=0.5, uphase=1,
+                                    degrees=True, k=1)
+    gdeg = deg.calculate_gum()
+    assert np.isclose(gdeg.expected['Z11_mag'], 50)
+    assert np.isclose(gdeg.uncertainty['Z11_mag'], 0.5)
+    assert np.isclose(gdeg.expected['Z11_rad'], np.deg2rad(10))
+    assert np.isclose(gdeg.uncertainty['Z11_rad'], np.deg2rad(1))
+
+    # degrees=True must match the same measurement pre-converted to radians
+    rad = ModelComplex('Z11=S11', magphase=True)
+    rad.var('S11').measure_magphase(magnitude=50, phase=np.deg2rad(10),
+                                    umagnitude=0.5, uphase=np.deg2rad(1),
+                                    degrees=False, k=1)
+    grad = rad.calculate_gum()
+    for key in gdeg.expected:
+        assert np.isclose(gdeg.expected[key], grad.expected[key])
+        assert np.isclose(gdeg.uncertainty[key], grad.uncertainty[key])
+
+
+def test_magphase_degrees_callable():
+    ''' Same degree/radian check through the callable path (_wrap_callable),
+        the other consumer of the doubly-converted phase variable. '''
+    from suncal.uncertainty import ModelComplexCallable
+
+    def passthrough(S11):
+        return S11
+
+    m = ModelComplexCallable(passthrough, magphase=True)
+    m.var('S11').measure_magphase(magnitude=50, phase=10, umagnitude=0.5,
+                                  uphase=1, degrees=True, k=1)
+    g = m.calculate_gum()
+    assert np.isclose(g.expected['passthrough_mag'], 50)
+    assert np.isclose(g.uncertainty['passthrough_mag'], 0.5)
+    assert np.isclose(g.expected['passthrough_rad'], np.deg2rad(10))
+    assert np.isclose(g.uncertainty['passthrough_rad'], np.deg2rad(1))
+
+
+def test_magphase_degrees_montecarlo():
+    ''' Monte Carlo shares _build_model_sympy, so degree input must also match
+        the equivalent radian input there. '''
+    np.random.seed(2038942)
+    deg = ModelComplex('Z11=S11', magphase=True)
+    deg.var('S11').measure_magphase(magnitude=50, phase=10, umagnitude=0.5,
+                                    uphase=1, degrees=True, k=1)
+    mc = deg.monte_carlo(samples=100000)
+    assert np.isclose(mc.expected['Z11_rad'], np.deg2rad(10), atol=1e-4)
+    assert np.isclose(mc.uncertainty['Z11_rad'], np.deg2rad(1), atol=1e-4)
+
+
 def test_parse():
     ''' Test parsing expression with cplx '''
     expr = 'I * omega * C'
