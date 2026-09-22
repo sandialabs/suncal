@@ -133,64 +133,57 @@ def test_welch():
 
 
 def test_sensitivity_units():
-    ''' Test sensitivity units match output/input units '''
-    m = Model('P = V * I')
-    m.var('V').measure(5, units='V').typeb(std=0.1, units='V')
+    ''' Test that sensitivity units and magnitude are correct.
+    Sensitivities should be expressed in terms of user-specified input and output units by default.
+    '''
+    m = Model('V = I * R')
     m.var('I').measure(2, units='mA').typeb(std=0.05, units='mA')
-    result = m.calculate().units(P='W')
-    
+    m.var('R').measure(5, units='ohm').typeb(std=0.1, units='ohm')
+    result = m.calculate().units(V='V')
+
     # Sensitivity should be in output units / input units
-    # P is in W, so dP/dV should be in W/V, dP/dI should be in W/mA
+    # V is in V, so dV/dI should be in V/mA, dV/dR should be in V/ohm
     sens = result.gum.sensitivity()
     sensmc = result.montecarlo.sensitivity().sensitivity
-    
-    # Verify invariant: sensitivity * input = output units
-    V_val = result.gum.variables.expected['V']
-    I_val = result.gum.variables.expected['I']
-    P_val = result.gum.expected['P']
-    
-    dP_dV = sens['P']['V']
-    dP_dI = sens['P']['I']
-    product_V = dP_dV * V_val
-    product_I = dP_dI * I_val
-    assert product_V.units == P_val.units
-    assert product_I.units == P_val.units
-    
-    dP_dV_mc = sensmc['P']['V']
-    dP_dI_mc = sensmc['P']['I']
-    product_V_mc = dP_dV_mc * V_val
-    product_I_mc = dP_dI_mc * I_val
-    assert product_V_mc.units == P_val.units
-    assert product_I_mc.units == P_val.units
+
+    assert str(sens['V']['I'].units) == 'volt / milliampere'
+    assert str(sensmc['V']['I'].units) == 'volt / milliampere'
+
+    assert str(sens['V']['R'].units) == 'volt / ohm'
+    assert str(sensmc['V']['R'].units) == 'volt / ohm'
+
+    # dV/dI = R = 5 ohm = 0.005 V/mA
+    assert np.isclose(sens['V']['I'].to('V/mA').magnitude, 0.005)
+    assert np.isclose(sensmc['V']['I'].to('V/mA').magnitude, 0.005, rtol=0.02)
+
+    # dV/dR = I = 2 mA = 0.002 V/ohm
+    assert np.isclose(sens['V']['R'].to('V/ohm').magnitude, 0.002)
+    assert np.isclose(sensmc['V']['R'].to('V/ohm').magnitude, 0.002, rtol=0.02)
 
 
 def test_sensitivity_chained_function_units():
-    """Test that sensitivity units are correct for chained functions.
-    
-    Re_Z_core (ohm) depends on V_cap_pk (V) through the intermediate Q_tank.
-    Sensitivity should be reported in units of ohm/V
-    """
+    ''' Test that sensitivity units and magnitude are correct for chained functions. '''
     m = Model(
-        'Q_tank = V_cap_pk / V_in_pk',
-        'Re_Z_core = 1/(2*pi*f*C_var*Q_tank) - R_dc'
+        'V = I * R',
+        'V_out = V'
     )
-    
-    m.var('V_cap_pk').measure(48.77, units='V').typeb(std=1, units='V')
-    m.var('V_in_pk').measure(0.8879, units='V').typeb(std=0.01, units='V')
-    m.var('f').measure(2, units='MHz').typeb(std=0.001, units='MHz')
-    m.var('C_var').measure(600, units='pF').typeb(std=1, units='pF')
-    m.var('R_dc').measure(1.847, units='ohm').typeb(std=0.1, units='ohm')
-    
-    result = m.calculate().units(Re_Z_core='ohm')
-    
-    sens = result.gum.sensitivity()
-    sens_V_cap = sens['Re_Z_core']['V_cap_pk']
-    
-    result_mc = m.monte_carlo(samples=10000)
-    result_mc.units(Re_Z_core='ohm')
-    sens_mc, _ = result_mc.sensitivity()
-    sens_mc_V_cap = sens_mc['Re_Z_core']['V_cap_pk']
-    
-    assert str(sens_V_cap.units) == "ohm / volt"
-    assert str(sens_mc_V_cap.units) == "ohm / volt"
+    m.var('I').measure(2, units='mA').typeb(std=0.05, units='mA')
+    m.var('R').measure(5, units='ohm').typeb(std=0.1, units='ohm')
+    result = m.calculate().units(V_out='V')
 
+    sens = result.gum.sensitivity()['V_out']
+    sensmc = result.montecarlo.sensitivity().sensitivity['V_out']
+
+    assert str(sens['I'].units) == 'volt / milliampere'
+    assert str(sensmc['I'].units) == 'volt / milliampere'
+
+    assert str(sens['R'].units) == 'volt / ohm'
+    assert str(sensmc['R'].units) == 'volt / ohm'
+
+    # dV_out/dI = R = 5 ohm = 0.005 V/mA
+    assert np.isclose(sens['I'].to('V/mA').magnitude, 0.005)
+    assert np.isclose(sensmc['I'].to('V/mA').magnitude, 0.005, rtol=0.02)
+
+    # dV_out/dR = I = 2 mA = 0.002 V/ohm
+    assert np.isclose(sens['R'].to('V/ohm').magnitude, 0.002)
+    assert np.isclose(sensmc['R'].to('V/ohm').magnitude, 0.002, rtol=0.02)
