@@ -228,7 +228,7 @@ class GumResults:
         funcs = {}
         for i, funcname in enumerate(self.functionnames):
             sens = dict(zip(self.functionnames, Cx[i])) if which == 'Cy' else dict(zip(self.variablenames, Cx[i]))
-            
+
             # Fix sensitivity units to be output_units / input_units
             # This ensures units are in simplified form rather than unreduced from derivatives
             if not symbolic:
@@ -239,9 +239,8 @@ class GumResults:
                         input_units = unitmgr.get_units(self.variables.uncertainty[varname])
                         if input_units is not None and varname in sens and unitmgr.has_units(sens[varname]):
                             expected_units = output_units / input_units
-                            magnitude = unitmgr.strip_units(sens[varname])
-                            sens[varname] = unitmgr.make_quantity(magnitude, expected_units)
-            
+                            sens[varname] = sens[varname].to(expected_units)
+
             funcs[funcname] = sens
         return funcs
 
